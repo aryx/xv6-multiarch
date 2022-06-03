@@ -1,7 +1,7 @@
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
@@ -9,10 +9,12 @@
 struct spinlock tickslock;
 uint ticks;
 
-extern char trampoline[], uservec[], userret[];
-
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
+void uservec();
+void handle_tlbr();
+void handle_merr();
+void userret(uint64, uint64);
 
 extern int devintr();
 
@@ -20,37 +22,38 @@ void
 trapinit(void)
 {
   initlock(&tickslock, "time");
-}
-
-// set up to take exceptions and traps while in the kernel.
-void
-trapinithart(void)
-{
-  w_stvec((uint64)kernelvec);
+  uint32 ecfg = ( 0U << CSR_ECFG_VS_SHIFT ) | HWI_VEC | TI_VEC;
+  uint64 tcfg = 0x1000000UL | CSR_TCFG_EN | CSR_TCFG_PER;
+  w_csr_ecfg(ecfg);
+  w_csr_tcfg(tcfg);
+  w_csr_eentry((uint64)kernelvec);
+  w_csr_tlbrentry((uint64)handle_tlbr);
+  w_csr_merrentry((uint64)handle_merr);
+  intr_on();
 }
 
 //
 // handle an interrupt, exception, or system call from user space.
-// called from trampoline.S
+// called from uservec.S
 //
 void
 usertrap(void)
 {
   int which_dev = 0;
 
-  if((r_sstatus() & SSTATUS_SPP) != 0)
+  if((r_csr_prmd() & PRMD_PPLV) == 0)
     panic("usertrap: not from user mode");
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
-  w_stvec((uint64)kernelvec);
+  w_csr_eentry((uint64)kernelvec);
 
   struct proc *p = myproc();
   
   // save user program counter.
-  p->trapframe->epc = r_sepc();
+  p->trapframe->era = r_csr_era();
   
-  if(r_scause() == 8){
+  if( ((r_csr_estat() & CSR_ESTAT_ECODE) >> 16) == 0xb){
     // system call
 
     if(p->killed)
@@ -58,9 +61,9 @@ usertrap(void)
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
-    p->trapframe->epc += 4;
+    p->trapframe->era += 4;
 
-    // an interrupt will change sstatus &c registers,
+    // an interrupt will change crmd & prmd registers,
     // so don't enable until done with those registers.
     intr_on();
 
@@ -68,8 +71,8 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    printf("usertrap(): unexpected trapcause %x pid=%d\n", r_csr_estat(), p->pid);
+    printf("            era=%p badi=%x\n", r_csr_era(), r_csr_badi());
     p->killed = 1;
   }
 
@@ -96,36 +99,35 @@ usertrapret(void)
   // we're back in user space, where usertrap() is correct.
   intr_off();
 
-  // send syscalls, interrupts, and exceptions to trampoline.S
-  w_stvec(TRAMPOLINE + (uservec - trampoline));
+  // send syscalls, interrupts, and exceptions to uservec.S
+  w_csr_eentry((uint64)uservec);  //maybe todo
 
   // set up trapframe values that uservec will need when
   // the process next re-enters the kernel.
-  p->trapframe->kernel_satp = r_satp();         // kernel page table
+  p->trapframe->kernel_pgdl = r_csr_pgdl();         // kernel page table
   p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
   p->trapframe->kernel_trap = (uint64)usertrap;
   p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
 
-  // set up the registers that trampoline.S's sret will use
+  // set up the registers that uservec.S's ertn will use
   // to get to user space.
   
-  // set S Previous Privilege mode to User.
-  unsigned long x = r_sstatus();
-  x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
-  x |= SSTATUS_SPIE; // enable interrupts in user mode
-  w_sstatus(x);
+  // set Previous Privilege mode to User Privilege3.
+  uint32 x = r_csr_prmd();
+  x |= PRMD_PPLV; // set PPLV to 3 for user mode
+  x |= PRMD_PIE; // enable interrupts in user mode
+  w_csr_prmd(x);
 
   // set S Exception Program Counter to the saved user pc.
-  w_sepc(p->trapframe->epc);
+  w_csr_era(p->trapframe->era);
 
-  // tell trampoline.S the user page table to switch to.
-  uint64 satp = MAKE_SATP(p->pagetable);
+  // tell uservec.S the user page table to switch to.
+  volatile uint64 pgdl = (uint64)(p->pagetable);
 
-  // jump to trampoline.S at the top of memory, which 
+  // jump to uservec.S at the top of memory, which 
   // switches to the user page table, restores user registers,
-  // and switches to user mode with sret.
-  uint64 fn = TRAMPOLINE + (userret - trampoline);
-  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+  // and switches to user mode with ertn.
+  userret(TRAPFRAME, pgdl);
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,
@@ -134,18 +136,17 @@ void
 kerneltrap()
 {
   int which_dev = 0;
-  uint64 sepc = r_sepc();
-  uint64 sstatus = r_sstatus();
-  uint64 scause = r_scause();
+  uint64 era = r_csr_era();
+  uint64 prmd = r_csr_prmd();
   
-  if((sstatus & SSTATUS_SPP) == 0)
-    panic("kerneltrap: not from supervisor mode");
+  if((prmd & PRMD_PPLV) != 0)
+    panic("kerneltrap: not from privilege0");
   if(intr_get() != 0)
     panic("kerneltrap: interrupts enabled");
 
   if((which_dev = devintr()) == 0){
-    printf("scause %p\n", scause);
-    printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
+    printf("estat %x\n", r_csr_estat());
+    printf("era=%p eentry=%p\n", r_csr_era(), r_csr_eentry());
     panic("kerneltrap");
   }
 
@@ -154,9 +155,15 @@ kerneltrap()
     yield();
 
   // the yield() may have caused some traps to occur,
-  // so restore trap registers for use by kernelvec.S's sepc instruction.
-  w_sepc(sepc);
-  w_sstatus(sstatus);
+  // so restore trap registers for use by kernelvec.S's instruction.
+  w_csr_era(era);
+  w_csr_prmd(prmd);
+}
+
+void 
+machine_trap()
+{
+  panic("machine error");
 }
 
 void
@@ -176,45 +183,42 @@ clockintr()
 int
 devintr()
 {
-  uint64 scause = r_scause();
+  uint32 estat = r_csr_estat();
+  uint32 ecfg = r_csr_ecfg();
 
-  if((scause & 0x8000000000000000L) &&
-     (scause & 0xff) == 9){
-    // this is a supervisor external interrupt, via PLIC.
+  if(estat & ecfg & HWI_VEC) {
+    // this is a hardware interrupt, via IOCR.
 
     // irq indicates which device interrupted.
-    int irq = plic_claim();
-
-    if(irq == UART0_IRQ){
+    uint64 irq = extioi_claim();
+    if(irq & (1UL << UART0_IRQ)){
       uartintr();
-    } else if(irq == VIRTIO0_IRQ){
-      virtio_disk_intr();
+
+    // tell the apic the device is
+    // now allowed to interrupt again.
+
+      extioi_complete(1UL << UART0_IRQ);
     } else if(irq){
-      printf("unexpected interrupt irq=%d\n", irq);
+       printf("unexpected interrupt irq=%d\n", irq);
+
+      apic_complete(irq); 
+      extioi_complete(irq);        
     }
 
-    // the PLIC allows each device to raise at most one
-    // interrupt at a time; tell the PLIC the device is
-    // now allowed to interrupt again.
-    if(irq)
-      plic_complete(irq);
-
     return 1;
-  } else if(scause == 0x8000000000000001L){
-    // software interrupt from a machine-mode timer interrupt,
-    // forwarded by timervec in kernelvec.S.
+  } else if(estat & ecfg & TI_VEC){
+    //timer interrupt,
 
     if(cpuid() == 0){
       clockintr();
     }
     
-    // acknowledge the software interrupt by clearing
-    // the SSIP bit in sip.
-    w_sip(r_sip() & ~2);
+    // acknowledge the timer interrupt by clearing
+    // the TI bit in TICLR.
+    w_csr_ticlr(r_csr_ticlr() | CSR_TICLR_CLR);
 
     return 2;
   } else {
     return 0;
   }
 }
-

@@ -9,4 +9,3 @@ struct buf {
   struct buf *next;
   uchar data[BSIZE];
 };
-

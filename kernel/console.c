@@ -18,7 +18,7 @@
 #include "fs.h"
 #include "file.h"
 #include "memlayout.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "proc.h"
 
@@ -55,6 +55,7 @@ struct {
 //
 // user write()s to the console go here.
 //
+
 int
 consolewrite(int user_src, uint64 src, int n)
 {

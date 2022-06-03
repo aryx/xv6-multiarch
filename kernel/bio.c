@@ -13,12 +13,11 @@
 // * Only one process at a time can use a buffer,
 //     so do not keep them longer than necessary.
 
-
 #include "types.h"
 #include "param.h"
 #include "spinlock.h"
 #include "sleeplock.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "fs.h"
 #include "buf.h"
@@ -96,7 +95,7 @@ bread(uint dev, uint blockno)
 
   b = bget(dev, blockno);
   if(!b->valid) {
-    virtio_disk_rw(b, 0);
+    ramdiskrw(b, 0);
     b->valid = 1;
   }
   return b;
@@ -108,7 +107,7 @@ bwrite(struct buf *b)
 {
   if(!holdingsleep(&b->lock))
     panic("bwrite");
-  virtio_disk_rw(b, 1);
+  ramdiskrw(b, 1);
 }
 
 // Release a locked buffer.
@@ -149,5 +148,4 @@ bunpin(struct buf *b) {
   b->refcnt--;
   release(&bcache.lock);
 }
-
 

@@ -1,6 +1,4 @@
-//
 // formatted console output -- printf, panic.
-//
 
 #include <stdarg.h>
 
@@ -11,7 +9,7 @@
 #include "fs.h"
 #include "file.h"
 #include "memlayout.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "proc.h"
 

@@ -1,7 +1,7 @@
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "spinlock.h"
 #include "proc.h"
 #include "syscall.h"
@@ -32,7 +32,7 @@ fetchstr(uint64 addr, char *buf, int max)
 }
 
 static uint64
-argraw(int n)
+argraw(int n)//todo
 {
   struct proc *p = myproc();
   switch (n) {

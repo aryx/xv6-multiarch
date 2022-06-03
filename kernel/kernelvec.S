@@ -1,121 +1,85 @@
 	#
-        # interrupts and exceptions while in supervisor
-        # mode come here.
-        #
+        # interrupts and exceptions while in privilege0
         # push all registers, call kerneltrap(), restore, return.
         #
+.section k_eentry
 .globl kerneltrap
 .globl kernelvec
 .align 4
 kernelvec:
         // make room to save registers.
-        addi sp, sp, -256
+        addi.d $sp, $sp, -256
 
         // save the registers.
-        sd ra, 0(sp)
-        sd sp, 8(sp)
-        sd gp, 16(sp)
-        sd tp, 24(sp)
-        sd t0, 32(sp)
-        sd t1, 40(sp)
-        sd t2, 48(sp)
-        sd s0, 56(sp)
-        sd s1, 64(sp)
-        sd a0, 72(sp)
-        sd a1, 80(sp)
-        sd a2, 88(sp)
-        sd a3, 96(sp)
-        sd a4, 104(sp)
-        sd a5, 112(sp)
-        sd a6, 120(sp)
-        sd a7, 128(sp)
-        sd s2, 136(sp)
-        sd s3, 144(sp)
-        sd s4, 152(sp)
-        sd s5, 160(sp)
-        sd s6, 168(sp)
-        sd s7, 176(sp)
-        sd s8, 184(sp)
-        sd s9, 192(sp)
-        sd s10, 200(sp)
-        sd s11, 208(sp)
-        sd t3, 216(sp)
-        sd t4, 224(sp)
-        sd t5, 232(sp)
-        sd t6, 240(sp)
+        st.d $ra, $sp, 0
+        st.d $tp, $sp, 8
+        st.d $sp, $sp, 16
+        st.d $a0, $sp, 24
+        st.d $a1, $sp, 32
+        st.d $a2, $sp, 40
+        st.d $a3, $sp, 48
+        st.d $a4, $sp, 56
+        st.d $a5, $sp, 64
+        st.d $a6, $sp, 72
+        st.d $a7, $sp, 80
+        st.d $t0, $sp, 88
+        st.d $t1, $sp, 96
+        st.d $t2, $sp, 104
+        st.d $t3, $sp, 112
+        st.d $t4, $sp, 120
+        st.d $t5, $sp, 128
+        st.d $t6, $sp, 136
+        st.d $t7, $sp, 144
+        st.d $t8, $sp, 152
+        st.d $r21, $sp,160
+        st.d $fp, $sp, 168
+        st.d $s0, $sp, 176
+        st.d $s1, $sp, 184
+        st.d $s2, $sp, 192
+        st.d $s3, $sp, 200
+        st.d $s4, $sp, 208
+        st.d $s5, $sp, 216
+        st.d $s6, $sp, 224
+        st.d $s7, $sp, 232
+        st.d $s8, $sp, 240
 
 	// call the C trap handler in trap.c
-        call kerneltrap
+        bl kerneltrap
 
-        // restore registers.
-        ld ra, 0(sp)
-        ld sp, 8(sp)
-        ld gp, 16(sp)
-        // not this, in case we moved CPUs: ld tp, 24(sp)
-        ld t0, 32(sp)
-        ld t1, 40(sp)
-        ld t2, 48(sp)
-        ld s0, 56(sp)
-        ld s1, 64(sp)
-        ld a0, 72(sp)
-        ld a1, 80(sp)
-        ld a2, 88(sp)
-        ld a3, 96(sp)
-        ld a4, 104(sp)
-        ld a5, 112(sp)
-        ld a6, 120(sp)
-        ld a7, 128(sp)
-        ld s2, 136(sp)
-        ld s3, 144(sp)
-        ld s4, 152(sp)
-        ld s5, 160(sp)
-        ld s6, 168(sp)
-        ld s7, 176(sp)
-        ld s8, 184(sp)
-        ld s9, 192(sp)
-        ld s10, 200(sp)
-        ld s11, 208(sp)
-        ld t3, 216(sp)
-        ld t4, 224(sp)
-        ld t5, 232(sp)
-        ld t6, 240(sp)
+        // restore register
+        ld.d $ra, $sp, 0
+        // not this, in case we moved CPUs: ld.d $tp, $sp, 8
+        ld.d $sp, $sp, 16
+        ld.d $a0, $sp, 24
+        ld.d $a1, $sp, 32
+        ld.d $a2, $sp, 40
+        ld.d $a3, $sp, 48
+        ld.d $a4, $sp, 56
+        ld.d $a5, $sp, 64
+        ld.d $a6, $sp, 72
+        ld.d $a7, $sp, 80
+        ld.d $t0, $sp, 88
+        ld.d $t1, $sp, 96
+        ld.d $t2, $sp, 104
+        ld.d $t3, $sp, 112
+        ld.d $t4, $sp, 120
+        ld.d $t5, $sp, 128
+        ld.d $t6, $sp, 136
+        ld.d $t7, $sp, 144
+        ld.d $t8, $sp, 152
+        ld.d $r21, $sp,160
+        ld.d $fp, $sp, 168
+        ld.d $s0, $sp, 176
+        ld.d $s1, $sp, 184
+        ld.d $s2, $sp, 192
+        ld.d $s3, $sp, 200
+        ld.d $s4, $sp, 208
+        ld.d $s5, $sp, 216
+        ld.d $s6, $sp, 224
+        ld.d $s7, $sp, 232
+        ld.d $s8, $sp, 240
 
-        addi sp, sp, 256
+        addi.d $sp, $sp, 256
 
         // return to whatever we were doing in the kernel.
-        sret
-
-        #
-        # machine-mode timer interrupt.
-        #
-.globl timervec
-.align 4
-timervec:
-        # start.c has set up the memory that mscratch points to:
-        # scratch[0,8,16] : register save area.
-        # scratch[24] : address of CLINT's MTIMECMP register.
-        # scratch[32] : desired interval between interrupts.
-        
-        csrrw a0, mscratch, a0
-        sd a1, 0(a0)
-        sd a2, 8(a0)
-        sd a3, 16(a0)
-
-        # schedule the next timer interrupt
-        # by adding interval to mtimecmp.
-        ld a1, 24(a0) # CLINT_MTIMECMP(hart)
-        ld a2, 32(a0) # interval
-        ld a3, 0(a1)
-        add a3, a3, a2
-        sd a3, 0(a1)
-
-        # raise a supervisor software interrupt.
-	li a1, 2
-        csrw sip, a1
-
-        ld a3, 16(a0)
-        ld a2, 8(a0)
-        ld a1, 0(a0)
-        csrrw a0, mscratch, a0
-
-        mret
+        ertn

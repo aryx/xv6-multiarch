@@ -1,34 +1,44 @@
 #include "types.h"
 #include "param.h"
-#include "memlayout.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
+#include "memlayout.h"
+
+// entry.S needs one stack per CPU.
+__attribute__ ((aligned (16))) char stack0[4096 * NCPU];
 
 volatile static int started = 0;
 
-// start() jumps here in supervisor mode on all CPUs.
+// entry.S jumps here on stack0.
 void
 main()
 {
-  if(cpuid() == 0){
+   if(cpuid() == 0){
     consoleinit();
     printfinit();
-    printf("\n");
-    printf("xv6 kernel is booting\n");
-    printf("\n");
+    
     kinit();         // physical page allocator
-    kvminit();       // create kernel page table
-    kvminithart();   // turn on paging
+//printf("kinit\n");
+    vminit();        // create kernel page table
+//printf("vminit\n");
     procinit();      // process table
+//printf("procinit\n");
     trapinit();      // trap vectors
-    trapinithart();  // install kernel trap vector
-    plicinit();      // set up interrupt controller
-    plicinithart();  // ask PLIC for device interrupts
+//printf("trapinit\n");
+    apic_init();     // set up LS7A1000 interrupt controller
+//printf("apicinit\n");
+    extioi_init();   // extended I/O interrupt controller
+//printf("extioi_init\n");
     binit();         // buffer cache
+//printf("binit\n");
     iinit();         // inode table
+//printf("iinit\n");
     fileinit();      // file table
-    virtio_disk_init(); // emulated hard disk
+//printf("fileinit\n");
+    ramdiskinit();   // emulated hard disk
+//printf("ramdiskinit\n");
     userinit();      // first user process
+//printf("userinit\n");
     __sync_synchronize();
     started = 1;
   } else {
@@ -36,10 +46,7 @@ main()
       ;
     __sync_synchronize();
     printf("hart %d starting\n", cpuid());
-    kvminithart();    // turn on paging
-    trapinithart();   // install kernel trap vector
-    plicinithart();   // ask PLIC for device interrupts
   }
-
-  scheduler();        
+    scheduler(); 
 }
+

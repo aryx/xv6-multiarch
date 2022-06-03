@@ -1,7 +1,7 @@
 // Sleeping locks
 
 #include "types.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "param.h"
 #include "memlayout.h"
@@ -50,6 +50,3 @@ holdingsleep(struct sleeplock *lk)
   release(&lk->lk);
   return r;
 }
-
-
-

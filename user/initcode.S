@@ -6,16 +6,16 @@
 # exec(init, argv)
 .globl start
 start:
-        la a0, init
-        la a1, argv
-        li a7, SYS_exec
-        ecall
+        la   $a0, init
+        la   $a1, argv
+        li.d $a7, SYS_exec
+        syscall 0
 
 # for(;;) exit();
 exit:
-        li a7, SYS_exit
-        ecall
-        jal exit
+        li.d $a7, SYS_exit
+        syscall 0
+        bl exit
 
 # char init[] = "/init\0";
 init:

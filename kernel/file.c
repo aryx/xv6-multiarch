@@ -1,9 +1,7 @@
-//
 // Support functions for system calls that involve file descriptors.
-//
 
 #include "types.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "param.h"
 #include "fs.h"
@@ -104,7 +102,7 @@ filestat(struct file *f, uint64 addr)
 // Read from file f.
 // addr is a user virtual address.
 int
-fileread(struct file *f, uint64 addr, int n)
+fileread(struct file *f, uint64 addr, int n)//todo
 {
   int r = 0;
 
@@ -179,4 +177,3 @@ filewrite(struct file *f, uint64 addr, int n)
 
   return ret;
 }
-

@@ -1,5 +1,5 @@
 #include "types.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "param.h"
 #include "spinlock.h"
@@ -233,4 +233,3 @@ log_write(struct buf *b)
   }
   release(&log.lock);
 }
-

@@ -10,7 +10,7 @@
 // are in sysfile.c.
 
 #include "types.h"
-#include "riscv.h"
+#include "loongarch.h"
 #include "defs.h"
 #include "param.h"
 #include "stat.h"

@@ -6,7 +6,7 @@
 #include "kernel/fcntl.h"
 #include "kernel/syscall.h"
 #include "kernel/memlayout.h"
-#include "kernel/riscv.h"
+#include "kernel/loongarch.h"
 
 //
 // Tests xv6 system calls.  usertests without arguments runs them all
@@ -2211,7 +2211,7 @@ kernmem(char *s)
   char *a;
   int pid;
 
-  for(a = (char*)(KERNBASE); a < (char*) (KERNBASE+2000000); a += 50000){
+  for(a = (char*)(RAMBASE); a < (char*) (RAMBASE+2000000); a += 50000){
     pid = fork();
     if(pid < 0){
       printf("%s: fork failed\n", s);

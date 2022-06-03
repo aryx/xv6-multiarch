@@ -10,9 +10,9 @@ sub entry {
     my $name = shift;
     print ".global $name\n";
     print "${name}:\n";
-    print " li a7, SYS_${name}\n";
-    print " ecall\n";
-    print " ret\n";
+    print " li.d \$a7, SYS_${name}\n";
+    print " syscall 0\n";
+    print " jirl \$zero, \$ra, 0\n";
 }
 	
 entry("fork");
