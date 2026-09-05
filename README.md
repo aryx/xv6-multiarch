@@ -81,6 +81,47 @@ Lineage transitions inside MIT's own history are tagged too:
 `history/x86-riscv-split`, `history/amd64-start`, `history/amd64-last`,
 `history/riscv-transition`.
 
+## What each fork contributed
+
+Commits each port added *after* leaving the shared lineage — i.e. the actual
+porting work, excluding the xv6 history it inherited. This is why the repo is
+2,050 commits rather than 13 × 1,700: almost everything is shared, and each
+port is a comparatively small delta on top.
+
+| arch | own commits | years | principal authors |
+|---|---|---|---|
+| `riscv` | 703 | 2018-2026 | Robert Morris, Frans Kaashoek |
+| `x86_64` | 124 | 2012-2023 | Brian Swetland, Jim Huang |
+| `aarch64` | 84 | 2021-2023 | Keisuke Iida |
+| `rpi2` | 44 | 2017-2022 | Zhiyi Huang |
+| `amd64` | 22 | 2018 | Frans Kaashoek |
+| `mips` | 22 | 2014-2016 | Yuichi Nishiwaki, Takaya Saeki |
+| `loongarch` | 20 | 2022-2023 | luoszu, zhangxi |
+| `rpi1` | 14 | 2014 | Zhiyi Huang |
+| `d1` | 9 | 2021-2022 | Michael Engel, Daniel Maslowski |
+| `x86` | 4 | 2019-2020 | Frans Kaashoek, James Houghton |
+| `rv32` | 3 | 2020-2021 | Michael Engel |
+| `armv6-rpi` | 2 | 2017 | inaciose |
+| `armv7-rpi` | 2 | 2017 | inaciose |
+
+Some of these need reading with care:
+
+- **`riscv`'s 703** is not one port — it is MIT's whole post-2019 line,
+  including the amd64 experiment and its removal, and continues to today. The
+  `amd64` row's 22 commits are a *segment of that same lineage*, not separate
+  work: amd64 is a tip on MIT's own history, not a fork of it.
+- **`x86` only has 4** because the x86 repo was retired shortly after RISC-V
+  took over; its real substance is the 1,000 commits of shared history every
+  other row is built on.
+- **`x86_64` starts in 2012**, before its own fork point, because it carries
+  Brian Swetland's restructuring commits with their original author dates.
+- **`rpi1`'s 14 and `rpi2`'s 44** understate the family: `armv6-rpi` and
+  `rpi2` both build on `rpi1`, so the ARM Raspberry Pi lineage is ~60 commits
+  of shared effort across three repositories and two authors.
+- **The small numbers are not small ports.** `armv6-rpi` and `armv7-rpi` each
+  landed an entire working ARM port in a single "initial import" commit. Commit
+  count measures how the work was *published*, not how much of it there was.
+
 ## Browsing
 
 ```sh
