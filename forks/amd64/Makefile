@@ -82,6 +82,12 @@ XFLAGS = -m64 -mcmodel=large -ggdb
 CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer
 CFLAGS += -ffreestanding -fno-common -nostdlib $(XFLAGS)
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+# claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
+# sh.c's runcmd() - same recursive-descent shell interpreter every
+# other xv6-public-descended fork here shares, see forks/x86/Makefile's
+# own identical fix and comment for the full explanation. Confirmed via
+# x86_64-linux-gnu-gcc 13.3.0.
+CFLAGS += -Wno-infinite-recursion
 ASFLAGS = -gdwarf-2 -Wa,-divide $(XFLAGS)
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m $(shell $(LD) -V | grep elf_x86_64 2>/dev/null | head -n 1)

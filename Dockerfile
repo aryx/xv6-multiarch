@@ -8,9 +8,9 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only three
-# arches are wired up so far (riscv64, i386, x86_64 - build-and-test-
-# plan.md's Phases 1, 2, and the start of 4), not all thirteen forks/ -
+# for the general reasoning this one reuses. Simpler here: only four
+# arches are wired up so far (riscv64, i386, x86_64, amd64 - build-and-
+# test-plan.md's Phases 1, 2, and Phase 4), not all thirteen forks/ -
 # extend the ARCH case below (both the apt-get and the build/test one)
 # as more arches get their own ./configure detection, matching
 # build.md's own Phase 4 order.
@@ -76,6 +76,8 @@ RUN case "$ARCH" in \
       i386)    apt-get install -y --no-install-recommends \
                  gcc-i686-linux-gnu libc6-dev-i386-cross qemu-system-x86 ;; \
       x86_64)  apt-get install -y --no-install-recommends \
+                 gcc-x86-64-linux-gnu qemu-system-x86 ;; \
+      amd64)   apt-get install -y --no-install-recommends \
                  gcc-x86-64-linux-gnu qemu-system-x86 ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \

@@ -13,9 +13,9 @@
 # riscv64 port; forks/x86 is the i386 one). See ./configure's own header
 # comment for why the directories themselves aren't renamed to match.
 #
-# Currently wired for riscv64, i386, and x86_64 - see
-# docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4's
-# first port (see docs/claude_notes/notes_arch_x86_64.txt).
+# Currently wired for riscv64, i386, x86_64, and amd64 - see
+# docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4
+# (see docs/claude_notes/notes_arch_x86_64.txt, notes_arch_amd64.txt).
 
 -include Makefile.config
 
@@ -25,10 +25,13 @@ TOOLPREFIX_I386 ?=
 QEMU_I386 ?= qemu-system-i386
 TOOLPREFIX_X86_64 ?=
 QEMU_X86_64 ?= qemu-system-x86_64
+TOOLPREFIX_AMD64 ?=
+QEMU_AMD64 ?= qemu-system-x86_64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
         build-x86_64 run-x86_64 test-x86_64 clean-x86_64 kill-x86_64 check-x86_64-toolchain \
+        build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -155,17 +158,48 @@ kill-x86_64:
 	-pkill -f '$(QEMU_X86_64)' 2>/dev/null || true
 
 ###############################################################################
+# amd64 (forks/amd64, MIT's own abandoned 2018 x86-64 experiment)
+###############################################################################
+
+check-amd64-toolchain:
+	@if [ "$(TOOLPREFIX_AMD64)" = NONE ] || [ "$(QEMU_AMD64)" = NONE ]; then \
+		echo "Makefile: amd64 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+# Unlike every other fork here, this one boots via QEMU's own multiboot
+# "-kernel" loading (see docs/claude_notes/notes_arch_amd64.txt) - no
+# bootblock/xv6.img to build, just "kernel" and "fs.img" directly.
+build-amd64: check-amd64-toolchain
+	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) kernel fs.img
+
+run-amd64: check-amd64-toolchain
+	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) qemu-nox
+
+# Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
+# forks/riscv's/forks/x86's own test-<arch> targets (forks/amd64/
+# Makefile's own "QEMU = qemu-system-x86_64" has no ifndef guard either).
+test-amd64: check-amd64-toolchain build-amd64
+	cd forks/amd64 && TOOLPREFIX=$(TOOLPREFIX_AMD64) ./test-xv6.py
+
+clean-amd64:
+	$(MAKE) -C forks/amd64 clean
+
+kill-amd64:
+	-pkill -f '$(QEMU_AMD64)' 2>/dev/null || true
+
+###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64
+build-all: build-riscv64 build-i386 build-x86_64 build-amd64
 
-test-all: test-riscv64 test-i386 test-x86_64
+test-all: test-riscv64 test-i386 test-x86_64 test-amd64
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64
+clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64
+kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

@@ -1,0 +1,138 @@
+notes_arch_amd64.txt
+=====================
+
+Written: 2026-09-06, against commit a2bc551 (the fully-working x86_64
+commit). Phase 4 of docs/claude_notes/build-and-test-plan.md, second port
+attempted from that phase's list. Ends at "builds clean, boots, passes
+the full usertests suite" on the FIRST real boot attempt, needing only
+one of the two GCC-false-positive fixes forks/x86/forks/x86_64 both
+needed - by far the easiest bring-up so far. See
+docs/claude_notes/notes_arch_x86_64.txt for the harder sibling story this
+one contrasts with.
+
+What this is
+------------
+forks/amd64 is MIT's own abandoned 2018 x86-64 experiment - not a
+third-party fork at all, but a preserved point in MIT's own xv6-riscv
+history, on the same lineage as forks/riscv itself (see the root
+README's and docs/PROVENANCE.md's own "x86, amd64 and riscv are one
+repository" section: `arch/x86`, `arch/riscv`, and `arch/amd64` are
+three tips of one shared lineage, diverging only in which commit each
+one stops at). MIT deleted this experiment a year later in favor of
+RISC-V (`2ec1959fd`, 2019-05-31, starts removing `mmu.h`/`msr.h` and
+adding `riscv.h`).
+
+Structurally, forks/amd64 is much closer to forks/x86 than to
+forks/x86_64: same flat, pre-2019 layout (no kernel/user split, no
+out-of-tree object directories), same classic MIT xv6-public file names.
+The one real structural departure: **it boots via QEMU's own multiboot
+"-kernel" loading**, not a hand-assembled boot sector - there is no
+`bootasm.S`/`bootmain.c` two-stage bootloader and no `xv6.img` disk image
+at all, only `fs.img` (the filesystem). The root README's own
+acknowledgment of this port's history explains why: *"qemu cannot load
+64bit ELF kernels... implement a 32bit multiboot header and shim"* -
+`entry.S`/`entryother.S` carry that multiboot glue directly, and
+`kernel.ld`'s own load address is one QEMU's built-in loader understands
+without a BIOS boot sector at all. This also means forks/amd64 has an
+`msr.h` (raw Model-Specific-Register access) that neither forks/x86 nor
+forks/x86_64 needs - required for its own from-scratch 32-to-64-bit
+long-mode transition code.
+
+Toolchain: same as x86_64, but the fork's own auto-detect is broken for 64-bit
+------------------------------------------------------------------------------------
+`x86_64-linux-gnu-gcc`/`qemu-system-x86_64` - already installed, already
+covered by the same apt packages `x86_64`/`i386` needed. Unlike
+forks/x86_64, this fork DOES have a TOOLPREFIX auto-detect block - but
+it's a direct copy-paste of forks/x86's own i386 probe, checking
+`elf32-i386` even though this Makefile builds a 64-bit kernel
+(`-m64 -mcmodel=large`). Left as-is (not this repo's fork to fix for a
+mismatch that never mattered to its own author - passing TOOLPREFIX
+explicitly bypasses the auto-detect entirely via the same `ifndef` guard
+every other TOOLPREFIX-based fork honors); `./configure`'s own x86_64-ISA
+detection correctly checks `elf64-x86-64` and is what this repo actually
+relies on.
+
+Same `-Winfinite-recursion` false positive as every xv6-public-descended sh.c - the ONLY fix needed
+--------------------------------------------------------------------------------------------------------------
+Building the kernel itself succeeded with **zero** changes needed - no
+`-Warray-bounds` failure on `mp.c` at all, unlike forks/x86. The only
+build failure was the now-familiar GCC 12+ `-Winfinite-recursion` false
+positive on `sh.c`'s `runcmd()` (see notes_arch_i386.txt's own
+first-occurrence writeup) - fixed identically,
+`CFLAGS += -Wno-infinite-recursion`, with a comment pointing back at
+forks/x86/Makefile's own fix.
+
+Why `mp.c`'s `-Warray-bounds` didn't fire here: this Makefile's real
+`CFLAGS` line has no `-O2`/`-Os`/any optimization flag at all (the
+original author's intended `-O2 -Wall ... -Werror` line is present but
+literally commented out, superseded by an unoptimized line right below
+it) - it builds at GCC's default, `-O0`. `-Warray-bounds`'s
+interprocedural analysis needs the extra optimization passes `-O1`+
+enables to see far enough to (mis)trigger; at `-O0` it never gets the
+chance. This is a real, if accidental, illustration of
+notes_debugging_techniques.txt item 1's own point: whether a
+newer-GCC-vs-older-code false positive actually manifests depends on
+more than just the warning existing - the exact flags matter too.
+
+No filesystem-capacity fix needed either
+------------------------------------------------
+`include/fs.h`'s own `NDIRECT` is already 12 here (not 10, unlike
+forks/x86/forks/x86_64's original value) - giving `MAXFILE*BSIZE =
+(12+128)*512 = 71680` bytes. The compiled `usertests` binary here is
+68760 bytes (smaller than forks/x86_64's 79728-byte `-Os`-optimized one,
+consistent with `-mcmodel=large`+`-O0` producing different code size
+trade-offs than `-mcmodel=kernel`+`-Os`) - comfortably under budget with
+~2900 bytes to spare. `FSSIZE` stayed at the original 1000 with no
+reported space pressure either. Neither of forks/x86_64's two capacity
+bugs needed reproducing here.
+
+No PIC/IOAPIC interrupt bug either
+---------------------------------------
+The boot transcript shows no ACPI parsing at all (`main.c`'s own MP-table
+path, not the ACPI path forks/x86_64 uses) and reaches `init: starting
+sh` immediately, with no `hlt()`-parked hang of any kind observed. Not
+deeply investigated further given it worked on the first real attempt -
+if a future session ever needs to dig into this fork's own interrupt
+setup, checking whether it shares forks/x86_64's `picenable()`-plus-
+`ioapicenable()` double-unmask pattern would be the first thing to check
+(see notes_debugging_techniques.txt item 7), but there was no symptom
+here that would have justified that investigation.
+
+Verification: full boot and full usertests pass, first real attempt
+--------------------------------------------------------------------------
+  make -C forks/amd64 TOOLPREFIX=x86_64-linux-gnu- QEMU=qemu-system-x86_64 fs.img
+    -> kernel, fs.img both build clean (one -Wno- fix)
+  qemu-system-x86_64 -nographic -kernel kernel -drive file=fs.img,... -smp 2 -m 512
+    -> boots straight through to "init: starting sh", "$" prompt - full
+       untraced speed, first real attempt, no further fixes needed
+  echo usertests -> runs the full suite, prints "ALL TESTS PASSED"
+
+Same benign trap pattern as forks/x86_64's own uio test (a deliberate
+invalid-pointer probe the kernel is expected to catch and kill cleanly,
+not a regression) appeared here too: `pid 591 usertests: trap 13 err 0
+on cpu 0 rip 0x5f9e addr 0x1dc130--kill proc`.
+
+Fully wired up this session
+--------------------------------
+- `./configure`: `TOOLPREFIX_AMD64`/`QEMU_AMD64` detection (checking
+  `elf64-x86-64`, correctly, unlike the fork's own broken probe).
+- Top-level Makefile: `build-amd64`/`run-amd64`/`test-amd64`/
+  `clean-amd64`/`kill-amd64`, folded into `build-all`/`test-all`/
+  `clean-all`/`kill-all`. No `CPUS` override needed - this fork already
+  hardcodes `CPUS := 2` in its own Makefile, unlike forks/x86_64's
+  host-core-count default.
+- `forks/amd64/test-xv6.py`, modeled on forks/x86/test-xv6.py, adjusted
+  for the multiboot boot mechanism (no `xv6.img` build step).
+- Dockerfile `ARCH=amd64` case (identical package set to `x86_64`'s -
+  same toolchain, same qemu) and a matching
+  `.github/workflows/docker.yml` matrix entry.
+
+Still open (not done this session)
+--------------------------------------
+- Whether this fork shares forks/x86_64's PIC/IOAPIC double-unmask
+  pattern was not checked, since nothing here needed it fixed - worth a
+  quick look if a future change to interrupt handling in either fork
+  ever needs cross-checking (notes_debugging_techniques.txt item 7).
+- The Docker `ARCH=amd64` build was verified locally with the exact
+  `--build-arg ARCH=amd64` before committing (per
+  notes_debugging_techniques.txt item 6), same as every other arch here.

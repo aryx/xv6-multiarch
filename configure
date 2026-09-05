@@ -55,6 +55,8 @@ TOOLPREFIX_I386=${TOOLPREFIX_I386:-}
 QEMU_I386=${QEMU_I386:-}
 TOOLPREFIX_X86_64=${TOOLPREFIX_X86_64:-}
 QEMU_X86_64=${QEMU_X86_64:-}
+TOOLPREFIX_AMD64=${TOOLPREFIX_AMD64:-}
+QEMU_AMD64=${QEMU_AMD64:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -64,6 +66,8 @@ for arg in "$@"; do
         --qemu-i386=*)          QEMU_I386="${arg#--qemu-i386=}" ;;
         --toolprefix-x86_64=*)  TOOLPREFIX_X86_64="${arg#--toolprefix-x86_64=}" ;;
         --qemu-x86_64=*)        QEMU_X86_64="${arg#--qemu-x86_64=}" ;;
+        --toolprefix-amd64=*)   TOOLPREFIX_AMD64="${arg#--toolprefix-amd64=}" ;;
+        --qemu-amd64=*)         QEMU_AMD64="${arg#--qemu-amd64=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -75,6 +79,9 @@ for arg in "$@"; do
             echo "  --toolprefix-x86_64=PREFIX   override the x86_64 cross-toolchain prefix"
             echo "                               (e.g. x86_64-linux-gnu-)"
             echo "  --qemu-x86_64=CMD            override the x86_64 qemu-system binary"
+            echo "  --toolprefix-amd64=PREFIX    override the amd64 cross-toolchain prefix"
+            echo "                               (e.g. x86_64-linux-gnu-)"
+            echo "  --qemu-amd64=CMD             override the amd64 qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -272,6 +279,36 @@ if ! detect_qemu_system x86_64 QEMU_X86_64 qemu-system-x86_64; then
 fi
 
 ###############################################################################
+# amd64 (forks/amd64, MIT's own abandoned 2018 x86-64 experiment)
+###############################################################################
+# forks/amd64/Makefile DOES have a TOOLPREFIX auto-detect (copy-pasted
+# from forks/x86's own i386 one, per its identical structure), but it
+# still probes for the 32-bit "elf32-i386" objdump marker even though
+# this fork builds a 64-bit kernel (-m64 -mcmodel=large) - an apparent
+# leftover from that copy-paste, never updated for 64-bit. Left
+# untouched (not this repo's fork to "fix" just for that), but it means
+# the auto-detect will never actually find a real 64-bit toolchain on
+# its own; passing TOOLPREFIX explicitly (as this script's own
+# detection does, correctly checking elf64-x86-64) bypasses it entirely
+# via the same ifndef guard every other TOOLPREFIX-based fork honors.
+
+if ! detect_toolprefix amd64 TOOLPREFIX_AMD64 elf64-x86-64 \
+        x86_64-linux-gnu- x86_64-elf- ''; then
+    echo "configure: warning: no amd64 toolchain on PATH (needed for forks/amd64)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-x86-64-linux-gnu" >&2
+    note_other_pkgmgr
+fi
+
+# forks/amd64/Makefile enforces no minimum QEMU version of its own.
+if ! detect_qemu_system amd64 QEMU_AMD64 qemu-system-x86_64; then
+    echo "configure: warning: no qemu-system-x86_64 on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-x86" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -293,6 +330,10 @@ fi
     echo "# x86_64 (forks/x86_64 - jserv/xv6-x86_64)"
     echo "export TOOLPREFIX_X86_64=$TOOLPREFIX_X86_64"
     echo "export QEMU_X86_64=$QEMU_X86_64"
+    echo
+    echo "# amd64 (forks/amd64 - MIT's own abandoned 2018 x86-64 experiment)"
+    echo "export TOOLPREFIX_AMD64=$TOOLPREFIX_AMD64"
+    echo "export QEMU_AMD64=$QEMU_AMD64"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -302,7 +343,10 @@ echo "  TOOLPREFIX_I386     = $TOOLPREFIX_I386"
 echo "  QEMU_I386           = $QEMU_I386"
 echo "  TOOLPREFIX_X86_64   = $TOOLPREFIX_X86_64"
 echo "  QEMU_X86_64         = $QEMU_X86_64"
+echo "  TOOLPREFIX_AMD64    = $TOOLPREFIX_AMD64"
+echo "  QEMU_AMD64          = $QEMU_AMD64"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
 echo "  or: make build-x86_64 && make run-x86_64"
+echo "  or: make build-amd64 && make run-amd64"
