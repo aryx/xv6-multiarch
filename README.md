@@ -1,9 +1,16 @@
 # xv6-multiarch
 
-xv6 for **13 architectures and eras** in one repository, assembled from 12
-separate upstream repos, with history stitched together so that `git blame`
-traces every unchanged line back to the original 2006 MIT import — even for
-ports that began as a fresh `git init` with no shared history at all.
+**13 xv6 ports, covering 8 instruction sets** — i386, x86-64, ARM32, AArch64,
+RV64, RV32, MIPS and LoongArch — in one repository, assembled from 12 separate
+upstream repos, with history stitched together so that `git blame` traces every
+unchanged line back to the original 2006 MIT import, even for ports that began
+as a fresh `git init` with no shared history at all.
+
+Thirteen ports rather than thirteen architectures: several target the same
+instruction set independently (`amd64` and `x86_64` are unrelated x86-64
+efforts; four separate ARM32 ports exist), and `amd64` is not a fork at all but
+a preserved point in MIT's own timeline — their 2018 x86-64 experiment, deleted
+a year later when RISC-V replaced it.
 
 ```
 arch/
