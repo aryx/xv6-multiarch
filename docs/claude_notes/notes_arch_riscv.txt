@@ -1,0 +1,200 @@
+notes_arch_riscv.txt
+====================
+
+Written: 2026-09-05, against commit 7237b41 (parent of the commit adding
+this file, ./configure, and the top-level Makefile). This is Phase 1 of
+docs/claude_notes/build-and-test-plan.md: get one arch - the riscv-family
+mainline, forks/riscv (MIT's own current xv6-riscv) - building and booting
+under QEMU before replicating the shape to the other twelve forks/<name>
+trees. All claims below are VERIFIED on this machine (Ubuntu 24.04.2 LTS,
+aarch64 host), not inferred from upstream docs.
+
+What this is
+------------
+forks/riscv is MIT's own current teaching OS (2019-present, see the root
+README's fork-point table). Unlike most of the other twelve ports, it
+needed no code changes at all to build and boot on a modern (2026) host -
+the entire bring-up here was toolchain/QEMU *detection*, not porting. That
+is itself the finding worth recording: this port is actively maintained
+upstream (its own CI, per forks/riscv/.github/workflows/test.yml, still
+runs on current Ubuntu), so it is the healthiest starting point in the
+tree, exactly as build-and-test-plan.md predicted before any of this was
+tried.
+
+Toolchain: already installed, no cross-compiler bring-up needed
+-----------------------------------------------------------------
+Both `riscv64-unknown-elf-gcc` and `riscv64-linux-gnu-gcc` were already on
+this host (confirmed via `dpkg -l | grep riscv`) - this machine had
+already had the cross-toolchain packages from
+docs/claude_notes/build-and-test-plan.md's own table installed previously.
+forks/riscv/Makefile's own TOOLPREFIX auto-detect (an `ifndef` block
+probing riscv64-unknown-elf-, riscv64-elf-, riscv64-none-elf-,
+riscv64-linux-gnu-, riscv64-unknown-linux-gnu-, in that order, via each
+prefix's own `objdump -i | grep elf64-big`) picks riscv64-unknown-elf-
+first, and that is sufficient - no flag surgery, no `-Wno-error` overrides,
+none of the "expect breakage" 2013-2023-kernel-vs-2020s-compiler friction
+build-and-test-plan.md warns about elsewhere in the tree. `make
+build-riscv` (this repo's own top-level target, see below) compiles kernel
++ userland + mkfs and links fs.img on the first try.
+
+What WAS missing: qemu-system-riscv64 and bc
+-----------------------------------------------
+Two real gaps, both packaging, neither code:
+
+- `qemu-system-riscv64` was NOT installed (`dpkg -l | grep qemu-system`
+  showed only qemu-system-arm/-x86/-common/-data/-gui - the common-target
+  packages, not the less-common ones). Fixed: `sudo apt install
+  qemu-system-misc` - this is the Debian/Ubuntu package bundling the
+  FULL-SYSTEM emulators for riscv/mips/loongarch/m68k/sparc/etc, distinct
+  from qemu-user's per-arch user-mode binaries (the ones ~/c--/configure's
+  own RUN_<ARCH> detection cares about - see that script's own
+  detect_backend). xv6 is a freestanding kernel needing a whole virtual
+  machine (RAM, UART, virtio-mmio disk via `-machine virt -bios none
+  -kernel ...`), not user-mode syscall translation of a single Linux
+  binary - the two qemu families are not interchangeable and this
+  distinction is worth remembering when doing the same detection for the
+  other twelve ports (`riscv32`/`d1` need qemu-system-riscv32/riscv64 the
+  same way; `mips`/`loongarch` will need the same qemu-system-misc
+  package).
+- `bc` was also not installed, and forks/riscv/Makefile's own
+  check-qemu-version target (a dependency of its `qemu` target) shells out
+  to it unconditionally to compare the installed QEMU_VERSION against
+  MIN_QEMU_VERSION=7.2. Installed QEMU here is 8.2.2, comfortably above
+  that floor, but the check itself is a hard requirement of the fork's own
+  Makefile, not optional. `sudo apt install bc` fixed it.
+
+A PATH hazard found while writing ./configure: don't trust the first `sed`/`bc` on PATH
+------------------------------------------------------------------------------------------
+./configure's first draft reproduced forks/riscv/Makefile's own
+check-qemu-version logic (parse `qemu-system-riscv64 --version` with
+`sed -E`, compare against MIN_QEMU_VERSION with `bc`) to report a stale or
+missing QEMU up front rather than failing deep inside `make qemu`. It
+failed immediately on this machine: `sed: Unknown flag: E`, then a `bc`
+"Illegal number: stdin:1 syntax error" on an empty comparison. Root cause,
+confirmed via `which -a sed`/`which -a bc` and `file` on the resolved
+binaries: `~/goken`'s own build prepends
+`~/goken/ROOT/arch/boot-gcc/bin` onto PATH, and that directory holds
+goken's own self-built, minimal `sed`/`bc` (aarch64 ELF binaries, part of
+goken's self-hosting bootstrap toolchain, not GNU coreutils) - they shadow
+`/usr/bin/sed`/`/usr/bin/bc` ahead of them on PATH, and neither
+reimplementation supports `sed -E` (extended regex) or a bare
+boolean-expression `bc` invocation (`echo "8.2 >= 7.2" | bc` -> syntax
+error on goken's bc, `1` on the real one). Confirmed directly: `/usr/bin/
+sed -E '...'` and `/usr/bin/bc` both work correctly; the shadowing
+binaries do not.
+
+Fix applied: ./configure's version check no longer calls `sed` or `bc` at
+all - it parses "QEMU emulator version 8.2.2 (...)" with plain POSIX shell
+parameter expansion (`${VAR#*version }`, `${VAR%% *}`, `${VAR%%.*}`,
+`${VAR#*.}`) and compares major/minor with integer `[ -gt ]`/`[ -eq ]`/
+`[ -ge ]`, the same style ~/c--/configure already uses for its own
+OCAML_MAJOR/OCAML_MINOR check (there via `cut -d. -f1/-f2`, avoided here
+too since `cut` is exactly the same class of hazard). This is not a
+workaround specific to goken being on this PATH - it is a strictly more
+portable check that doesn't depend on which of possibly several
+same-named tools a given host's PATH resolves first, and should be the
+template for any future arch's version-detection in this script.
+forks/riscv/Makefile's OWN check-qemu-version target still uses `bc`
+directly (untouched - it's upstream's file, not this repo's to patch for
+Phase 1), so `bc` being on PATH (a real one - the user later removed the
+goken shadow binaries entirely) is still a real prerequisite; ./configure
+now just also warns explicitly if `bc` is missing, separately from its own
+(bc-free) version check.
+
+./configure and the top-level Makefile
+-----------------------------------------
+Modeled directly on ~/c--/configure (see that script's own header comment
+for the general shape: detect what's needed, warn with an apt-hint and a
+NONE sentinel rather than hard-fail on an optional piece, write
+Makefile.config as "export VAR=value" lines a top-level Makefile
+`-include`s). Scoped deliberately narrow for this phase - riscv only, no
+generalized detect_backend-style helper yet (not worth the indirection
+for a single call site; add one when a second arch actually needs it, per
+the user's own explicit steer this session).
+
+Detects and writes:
+  TOOLPREFIX_RISCV   (riscv64-unknown-elf-, matching forks/riscv/Makefile's
+                      own probe order exactly, so ./configure's choice
+                      never disagrees with what that Makefile would pick
+                      on its own)
+  QEMU_RISCV         (full path via `command -v qemu-system-riscv64`)
+
+Top-level Makefile targets (all riscv-only for now, each with a matching
+umbrella target that will grow a per-arch prerequisite as more forks land):
+  build-riscv   - kernel/kernel + fs.img
+  run-riscv     - interactive boot, -nographic (see "exiting QEMU" below)
+  test-riscv    - runs forks/riscv/test-xv6.py's own `usertests` tier -
+                  this doubles as the "does qemu actually work" smoke test,
+                  reusing MIT's upstream harness rather than writing a new
+                  one, per build-and-test-plan.md's own explicit guidance
+                  ("Model it on arch/riscv/test-xv6.py... reuse its
+                  approach rather than inventing one")
+  clean-riscv, clean   - $(MAKE) -C forks/riscv clean
+  kill-riscv, kill     - pkill -f against the exact QEMU_RISCV command
+                  ./configure detected (not just the bare binary name),
+                  for a stuck/detached qemu-system-riscv64 left running in
+                  the background after an interactive `run-riscv`/
+                  `test-riscv` session
+
+One real subtlety documented in the Makefile itself: forks/riscv/Makefile
+guards TOOLPREFIX with `ifndef` (so an environment-sourced value, e.g. one
+this repo's Makefile exports into test-xv6.py's `make qemu` subprocess,
+correctly takes effect - ifndef only checks for a non-empty value,
+regardless of origin) but does NOT guard QEMU the same way - `QEMU =
+qemu-system-riscv64` is an unconditional plain assignment, which always
+wins over an environment-sourced QEMU regardless of origin. Harmless in
+practice (QEMU_RISCV is just the bare command name once found on PATH,
+identical to that hardcoded default), but worth knowing before assuming
+every var this fork's Makefile defines is environment-overridable the same
+way.
+
+Verification: build and full usertests, no patches needed
+--------------------------------------------------------------
+  ./configure
+    -> found riscv64-unknown-elf-gcc (riscv)
+    -> found /usr/bin/qemu-system-riscv64, version 8.2.2 (riscv)
+  make build-riscv
+    -> kernel/kernel and fs.img built clean, zero warnings-as-errors hit
+       (forks/riscv/Makefile builds with -Wall -Werror)
+  make test-riscv
+    -> boots under qemu-system-riscv64 -machine virt -bios none, runs the
+       full usertests suite via test-xv6.py, ends "ALL TESTS PASSED",
+       process exit 0
+
+One line in the transcript is worth flagging so it isn't mistaken for a
+regression later: during the `lazy_unmap` test, the kernel prints
+`usertrap(): unexpected scause 0xf pid=<n>` to the console, then the test
+still reports `OK`. This is expected: lazy_unmap deliberately unmaps a
+page and then touches it to provoke exactly this trap (scause 0xf = store/
+AMO page fault) as part of what it's testing, not a fault in this repo's
+setup - included here only so a future "does the log look clean" check
+doesn't waste time re-investigating it.
+
+Exiting QEMU after `make run-riscv`
+---------------------------------------
+`-nographic` attaches the guest's serial console directly to the
+invoking terminal, so ordinary keystrokes (including Ctrl-C/Ctrl-D) go to
+the xv6 shell, not to QEMU - there is no in-guest "exit qemu" command.
+QEMU's own escape is Ctrl-A then a single key: **Ctrl-A X** quits QEMU
+immediately; **Ctrl-A C** instead switches to the QEMU monitor (a
+`(qemu)` prompt) where `quit` does the same more deliberately. If a
+session is detached/killed without going through either of these (e.g. an
+interrupted `run-riscv`), `make kill-riscv`/`make kill` cleans up the
+orphaned qemu-system-riscv64 process - confirmed by leaving one running
+this session and observing `pkill -f` remove it while leaving the
+Makefile-invoking shell itself untouched.
+
+Still open (not done this session)
+--------------------------------------
+- Makefile.config is generated/host-specific and not yet gitignored -
+  needs a .gitignore entry before this work is committed (deliberately
+  left for that commit, not done speculatively here).
+- Phase 2 of build-and-test-plan.md (one arch from the x86 family, to
+  prove the harness shape works for both families before replicating
+  further) has not been started.
+- The tools/ scaffold that plan also describes (arches/<name>.conf,
+  build.sh, boot.sh, smoke.py, matrix.sh) has not been created - this
+  session's ./configure + top-level Makefile covers the same ground for
+  riscv specifically but in the c---style shape the user asked for
+  instead; reconciling the two designs (or deciding this replaces that
+  part of the plan) is future work, not decided here.
