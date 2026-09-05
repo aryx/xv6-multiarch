@@ -1,13 +1,23 @@
-# Build and boot xv6-multiarch's riscv64 and i386 ports via docker.
-# See also the Dockerfile at the root of the project, and
+# Build and boot each xv6-multiarch port via docker, one job per arch in
+# parallel. See also the Dockerfile at the root of the project (in
+# particular its own ARCH build-arg), and
 # docs/claude_notes/build-and-test-plan.md's own Phase 5 ("CI").
 #
 # claude: modeled on ~/c--/.github/workflows/docker.yml and
-# ~/tiger/.github/workflows/docker.yml's own shape - single job, no
-# --target (this repo's Dockerfile is single-stage, unlike ~/goken's).
-# No "submodules: recursive" needed either - this repo has no
-# .gitmodules (see ./configure's own header comment: it doesn't do any
-# git submodule handling, unlike ~/c--/configure's --skip-submodules).
+# ~/tiger/.github/workflows/docker.yml's own shape - no "submodules:
+# recursive" needed, this repo has no .gitmodules (see ./configure's own
+# header comment: it doesn't do any git submodule handling, unlike
+# ~/c--/configure's --skip-submodules).
+#
+# The matrix is what makes this parallel rather than one long serial job:
+# each job builds its own image with --build-arg ARCH=<arch>, so it only
+# installs that arch's own toolchain/qemu (see the Dockerfile's own ARCH
+# case) and only waits on that arch's own usertests boot, instead of one
+# job serially paying for every arch's full build+boot one after another.
+# Add a new arch here (matrix.arch) at the same time it gets its own
+# ARCH case in the Dockerfile and build-<arch>/test-<arch> pair in the
+# top-level Makefile - see build-and-test-plan.md's own Phase 4 order for
+# the fewest-surprises sequence to add them in.
 
 name: docker
 
@@ -20,9 +30,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [riscv64, i386]
     steps:
       - uses: actions/checkout@v4
       # optional if don't need multi-arch build
       - uses: docker/setup-buildx-action@v3
-      # alt: make build-docker
-      - run: docker build -t xv6-multiarch .
+      # alt: make build-docker ARCH=${{ matrix.arch }}
+      - run: docker build --build-arg ARCH=${{ matrix.arch }} -t xv6-multiarch:${{ matrix.arch }} .

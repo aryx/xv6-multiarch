@@ -116,8 +116,13 @@ clean-all: clean-riscv64 clean-i386
 
 kill-all: kill-riscv64 kill-i386
 
-# Builds and runs the full build-all/test-all pipeline inside the
+# Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header
-# comment. Same style as ~/c--/Makefile's own build-docker.
+# comment, in particular its own ARCH build-arg (default "all", same as
+# leaving this ARCH unset - "make build-docker ARCH=riscv64" builds/tests
+# just that one arch, for the same per-arch parallelism
+# .github/workflows/docker.yml's own matrix uses in CI). Same style as
+# ~/c--/Makefile's own build-docker.
+ARCH ?= all
 build-docker:
-	docker build -t "xv6-multiarch" .
+	docker build --build-arg ARCH=$(ARCH) -t "xv6-multiarch:$(ARCH)" .

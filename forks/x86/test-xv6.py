@@ -19,7 +19,15 @@ import subprocess
 import sys
 import time
 
-TIMEOUT = 300
+# claude: matches forks/riscv/test-xv6.py's own full (non "-q") usertests
+# budget, not an arbitrary shorter one - an earlier 300s here was cutting
+# it close: a real Docker/CI run timed out mid-suite at exactly 300s with
+# no other load on the host, so TCG-emulated i386 usertests genuinely
+# needs the same headroom riscv64's does, not a fraction of it, even
+# though this fork's own suite has fewer tests than riscv's (no
+# grind/sync/logstress/forphan/dorphan - see this file's own header
+# comment).
+TIMEOUT = 600
 
 
 class QEMU:
