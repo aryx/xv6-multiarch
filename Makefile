@@ -27,7 +27,7 @@ QEMU_I386 ?= qemu-system-i386
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
-        build-all test-all clean-all kill-all
+        build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
 # riscv64 (forks/riscv, RV64GC - MIT's current xv6-riscv)
@@ -115,3 +115,9 @@ test-all: test-riscv64 test-i386
 clean-all: clean-riscv64 clean-i386
 
 kill-all: kill-riscv64 kill-i386
+
+# Builds and runs the full build-all/test-all pipeline inside the
+# reproducible image the Dockerfile pins - see that file's own header
+# comment. Same style as ~/c--/Makefile's own build-docker.
+build-docker:
+	docker build -t "xv6-multiarch" .
