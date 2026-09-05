@@ -1,0 +1,76 @@
+# Consolidates author identities across ~20 years and 8 upstream repositories.
+#
+# xv6 began in CVS, where authors were bare usernames with no email at all
+# ("rsc", "rtm", "kaashoek", "kolya"), and MIT staff later committed from many
+# laptops and phone-tethered addresses. This file makes `git shortlog -sn` and
+# `git blame` show one identity per person. It changes no commits.
+#
+# Only confident consolidations are listed: same email under different names,
+# well-known CVS-era usernames, or a person's own machine-local addresses.
+# Distinct contributors who merely share a surname are left alone.
+
+# --- MIT core authors -------------------------------------------------------
+Russ Cox <rsc@swtch.com> <rsc>
+Russ Cox <rsc@swtch.com> <rsc@x40.(none)>
+Russ Cox <rsc@swtch.com> <rsc@c2.(none)>
+Russ Cox <rsc@swtch.com> <rsc@amsterdam.lcs.mit.edu>
+
+Robert Morris <rtm@csail.mit.edu> <rtm>
+Robert Morris <rtm@csail.mit.edu> <rtm@nephron.lcs.mit.edu>
+
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@Frans-Kaashoeks-MacBook-Pro.local>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@fransk-6.local>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@26-4-190.dynamic.csail.mit.edu>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@30-7-101.wireless.csail.mit.edu>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@30-93-167.dynamic.csail.mit.edu>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@31-34-192.wireless.csail.mit.edu>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@31-34-210.wireless.csail.mit.edu>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@14.sub-75-194-120.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@202.sub-75-194-25.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@206.sub-75-194-151.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@225.sub-75-213-134.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@26.sub-75-251-10.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@40.sub-75-213-160.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@42.sub-75-251-87.myvzw.com>
+Frans Kaashoek <kaashoek@mit.edu> <kaashoek@79.sub-75-194-237.myvzw.com>
+
+# "kolya" is Nickolai Zeldovich's long-standing handle.
+Nickolai Zeldovich <nickolai@csail.mit.edu> <kolya>
+
+Austin Clements <aclements@csail.mit.edu> <amdragon@mit.edu>
+
+# --- other MIT-era contributors --------------------------------------------
+Nelson Elhage <nelhage> <nelhage>
+Xi Wang <xi@cs.washington.edu> <xi.wang@gmail.com>
+Cody Cutler <ccutler@csail.mit.edu> <ccutler@mat.lcs.mit.edu>
+Peter H. Froehlich <peter.hans.froehlich@gmail.com> Peter Froehlich <peter.hans.froehlich@gmail.com>
+
+# --- architecture porters ---------------------------------------------------
+Zhiyi Huang <hzy@cs.otago.ac.nz> <hzy@oucs1579.otago.ac.nz>
+Zhiyi Huang <hzy@cs.otago.ac.nz> Zhiyi <zhiyi@admins-MacBook-Pro-2.local>
+
+# xv6-rv32's "First version of xv6 for rv32 platforms" was committed with an
+# unconfigured git identity. It is the repository owner's own initial import,
+# and every neighbouring commit in that repo is his.
+Michael Engel <engel@multicores.org> Your Name <you@example.com>
+
+inaciose <inaciose@gmail.com> <inaciose@yahoo.com>
+
+# Same address, two display names.
+RayAndrew <krayand4567@gmail.com> segfauIt <krayand4567@gmail.com>
+
+# "mrm" (the k-mrm of k-mrm/xv6-aarch64) commits under the same address as
+# Keisuke Iida. Note this is NOT Robert Morris, whose initials are rtm.
+Keisuke Iida <cmpl.error@gmail.com> mrm <cmpl.error@gmail.com>
+Keisuke Iida <cmpl.error@gmail.com> <mkei@sfc.wide.ad.jp>
+
+# nullpo-head is Takaya Saeki's handle (xv6-mips).
+Takaya Saeki <abc.tkys+pub@gmail.com> nullpo-head <abc.tkys+pub@gmail.com>
+Takaya Saeki <abc.tkys+pub@gmail.com> <nullpo-head@users.noreply.github.com>
+
+# jserv (xv6-x86_64).
+Jim Huang <jserv.tw@gmail.com> <jserv@biilabs.io>
+
+# Same address, two handles (xv6-loongarch).
+Junkher <1344065492@qq.com> Mit-junker <1344065492@qq.com>
