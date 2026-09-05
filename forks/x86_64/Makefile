@@ -90,6 +90,12 @@ CFLAGS += -g -Wall -MD -fno-omit-frame-pointer
 CFLAGS += -ffreestanding -fno-common -nostdlib -Iinclude -gdwarf-2 $(XFLAGS) $(OPT)
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
 CFLAGS += $(call cc-option, -fno-stack-protector-all, "")
+# claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
+# user/sh.c's runcmd(), the same recursive-descent shell interpreter
+# forks/x86/user/sh.c shares (this fork is a direct descendant of it) -
+# see forks/x86/Makefile's own identical fix and comment for the full
+# explanation. Confirmed via x86_64-linux-gnu-gcc 13.3.0.
+CFLAGS += -Wno-infinite-recursion
 ASFLAGS = -gdwarf-2 -Wa,-divide -Iinclude $(XFLAGS)
 
 xv6.img: $(OUT)/bootblock $(OUT)/kernel.elf fs.img

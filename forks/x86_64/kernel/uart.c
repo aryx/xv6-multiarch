@@ -51,7 +51,9 @@ uartinit(void)
   // enable interrupts.
   inb(COM1+2);
   inb(COM1+0);
-  picenable(IRQ_COM1);
+  // claude: dropped picenable(IRQ_COM1) - see kernel/ide.c's own
+  // identical fix/comment for why (same PIC-vs-IOAPIC double-unmask
+  // bug, same fix: only ioapicenable(), matching forks/x86/uart.c).
   ioapicenable(IRQ_COM1, 0);
 }
 

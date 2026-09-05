@@ -50,7 +50,19 @@ ideinit(void)
   int i;
   
   initlock(&idelock, "ide");
-  picenable(IRQ_IDE);
+  // claude: dropped picenable(IRQ_IDE) - forks/x86/ide.c (the working
+  // i386 sibling this file is derived from) never calls it, only
+  // ioapicenable(). In genuine IOAPIC/MP mode (confirmed active here -
+  // ioapicenable() itself early-returns unless ismp), leaving the same
+  // IRQ line simultaneously unmasked on the legacy 8259 PIC alongside
+  // the IOAPIC caused the IDE completion interrupt to never reliably
+  // reach the trap handler xv6 expects it on: the CPU-internal LAPIC
+  // timer (which never goes through PIC/IOAPIC at all) kept ticking
+  // fine, but the very first disk read (loading /init) hung forever in
+  // sleep(b, &idelock), confirmed via gdb - ptable.proc[0] (pid 1) sat
+  // in SLEEPING state indefinitely, no second process ever forked,
+  // meaning init's own exec("/init", ...) never even completed. See
+  // docs/claude_notes/notes_arch_x86_64.txt for the full investigation.
   ioapicenable(IRQ_IDE, ncpu - 1);
   idewait(0);
   

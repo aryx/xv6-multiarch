@@ -303,7 +303,9 @@ consoleinit(void)
   devsw[CONSOLE].read = consoleread;
   cons.locking = 1;
 
-  picenable(IRQ_KBD);
+  // claude: dropped picenable(IRQ_KBD) - see kernel/ide.c's own
+  // identical fix/comment for why (same PIC-vs-IOAPIC double-unmask
+  // bug, same fix: only ioapicenable(), matching forks/x86/console.c).
   ioapicenable(IRQ_KBD, 0);
 }
 

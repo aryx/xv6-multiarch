@@ -1,0 +1,200 @@
+Debugging techniques, written up as they get used
+=================================================
+
+Notes on *how* problems in this repo were tracked down, as opposed to what
+they were - see docs/claude_notes/notes_arch_*.txt for the actual bugs and
+findings per port. Update this file when a technique earns its place from
+real use, not with a narrative of any specific investigation.
+
+1. Triage a -Werror failure before touching any flag: false positive, or real bug?
+------------------------------------------------------------------------------------
+These ports were written 2006-2023 and are now compiled with GCC 12-13.
+Every one of them builds with `-Wall -Werror`, so a warning GCC added
+*after* a file was last touched becomes an unconditional build failure,
+indistinguishable at first glance from a real bug in 20-year-old code.
+Before reaching for a fix, form a concrete hypothesis about which case it
+is:
+
+- Read the GCC diagnostic itself for a warning name added recently
+  relative to the code's age (`-Warray-bounds` strengthened in GCC 10,
+  `-Winfinite-recursion` added in GCC 12 - both hit forks/x86's and
+  forks/x86_64's Makefiles this session, see notes_arch_i386.txt).
+  A warning about pointer arithmetic on a raw physical address, or about
+  a recursive-descent parser/interpreter that obviously terminates via
+  exec()/exit() in its base case, is a strong prior for "heuristic false
+  positive" - GCC's static analysis can't see the runtime property that
+  makes it safe.
+- Confirm empirically before suppressing: does the code actually work
+  once built anyway? For mp.c's -Warray-bounds, that meant confirming
+  mpinit() actually enumerates the second CPU under `-smp 2`; for sh.c's
+  -Winfinite-recursion, that meant confirming the shell runs pipelines/
+  redirection/command lists correctly throughout a real usertests run.
+  Never suppress a warning on the strength of "it's probably fine."
+- Fix by adding the single, precisely-named `-Wno-<warning>` flag, not a
+  blanket `-Wno-error` or a rewrite of the flagged code - see forks/x86/
+  Makefile's and forks/x86_64/Makefile's own `-Wno-array-bounds`/
+  `-Wno-infinite-recursion` additions, each with a `claude:`-tagged
+  comment naming the exact GCC version and the confirming evidence. A
+  real new bug in this code would still be caught by every OTHER warning
+  in -Wall.
+- If the failure is instead a genuine crash, wrong-answer, or an
+  assertion inside a build-time host tool (not a compiler warning at
+  all), that's technique 2 below, not this one.
+
+2. Read the assertion/error message and compute the actual numbers before guessing
+--------------------------------------------------------------------------------------
+forks/x86_64's mkfs aborted with `tools/mkfs.c:268: iappend: Assertion
+`fbn < MAXFILE' failed` while packing fs.img. Two minutes of reading turned
+that into three concrete, checkable numbers instead of a vague "the build
+is broken":
+
+  MAXFILE = NDIRECT + NINDIRECT = 10 + (512/4) = 138 blocks
+  138 * BSIZE(512) = 70656 bytes  <- largest file this fs can hold
+  actual `usertests` binary size = 79728 bytes  <- confirmed via `ls -la .fs/`
+
+That single comparison identified the exact fix needed (more headroom in
+MAXFILE*BSIZE) and, just as importantly, which fix was safe: doubling
+BSIZE (multiplying the NINDIRECT term) rather than raising NDIRECT
+(which would also grow struct dinode and need re-deriving IPB/inode-block
+counts) - see notes_arch_x86_64.txt for the full reasoning and the
+cross-check against forks/riscv/kernel/fs.h's own BSIZE=1024 precedent.
+The general lesson: an assertion failure names a file and a line for a
+reason - compute the real values on both sides of the failing condition
+before forming a hypothesis about the fix.
+
+3. A hung/silent QEMU boot: use gdb-multiarch against QEMU's own -gdb stub, then correlate the PC against the kernel's own objdump+symbols
+------------------------------------------------------------------------------------------------------------------------------------------------
+forks/x86_64 booted (SeaBIOS, ACPI CPU enumeration, "cpuN: starting")
+but then produced zero further console output, indefinitely, under both
+`-smp 1` and `-smp 2`. Guessing at the cause (timer? APIC? scheduler?)
+from the symptom alone would have been slow. Instead:
+
+  qemu-system-x86_64 ... -gdb tcp::12399 &   # -S not even needed - it
+                                              # was already stuck
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12399" \
+    -ex "info registers rip rsp rbp" -ex "x/3i \$pc" -ex "bt"
+
+This gives a real, if symbol-less (no `file` loaded), instruction
+pointer and backtrace immediately. The next step is mechanical, not
+guesswork: grep that exact address against the kernel's own
+`out/kernel.asm` (every fork's Makefile already generates this via
+`objdump -S kernel` as part of the normal build - see e.g. forks/x86_64/
+Makefile's `$(OUT)/kernel.elf` rule) to find which function and even
+which source line the address falls inside, then read the surrounding
+disassembly to see the actual control flow at that point. This
+immediately turned "silently hung, no idea where" into "sitting right
+after a `hlt` instruction inside scheduler()'s own documented idle-wait
+path (`if no runnable process, hlt() until the next interrupt`)" -
+reframing the question from "where is it stuck" (answered) to "why does
+this specific hlt() never get woken back up" (the real remaining
+question - see notes_arch_x86_64.txt for how that was run down).
+
+`gdb-multiarch` (not the host's plain `gdb`) is required on a non-x86
+host - confirmed plain `gdb`'s `set architecture i386:x86-64` fails with
+"Undefined item" when gdb wasn't built with multi-arch support, while
+`gdb-multiarch` (already installed on this box; `sudo apt install
+gdb-multiarch` otherwise) accepts it immediately. No `TOOLPREFIX`-style
+cross-gdb (e.g. `x86_64-linux-gnu-gdb`) is needed or was installed -
+`gdb-multiarch` covers every target this repo's ports build for.
+
+4. Don't trust a same-named tool's version-parsing output without checking `which -a` first
+-------------------------------------------------------------------------------------------------
+./configure's own qemu-version check (`sed -E`, later rewritten - see
+below) failed inexplicably on this machine: `sed: Unknown flag: E`, then
+a `bc` "Illegal number: stdin:1 syntax error" on what should have been a
+trivial numeric comparison. `which -a sed` and `which -a bc` immediately
+showed the cause: `~/goken`'s own build had prepended
+`~/goken/ROOT/arch/boot-gcc/bin` onto PATH, and that directory holds
+goken's own self-built, minimal `sed`/`bc` binaries (confirmed via
+`file`: real aarch64 ELF binaries, not the expected GNU coreutils) which
+silently do the wrong thing for `-E`/bare boolean expressions instead of
+erroring loudly. `which -a <tool>` (not just `which`, which only shows
+the first match) is the fast way to notice a same-named-but-different
+tool earlier on PATH before spending time debugging what looks like a
+logic bug in your own script. The more robust fix generalizes beyond
+this one host: avoid depending on GNU-specific `sed -E`/`bc` behavior at
+all when a pure POSIX-shell equivalent exists (parameter expansion +
+integer `[ -ge ]` comparisons) - see ./configure's own
+detect_qemu_system function and notes_arch_riscv64.txt's "PATH hazard"
+section for the full before/after.
+
+5. A captured (non-tty) log's per-line timestamps can be misleading - Python's stdout is block-buffered when piped
+----------------------------------------------------------------------------------------------------------------------
+Reading a `docker build` log (or any captured `make`/subprocess output),
+a `test-xv6.py`-style script's `print()` calls appear to happen all at
+once, at whatever moment the process actually exits or its buffer fills
+- NOT incrementally as the lines were produced in real time. This showed
+up concretely: a captured log had two "ALL TESTS PASSED" lines and a
+wrapping "usertests: ALL TESTS PASSED" line all stamped with the exact
+same cumulative timestamp, which briefly looked like it implied a
+per-arch timing breakdown that later turned out to be an artifact of
+buffering, not real elapsed time. Don't compute per-step durations from
+timestamps inside a single buffered stream; if real timing matters,
+either force line-buffering (`python3 -u`, or `print(..., flush=True)`)
+or measure wall-clock time around the whole subprocess from outside
+instead.
+
+6. Verify a Docker/CI change locally, with the exact matrix arguments CI will use, before pushing
+-------------------------------------------------------------------------------------------------------
+When the Dockerfile grew an `ARCH` build-arg so CI could run one job per
+arch in parallel, `docker build --build-arg ARCH=riscv64 .` was run
+locally first, before touching docker.yml's matrix or pushing anything.
+That single local run caught a real bug that would otherwise have only
+surfaced as a confusing CI failure: `python3` had never actually been
+installed by this Dockerfile - it only "worked" by accident, riding
+along as a transitive Recommends of qemu-system-gui's GTK/desktop stack
+(python3-gi, python3-dbus), which `--no-install-recommends` (added in
+the same change, for an unrelated size/speed reason) then removed. A
+second local run with `ARCH=i386` caught a too-tight test timeout the
+same way (see notes_arch_i386.txt's TIMEOUT note) - a real, reproducible
+failure on this machine with no other load, not a CI-runner-specific
+flake, exactly the kind of thing worth catching before spending a CI
+run's wall-clock time (and, on this project, the reviewer's patience)
+on it.
+
+7. When a fork's Makefile has an unusual pattern, check whether its siblings share it
+------------------------------------------------------------------------------------------
+forks/riscv, forks/x86, and forks/x86_64 all descend from the same MIT
+lineage (see the root README's fork-point table) and, unsurprisingly,
+share near-identical `TOOLPREFIX`/`QEMU` auto-detect blocks and the same
+`sh.c`/`usertests.c` heritage. A gap or bug found in one - forks/x86's
+missing `i686-linux-gnu-` candidate in its own TOOLPREFIX probe, or the
+`-Winfinite-recursion` false positive in its `sh.c` - was worth checking
+in its siblings immediately rather than waiting to rediscover it
+independently during that arch's own bring-up: forks/x86_64 turned out
+to share the exact same sh.c-derived bug (fixed the same way, see
+notes_arch_x86_64.txt), while forks/riscv's own kernel/fs.h had already
+independently solved the same class of problem forks/x86_64 hit
+(MAXFILE headroom) by using a bigger BSIZE - a precedent worth searching
+for and citing rather than re-deriving the fix from first principles.
+
+8. gdb-multiarch against QEMU's -gdb stub: don't trust an argument display at a breakpoint on a function's opening brace
+--------------------------------------------------------------------------------------------------------------------------------
+See docs/claude_notes/notes_tutorial_gdb_multiarch.txt for the full
+worked tutorial (real command sequences, real output) this technique is
+drawn from - this entry is just the one-paragraph version for a fast
+re-read. Setting `break <function>` with no explicit line stops at that
+function's opening `{`, before its prologue has necessarily spilled
+register arguments to the stack slots the debug info assumes for them.
+This session hit a real disagreement: GDB's own frame-printed argument
+(`chan=0x...`) did not match a direct `print/x $rdi` read at the exact
+same stop, and the register read was the correct one (confirmed against
+an independently-known-good address moments later). When an argument
+value looks implausible right at a function's entry breakpoint, read the
+raw SysV argument register directly (`$rdi`/`$rsi`/`$rdx`/`$rcx`/`$r8`/
+`$r9` for the first six integer/pointer args) rather than trusting the
+pretty-printed frame arguments.
+
+9. Check state AFTER the code that's supposed to change it has actually run, not just near it
+----------------------------------------------------------------------------------------------------
+A related gdb-multiarch gotcha from the same session (see
+notes_tutorial_gdb_multiarch.txt's own case study 5): breaking on
+`wakeup()` and reading a process's state at that same stop - i.e. at
+`wakeup()`'s own opening brace, before its body has executed - makes it
+look like the call had no effect, since the state genuinely hasn't
+changed *yet*. This isn't evidence a fix failed; it's evidence of
+checking at the wrong instant. Use `finish` (run until the current
+function returns) or move the breakpoint to a point past the relevant
+mutation before concluding anything from the state you read.

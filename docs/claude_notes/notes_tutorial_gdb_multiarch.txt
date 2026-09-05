@@ -1,0 +1,361 @@
+notes_tutorial_gdb_multiarch.txt
+=================================
+
+A hands-on tutorial for debugging a hung/misbehaving xv6 kernel under QEMU
+with `gdb-multiarch`, written from a real session bringing up forks/x86_64
+(2026-09-05/06) - every command and finding below actually happened, in
+this order, against this repo. See docs/claude_notes/notes_arch_x86_64.txt
+for the bug-hunt's actual conclusions; this file is the *how*, written so
+a future session (or you) can reuse the technique on the next hung arch
+without re-deriving it from scratch.
+
+Why `gdb-multiarch`, not plain `gdb`
+----------------------------------------
+This dev machine is aarch64. Every xv6 port here targets a different ISA
+(riscv64, i386, x86_64, ...) - none of them aarch64. Plain `gdb` on this
+host is built for its own native architecture only:
+
+  $ gdb -batch -ex "set architecture i386:x86-64" -ex "quit"
+  Undefined item: "i386:x86-64".
+
+`gdb-multiarch` is the same GDB built with every architecture's support
+compiled in. It was already installed on this box (`which gdb-multiarch`
+found it instantly); if it isn't on yours, `sudo apt install
+gdb-multiarch`. No per-arch cross-gdb (`x86_64-linux-gnu-gdb`, etc.) is
+needed or was installed this session - `gdb-multiarch` covers every
+target this repo's ports build for, riscv64 included.
+
+The two ways to attach: live vs. from-reset
+------------------------------------------------
+Every fork's Makefile already knows how to pass a `-gdb` flag to QEMU (see
+e.g. forks/riscv/Makefile's own `qemu-gdb`/`QEMUGDB` machinery) - but for
+ad hoc investigation it's often faster to invoke qemu directly yourself,
+bypassing the Makefile's own port-forwarding/`.gdbinit` dance entirely:
+
+  qemu-system-x86_64 -nographic -net none \
+    -drive file=fs.img,index=1,media=disk,format=raw \
+    -drive file=xv6.img,index=0,media=disk,format=raw \
+    -smp 1 -m 512 -gdb tcp::12399
+
+Two variants, both used this session:
+
+- **Attach to an already-running (possibly hung) instance**: omit `-S`.
+  QEMU boots and runs completely normally; the `-gdb tcp::PORT` stub is
+  just also listening, ready for a debugger to attach whenever you like
+  (even after it's already been "stuck" for a while). This is the one you
+  want for "it booted, then went silent - what's it doing *right now*."
+- **Start halted, single-step from reset**: add `-S`. QEMU comes up with
+  the CPU paused before executing even the first BIOS instruction, and
+  won't run at all until a debugger connects and issues a `continue`
+  (or similar). Use this when you want a *deterministic* trace from the
+  very start - e.g. to catch the Nth call to some function reliably,
+  rather than racing a background boot that's already partway done.
+
+Either way, run QEMU under a `timeout` (it won't exit on its own if
+nothing crashes) and redirect its console output to a log file, since
+your terminal is about to be busy running gdb in a second command:
+
+  timeout 20 qemu-system-x86_64 ... -gdb tcp::12399 > boot.log 2>&1 < /dev/null
+
+**Use the harness's own backgrounding, not shell `(cmd &)`.** In this
+session, `(timeout 20 qemu-system-x86_64 ... &)` launched from a plain
+Bash tool call silently produced no process and no log file at all,
+repeatedly - a real, reproducible dead end, not a one-off fluke (confirmed
+by checking `pgrep -fla qemu-system-x86_64` immediately after: nothing
+running). Switching to the Bash tool's own `run_in_background: true`
+parameter (a plain foreground-looking `timeout 20 qemu-system-x86_64 ...`
+command, with that flag set on the tool call) worked reliably every time
+afterward. If your own environment has an equivalent "run this in the
+background and notify me" primitive, prefer it over ad hoc shell
+backgrounding for anything you intend to immediately attach a second tool
+to.
+
+Connecting
+----------
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12399" \
+    -ex "file out/kernel.elf" \
+    ...
+
+Order matters a little: `set architecture` first (GDB needs to know how
+to decode the remote protocol's register layout before it can usefully
+talk to the stub), then `target remote`, then `file` (which arch/machine
+constant to pass - riscv64 needs `"riscv:rv64"` instead of
+`"i386:x86-64"`; check `set architecture` with no argument, or just
+`info architecture`, for the exact spelling GDB wants).
+
+`file out/kernel.elf` is optional but valuable: without it, GDB can still
+attach and read raw memory/registers (see the "no file at all" section
+below), but function-name breakpoints (`break scheduler`), source-line
+breakpoints, and DWARF-based local-variable printing all need it. Every
+fork's Makefile already builds the ELF with `-g` (`out/kernel.elf` for
+x86_64, `kernel/kernel` for riscv64, `kernel` for i386) - point `file` at
+whichever your target port produces.
+
+Case study 1: "it booted, then went silent for 30+ seconds - where is it stuck?"
+-------------------------------------------------------------------------------------
+forks/x86_64 printed SeaBIOS + ACPI CPU enumeration + "cpu0: starting
+xv6" + "cpu0: starting", then nothing more, indefinitely. Rather than
+guess (timer? scheduler? disk?), attach to the *already hung* instance
+(no `-S` needed - it's already sitting still) and just ask where the CPU
+currently is:
+
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12399" \
+    -ex "info registers rip rsp rbp" \
+    -ex "x/3i \$pc" \
+    -ex "bt"
+
+No `file` loaded yet - deliberately, to show this works even before you
+bother pointing GDB at the ELF. Output:
+
+  0xffffffff80105d72 in ?? ()
+  rip 0xffffffff80105d72   rsp 0xffffffff8000ffb8   rbp 0xffffffff8000ffb8
+  => 0xffffffff80105d72:  nop
+     0xffffffff80105d73:  pop %rbp
+     0xffffffff80105d74:  ret
+  #0  0xffffffff80105d72 in ?? ()
+  #1  0xffffffff8000ffd8 in ?? ()
+  #2  0xffffffff80106644 in ?? ()
+  ...
+
+Every frame is "in ?? ()" - no symbols, because no `file` was loaded. But
+the addresses are real, and every fork's Makefile already builds a
+`kernel.asm` (full `objdump -S` disassembly with source interleaved) as
+part of the ordinary build - grep it directly:
+
+  $ grep -n "ffffffff80105d72:" out/kernel.asm
+  ffffffff80105d72:  90  nop
+
+...and read a page of context around it to find which *function* that
+falls inside (objdump prints a `<funcname>:` label above each function's
+first instruction, and the C source lines interleaved above the matching
+asm):
+
+  $ grep -n "^ffffffff80105d.. <" out/kernel.asm
+  ffffffff80105d6d <hlt>:
+
+  $ grep -n "^ffffffff801066.. <" out/kernel.asm
+  ffffffff8010661c <scheduler>:
+
+That's the whole technique: address -> `grep` the disassembly for the
+nearest preceding `<label>:` line -> read the surrounding C-interleaved
+asm. It turned "silently hung, no idea where" into "sitting right after a
+`hlt` instruction, called from inside scheduler()'s own documented
+idle-wait path (`if no runnable process, hlt() until the next
+interrupt`)" in about two minutes, no `file` command needed at all - this
+works even for a stripped or hand-assembled boot stub with no debug info,
+as long as the fork's Makefile emits an objdump listing (they all do).
+
+Case study 2: "are interrupts/timer actually firing at all?" - reading a global with nothing loaded
+------------------------------------------------------------------------------------------------------------
+Case study 1 found it parked in a `hlt()` that's *supposed* to wake up on
+the next timer interrupt. Is the timer interrupt actually happening? The
+fastest possible check: read the kernel's own tick counter twice, a few
+seconds apart, and see if it moved. No `file`, no breakpoints, not even
+`set architecture` matters much here (raw memory reads don't need
+register-layout knowledge) - just the *address*, which every fork's
+Makefile already writes to a plain nm-style symbol table
+(`out/kernel.sym` / `kernel/kernel.sym`, generated via `objdump -t | sed
+...` in every Makefile seen so far in this repo):
+
+  $ grep -n " ticks$" out/kernel.sym
+  ffffffff8011be68 ticks
+
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12400" \
+    -ex "x/1xg 0xffffffff8011be68"
+  # -> 0x00000001000002cd
+
+  (wait ~3 real seconds, reconnect - a `target remote` on a still-running
+  qemu just re-attaches, no restart)
+
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12400" \
+    -ex "x/1xg 0xffffffff8011be68"
+  # -> 0x0000000100000407
+
+0x2cd -> 0x407 is 314 ticks in ~3s, ~100Hz - exactly the expected rate.
+This one read (well, two) ruled out an entire hypothesis class (timer
+misconfigured, interrupts globally disabled, APIC not receiving anything
+at all) in under a minute, before writing a single breakpoint. **Prefer
+this kind of minimal raw-memory probe over jumping straight to
+breakpoints and single-stepping** - it's faster to rule things out this
+way, and it tells you where to spend the *next*, more expensive
+gdb-multiarch session.
+
+Case study 3: reading a struct's fields by hand-computed offset
+------------------------------------------------------------------------
+The timer works, so *something* should periodically re-check for
+runnable work. Is there even a process to run? xv6's ptable is a plain C
+array of `struct proc` - readable the same way as `ticks` above, just
+with the extra step of computing field offsets from the struct
+definition yourself (GDB has no type info without a `file` + matching
+debug sections, and even with `file` loaded, printing `ptable.proc[0]` as
+a whole struct is often noisier than reading just the one or two fields
+you actually care about):
+
+  $ grep -n "struct proc {" -A 15 include/proc.h
+  struct proc {
+    uintp sz;                 // offset 0,  8 bytes
+    pde_t* pgdir;             // offset 8,  8 bytes
+    char *kstack;             // offset 16, 8 bytes
+    enum procstate state;     // offset 24 (0x18), 4 bytes  <-- what we want
+    int pid;                  // offset 28 (0x1c), 4 bytes  <-- and this
+    ...
+
+  $ grep -n " ptable$" out/kernel.sym
+  ffffffff80117d80 ptable
+  # struct { struct spinlock lock; struct proc proc[NPROC]; } ptable;
+  # proc[0]'s own address is a SEPARATE symbol in this codebase:
+  $ grep -n "ptable.proc\|proc\[NPROC\]" kernel/proc.c   # or just:
+  # (scheduler()'s own disassembly already told us proc[0]'s address -
+  #  see the "movq $0xffffffff80117de8,-0x8(%rbp)" line from case 1's
+  #  own kernel.asm reading - free confirmation, no separate lookup
+  #  needed once you're already reading that function's disassembly)
+
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12401" \
+    -ex "x/1dw 0xffffffff80117e00" \    # proc[0]+0x18 = state
+    -ex "x/1dw 0xffffffff80117e04"      # proc[0]+0x1c = pid
+  # -> state: 2   pid: 1
+
+Cross-reference the raw number against the enum, also grepped straight
+from source rather than assumed:
+
+  $ grep -n "enum procstate" include/proc.h
+  enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+
+state=2 is SLEEPING. That's the whole technique: find the struct
+definition, add up field sizes by hand (mind alignment - see the note
+below), find the base symbol's address (often already visible for free
+in disassembly you're reading anyway), read with `x/1dw` (4-byte decimal)
+or `x/1xg` (8-byte hex, for pointers). **Sanity-check your hand-computed
+struct size against something the compiler already computed for you**:
+scheduler()'s own loop increment was `addq $0xe0,-0x8(%rbp)` - 0xe0 = 224
+bytes, and summing struct proc's fields (with x86-64's natural alignment:
+the 4-byte `state`+`pid` pair packs together, but `killed` alone before a
+pointer-typed `ofile` array needs 4 bytes of padding to reach 8-byte
+alignment) independently comes out to exactly 224 too. If your manual
+struct-size arithmetic doesn't match a size the compiler reveals
+somewhere (a loop stride, a `sizeof` printed via `cprintf`, an
+`-Wpadded` warning), find the discrepancy before trusting any offset you
+derived from it - a single missed alignment gap silently shifts every
+field after it.
+
+Case study 4: tracing an interrupt-driven subsystem with function breakpoints
+------------------------------------------------------------------------------------
+proc[0] (pid 1, the init process) sitting in SLEEPING, with no second
+process ever created (checked the same way - `x/1dw` on proc[1]'s state/
+pid offsets, both 0/UNUSED) meant the *very first* thing init does -
+`exec("/init", ...)`, which needs a disk read - never completed. Is the
+disk interrupt handler even being reached? This needs actual breakpoints,
+which need `file` loaded:
+
+  gdb-multiarch -batch \
+    -ex "set architecture i386:x86-64" \
+    -ex "target remote localhost:12403" \
+    -ex "file out/kernel.elf" \
+    -ex "break idestart" \
+    -ex "break ideintr" \
+    -ex "break trap" \
+    -ex "continue" \
+    -ex "continue" \
+    -ex "continue" \
+    -ex "continue"
+
+Each `continue` runs until the *next* breakpoint of any kind, printing
+which one it was and the function's arguments (when `file` + debug info
+lets GDB resolve them - see the caveat in case study 5 below). This
+directly showed the sequence `idestart -> trap -> ideintr -> trap` -
+i.e. the disk read WAS issued, an interrupt WAS delivered, and the
+handler WAS entered. That ruled out "no interrupt arrives at all" in one
+shot and pointed at something *inside* the interrupt-handling chain
+instead (see notes_arch_x86_64.txt for where that led: a real bug, found
+by comparing this fork's ide.c/console.c/uart.c against the working
+i386 sibling's simpler interrupt-enable calls).
+
+**Repeated plain `-ex "continue"` beat a scripted `commands ... end`
+block for reliability in this session.** An attempt to auto-count hits
+via a `commands 1 / silent / printf .../ continue / end` block (passed as
+one multi-line `-ex` argument) produced no output at all before timing
+out - not investigated further, since spelling out N `continue`s is
+barely more typing and visibly worked every time. If GDB scripting misbehaves in
+`-batch` mode, don't sink time debugging the script; fall back to the
+dumb, verbose version.
+
+Case study 5: a real gotcha - don't trust a breakpoint-at-`{`'s argument display, and check state at the RIGHT moment
+--------------------------------------------------------------------------------------------------------------------------
+Two related traps, both hit for real this session:
+
+1. GDB's default breakpoint location for `break wakeup` (a function with
+   no explicit line-number given) is the line reading `{` - i.e., the
+   very first instruction of the function, before its prologue has
+   necessarily spilled register arguments to their debug-info-assumed
+   stack "home" locations. At `-O0` this is usually fine, but not always:
+   this session saw GDB's own frame-printed `chan=0x...` value disagree
+   with a direct `print/x $rdi` read at the exact same stop (the actual
+   SysV argument register for a function's first `void*` parameter). The
+   register read was correct (confirmed by cross-referencing against a
+   known-good address moments later); the DWARF-computed "chan=" annotation
+   was not. **When a breakpoint is right at a function's opening brace and
+   something about the shown argument looks suspicious (an address with no
+   plausible meaning, disagreeing with a value you independently expect),
+   read the raw architecture register directly (`$rdi`/`$rsi`/`$rdx`/... for
+   the first few SysV integer args) rather than trusting the pretty-printed
+   frame arguments.**
+2. Separately: this session initially "checked" whether `wakeup()`
+   successfully changed a process's state by reading that state at the
+   exact moment `wakeup()`'s own breakpoint (at its opening `{`) was hit -
+   i.e., *before* wakeup()'s body had run at all. Unsurprisingly, the
+   state hadn't changed yet - but that's not evidence the fix didn't
+   work, just evidence of checking at the wrong instant. The fix: use
+   `finish` (run until the current function returns to its caller) before
+   re-reading the state, or set the breakpoint somewhere past the
+   relevant mutation instead. **Always double check you're reading state
+   AFTER the code you expect to change it has actually run, not merely
+   after you've stopped somewhere textually near it.**
+
+Reading kernel.asm/kernel.sym vs. loading `file`: when to use which
+-------------------------------------------------------------------------
+- No `file`, raw `x/` reads and `info registers`: fastest, works even
+  mid-crash or against a stripped/hand-written boot stub, needs you to
+  already have (or grep for) the address. Best for the first five minutes
+  of any investigation - see case studies 1 and 2.
+- `file <elf>` loaded: unlocks `break <function-name>`, source-line
+  breakpoints, `bt` with real frame names, and (with the caveat above)
+  argument/local printing. Worth the one extra `-ex` the moment you need
+  to trace *control flow* across more than one function, not just sample
+  a snapshot of memory - see case studies 3 onward.
+- Either way, `kernel.asm`/`kernel.sym` (already built by every fork's
+  Makefile - check for a `$(OBJDUMP) -S`/`-t` rule if a new port doesn't
+  have one yet) are worth grepping directly and often faster than asking
+  GDB to resolve the same thing, especially for one-off address lookups
+  where firing up a whole gdb session is more setup than the question
+  deserves.
+
+Environment gotchas specific to this session (worth checking first, next time)
+--------------------------------------------------------------------------------------
+- **A leftover QEMU process holds the disk image file lock.** Forgetting
+  to kill a previous `-S`-started (paused, never exited) QEMU instance
+  before starting a new one produces a confusing
+  `Failed to get "write" lock / Is another process using the image?`
+  error that has nothing to do with the actual bug you're chasing.
+  `pkill -9 -f qemu-system-<arch>` and confirm with `pgrep -fla
+  qemu-system-<arch>` before every new attempt, especially after a `-S`
+  session you didn't explicitly let run to its `timeout`.
+- **Use a fresh TCP port per attempt** (this session incremented
+  12399, 12400, ... 12411 throughout) - cheap insurance against
+  attaching to a stale/wrong listener from an earlier attempt that didn't
+  actually die yet.
+- **`smp 1` over the port's own default CPU count while debugging.**
+  Multi-CPU traces interleave two CPUs' worth of breakpoint hits in one
+  gdb session, which is harder to reason about than it needs to be while
+  you're still localizing a bug. Switch back to the port's normal `smp`
+  count once you're validating an actual fix, not just narrowing down
+  where to look.

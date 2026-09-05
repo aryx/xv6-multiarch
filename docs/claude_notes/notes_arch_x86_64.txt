@@ -1,0 +1,203 @@
+notes_arch_x86_64.txt
+======================
+
+Written: 2026-09-06, against commit 00a4ebe (the CI-matrix commit, parent
+of the commit adding x86_64 work). Phase 4 of
+docs/claude_notes/build-and-test-plan.md, first port attempted from that
+phase's list. Unlike notes_arch_riscv64.txt/notes_arch_i386.txt, this one
+does NOT end at "boots and passes usertests" - it ends at "builds clean,
+boots partially, two real bugs found and fixed, one real mystery still
+open." Recorded honestly per build-and-test-plan.md's own explicit
+philosophy ("the deliverable is an honest matrix, not universal success")
+rather than glossed over. See
+docs/claude_notes/notes_debugging_techniques.txt (items 1-9) and
+docs/claude_notes/notes_tutorial_gdb_multiarch.txt for the methodology
+this investigation used and produced.
+
+What this is
+------------
+forks/x86_64 is jserv/xv6-x86_64 (per the root README's port table) - a
+maintained x86-64 port of the classic xv6-public, structured differently
+from forks/x86: out-of-tree object directories (`.kobj/`, `.uobj/`,
+`.fs/`, `out/`), a `CROSS_COMPILE`/`QEMU` variable pair (no TOOLPREFIX
+auto-detect at all, unlike every other fork examined so far), and an
+`X64`-gated Makefile that can build either 32- or 64-bit xv6 from the
+same source tree (`X64=1` is the default; this session only exercised the
+64-bit path).
+
+Toolchain: no auto-detect at all, but the natural default already works
+------------------------------------------------------------------------------
+`CROSS_COMPILE ?=` (empty by default) and `QEMU ?= qemu-system-x86_64` in
+forks/x86_64/Makefile - unlike TOOLPREFIX in the riscv64/i386 forks, there
+is no `ifndef`-guarded shell-probe auto-detect here at all. On this
+aarch64 host, `x86_64-linux-gnu-gcc` (the natural cross-compiler target
+name) was already installed and `qemu-system-x86_64` too - both were
+already covered by the exact same apt packages riscv64/i386 needed
+(`qemu-system-misc`/`qemu-system-x86` overlap - `qemu-system-x86`
+provides `qemu-system-i386` AND `qemu-system-x86_64` AND
+`qemu-system-amd64` from one package, confirmed via `dpkg -L
+qemu-system-x86`). No new package was needed session. This repo's
+./configure has NOT yet been extended with an x86_64 detection block
+(unlike TOOLPREFIX_RISCV64/TOOLPREFIX_I386) - that's still open, see
+"Still open" below; this session's builds all used explicit
+`CROSS_COMPILE=x86_64-linux-gnu- QEMU=qemu-system-x86_64` on the `make`
+command line by hand.
+
+Same `-Winfinite-recursion` false positive as i386, same fix
+--------------------------------------------------------------------
+forks/x86_64/user/sh.c is a direct descendant of forks/x86/user/sh.c
+(same recursive-descent `runcmd()`) and hits the exact same GCC 12+
+`-Winfinite-recursion` false positive documented in
+notes_arch_i386.txt - confirmed by build-and-test-plan.md's own guidance
+(check siblings, see notes_debugging_techniques.txt item 7). Fixed
+identically: `CFLAGS += -Wno-infinite-recursion` in
+forks/x86_64/Makefile, with a comment pointing back at forks/x86/
+Makefile's own fix rather than re-explaining it.
+
+A real bug: BSIZE=512 (inherited from i386) is too small for 64-bit code
+------------------------------------------------------------------------------
+`make` failed inside `mkfs` itself (a HOST tool, not cross-compiled):
+
+  mkfs: tools/mkfs.c:268: iappend: Assertion `fbn < MAXFILE' failed.
+
+Read the assertion, computed the actual numbers (see
+notes_debugging_techniques.txt item 2 for the general technique):
+`MAXFILE = NDIRECT(10) + NINDIRECT(BSIZE/sizeof(uint) = 512/4 = 128) =
+138` blocks, `138 * BSIZE(512) = 70656` bytes - the largest file this
+filesystem can hold - and this fork's own compiled `usertests` binary is
+79728 bytes, over budget. 64-bit code is inherently bigger than the
+32-bit i386 build of the identical source (wider register saves, wider
+pointers/immediates throughout, `mcmodel=kernel` addressing) - a real
+consequence of X64=1 that BSIZE=512 (an unchanged i386-era constant) never
+accounted for. The Makefile's own header comment already half-predicted
+this: `"FIXME: -O1 and -O2 result in larger user programs, which can not
+fit mkfs"`.
+
+Fix: doubled `BSIZE` (512 -> 1024) in `include/fs.h`, NOT `NDIRECT` -
+this multiplies `MAXFILE`'s `NINDIRECT` term without touching `struct
+dinode`'s on-disk layout at all (`NDIRECT`, hence `sizeof(dinode)`/`IPB`,
+is unchanged), mirroring exactly what MIT's own later xv6-riscv did for
+the identical reason (`forks/riscv/kernel/fs.h`'s own `BSIZE 1024`).
+Confirmed safe against this fork's own IDE driver before applying:
+`kernel/ide.c`'s `idestart()` already derives `sector_per_block =
+BSIZE/SECTOR_SIZE` generically (`SECTOR_SIZE` staying the real hardware
+constant 512) with a `panic` guard above `sector_per_block > 7` - doubling
+to 2 has ample room. This fix is real and necessary (mkfs now succeeds,
+fs.img builds), but see "Still open" below - it also changed how many ATA
+PIO interrupts a single block read/write generates, which is now
+entangled with the actual boot hang investigated below.
+
+A real bug: forks/x86_64 double-unmasks interrupt lines on both the legacy PIC and the IOAPIC
+---------------------------------------------------------------------------------------------------------
+The kernel booted (SeaBIOS, ACPI CPU enumeration, "cpuN: starting xv6")
+but then produced ZERO further console output, indefinitely, under both
+`-smp 1` and `-smp 2`. Full gdb-multiarch investigation in
+notes_tutorial_gdb_multiarch.txt (case studies 1-4); summary of the
+findings:
+
+- The CPU was legitimately parked in `scheduler()`'s own documented idle
+  path (`hlt()`, waiting for the next interrupt to re-scan the process
+  table) - not a tight-loop hang.
+- The LAPIC timer (`ticks`, read directly via its address from
+  `kernel.sym`) was genuinely incrementing at ~100Hz - interrupts in
+  general were not globally broken, and `hlt()` was correctly waking up
+  every tick.
+- `ptable.proc[0]` (pid 1 - the very first process, i.e. what's running
+  the embedded `initcode.S` blob then `exec("/init", ...)`) was
+  permanently `SLEEPING`, and no second process (the forked shell) ever
+  existed (`proc[1]` stayed `UNUSED`) - meaning `init` never even got
+  past its *own* first action, `exec("/init", ...)`, which needs a real
+  disk read.
+- Setting breakpoints on `idestart`/`ideintr`/`trap` showed the disk read
+  WAS issued and the IDE completion interrupt WAS delivered and dispatched
+  into `ideintr()` - ruling out "no interrupt ever arrives."
+
+Comparing against the WORKING i386 sibling (forks/x86/ide.c) found a real,
+concrete divergence: this fork's `kernel/ide.c`, `kernel/console.c`, and
+`kernel/uart.c` each call `picenable(IRQ_X)` **in addition to**
+`ioapicenable(IRQ_X, ...)`; forks/x86's equivalents call only
+`ioapicenable()`. `picinit()` starts by masking every PIC line; in
+genuine IOAPIC/MP mode (confirmed active here - `ioapicenable()` itself
+early-returns unless `ismp`), the legacy PIC is supposed to stay fully
+masked for lines the IOAPIC now owns. The extra `picenable()` calls
+unmask those same physical IRQ lines on the PIC too, which - depending on
+how a given chipset/QEMU version cross-wires the two controllers - can
+mean an interrupt doesn't reliably reach the CPU via the vector the trap
+dispatcher actually expects. Fixed by removing the three errant
+`picenable()` calls (ide.c, console.c, uart.c), matching forks/x86's own
+pattern exactly, each with a `claude:`-tagged comment.
+`kernel/timer.c`'s own `picenable(IRQ_TIMER)` was checked and NOT
+touched - it lives in the genuinely-uniprocessor-only PIT fallback path
+(`if(!ismp) timerinit()` in `main.c`, no competing `ioapicenable()` call
+for that device at all in that mode), so it's architecturally different
+from the other three and was correctly left alone; confirmed by direct
+comparison rather than assumed from the pattern (see
+notes_debugging_techniques.txt item 7's own caution against
+over-generalizing a pattern without checking each instance).
+
+Still open: boot completes to `RUNNABLE` under gdb tracing, but a full-speed run still shows no output
+------------------------------------------------------------------------------------------------------------
+After the `picenable()` fix, re-running the exact same gdb trace showed
+real further progress: `ideintr()` now correctly calls `wakeup(b)` with a
+channel that matches `ptable.proc[0].chan` exactly (verified by reading
+both independently), `wakeup1()`'s own loop logic is unremarkable and
+correct, and - checked properly this time, with a `finish` past the
+mutation rather than at `wakeup()`'s own entry (see
+notes_debugging_techniques.txt item 9) - `ptable.proc[0].state` DOES
+transition to `RUNNABLE` (3) shortly after `ideintr()` runs.
+
+However: a full-speed, untraced boot (no gdb attached, no `-S`, just
+`qemu-system-x86_64 ... timeout 30`) still produces ZERO console output
+after 30 real seconds, even after this fix. This is the unresolved part -
+either:
+- something further downstream (the scheduler actually picking up the
+  now-RUNNABLE process, the context switch itself, or execution resuming
+  correctly inside what was originally the exec() syscall) still fails
+  silently, not yet traced past this point, or
+- gdb's own presence/timing (breakpoints, single-stepping, the deliberate
+  pauses between `continue`s) is itself perturbing behavior enough to
+  produce a falsely-encouraging trace - a real possibility worth taking
+  seriously for anything interrupt/timing-sensitive, and not yet ruled
+  out here.
+
+Do not treat "reaches RUNNABLE under gdb" as "boots" for this fork -
+`make test-x86_64` should NOT be wired up, and no CI matrix entry should
+be added, until a real, untraced, full-speed boot actually reaches
+"init: starting sh" or later. This is exactly the distinction
+build-and-test-plan.md's own status table (`builds` vs `boots`) exists to
+capture: this fork currently sits at `builds`, with additional partial
+runtime evidence beyond a bare compile, but not yet `boots`.
+
+Verification of what IS true today
+---------------------------------------
+  make -C forks/x86_64 CROSS_COMPILE=x86_64-linux-gnu- QEMU=qemu-system-x86_64
+    -> kernel.elf, fs.img, xv6.img all build clean (two -Wno- fixes, one
+       BSIZE fix, all documented above)
+  qemu-system-x86_64 -nographic -net none -drive ... -smp 1 -m 512
+    -> boots through SeaBIOS/ACPI/kernel init, reaches the scheduler's
+       idle loop; the disk interrupt for loading /init fires and is
+       handled; ptable.proc[0] reaches RUNNABLE under gdb tracing
+    -> does NOT reach "init: starting sh" or any later output at full
+       speed within 30 real seconds
+
+Still open (not done this session)
+--------------------------------------
+- The actual remaining hang: trace further downstream of the `RUNNABLE`
+  transition (the scheduler's own switch-in, `swtch64.S`, and whatever
+  the trap-return path back into the originally-interrupted `exec()`
+  syscall looks like) to find where a full-speed run actually diverges
+  from what gdb tracing showed. Consider testing whether the hang
+  reproduces identically under `-smp 2` (this session mostly used `-smp
+  1` while narrowing things down) and whether it's sensitive to real
+  wall-clock delays introduced by gdb itself (try inserting deliberate
+  `usleep`-equivalent pauses via QEMU's own monitor rather than gdb, to
+  distinguish "gdb changes behavior" from "just needed more real time").
+- ./configure has no riscv64/i386-style detection block for x86_64 yet -
+  add `TOOLPREFIX_X86_64`/`CROSS_COMPILE_X86_64` (naming TBD, since this
+  fork uses `CROSS_COMPILE` not `TOOLPREFIX` - worth deciding whether to
+  keep that distinction or normalize it) and `QEMU_X86_64`, plus
+  `build-x86_64`/`run-x86_64` Makefile targets - deliberately NOT done
+  yet, since wiring up build/run targets for a port that doesn't boot
+  would be misleading. `test-x86_64` and any CI matrix entry should wait
+  until the hang above is actually resolved.
+- No `forks/x86_64/test-xv6.py` written yet, for the same reason.

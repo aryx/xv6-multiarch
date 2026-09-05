@@ -12,7 +12,25 @@
 // Then sb.nlog log blocks.
 
 #define ROOTINO 1  // root i-number
-#define BSIZE 512  // block size
+// claude: was 512 (this fork's original i386-era value, still what
+// forks/x86 uses) - too small for a 64-bit build: MAXFILE*BSIZE (the
+// largest file this filesystem can hold) worked out to 70656 bytes,
+// and this fork's own compiled usertests binary is 79728 bytes (64-bit
+// code is inherently bigger - more/wider register saves, wider
+// pointers/immediates throughout, mcmodel=kernel addressing), so
+// mkfs's own iappend() hit "assert(fbn < MAXFILE)"
+// packing it into fs.img. Doubling BSIZE (not NDIRECT) mirrors exactly
+// what MIT's own later xv6-riscv port did for the same reason (see
+// forks/riscv/kernel/fs.h's own BSIZE 1024) - it multiplies MAXFILE's
+// NINDIRECT term without perturbing struct dinode's on-disk layout at
+// all (NDIRECT, hence sizeof(dinode)/IPB, is unchanged), unlike raising
+// NDIRECT which would need re-deriving IPB/inode-block-count headroom
+// too. Confirmed safe with this fork's own IDE driver: kernel/ide.c's
+// idestart() already derives "sector_per_block = BSIZE/SECTOR_SIZE"
+// generically (SECTOR_SIZE staying the real hardware constant 512) and
+// only panics above sector_per_block > 7 - doubling to 2 has room to
+// spare.
+#define BSIZE 1024  // block size
 
 // File system super block
 struct superblock {
