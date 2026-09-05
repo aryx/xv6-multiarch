@@ -27,7 +27,7 @@ QEMU_I386 ?= qemu-system-i386
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
-        clean kill
+        build-all test-all clean-all kill-all
 
 ###############################################################################
 # riscv64 (forks/riscv, RV64GC - MIT's current xv6-riscv)
@@ -104,10 +104,14 @@ kill-i386:
 	-pkill -f '$(QEMU_I386)' 2>/dev/null || true
 
 ###############################################################################
-# Umbrella targets - grow a per-arch prerequisite as each new port is wired
-# up above.
+# Umbrella targets - each grows a per-arch prerequisite as a new port is
+# wired up above.
 ###############################################################################
 
-clean: clean-riscv64 clean-i386
+build-all: build-riscv64 build-i386
 
-kill: kill-riscv64 kill-i386
+test-all: test-riscv64 test-i386
+
+clean-all: clean-riscv64 clean-i386
+
+kill-all: kill-riscv64 kill-i386
