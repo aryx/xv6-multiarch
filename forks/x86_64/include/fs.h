@@ -12,25 +12,7 @@
 // Then sb.nlog log blocks.
 
 #define ROOTINO 1  // root i-number
-// claude: was 512 (this fork's original i386-era value, still what
-// forks/x86 uses) - too small for a 64-bit build: MAXFILE*BSIZE (the
-// largest file this filesystem can hold) worked out to 70656 bytes,
-// and this fork's own compiled usertests binary is 79728 bytes (64-bit
-// code is inherently bigger - more/wider register saves, wider
-// pointers/immediates throughout, mcmodel=kernel addressing), so
-// mkfs's own iappend() hit "assert(fbn < MAXFILE)"
-// packing it into fs.img. Doubling BSIZE (not NDIRECT) mirrors exactly
-// what MIT's own later xv6-riscv port did for the same reason (see
-// forks/riscv/kernel/fs.h's own BSIZE 1024) - it multiplies MAXFILE's
-// NINDIRECT term without perturbing struct dinode's on-disk layout at
-// all (NDIRECT, hence sizeof(dinode)/IPB, is unchanged), unlike raising
-// NDIRECT which would need re-deriving IPB/inode-block-count headroom
-// too. Confirmed safe with this fork's own IDE driver: kernel/ide.c's
-// idestart() already derives "sector_per_block = BSIZE/SECTOR_SIZE"
-// generically (SECTOR_SIZE staying the real hardware constant 512) and
-// only panics above sector_per_block > 7 - doubling to 2 has room to
-// spare.
-#define BSIZE 1024  // block size
+#define BSIZE 512  // block size
 
 // File system super block
 struct superblock {
@@ -40,7 +22,50 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
-#define NDIRECT 10
+// claude: NDIRECT was 10 (this fork's original i386-era value, still
+// what forks/x86 uses) - too small for a 64-bit build: MAXFILE*BSIZE
+// (the largest file this filesystem can hold) worked out to 70656
+// bytes, and this fork's own compiled usertests binary is 79728 bytes
+// (64-bit code is inherently bigger - more/wider register saves, wider
+// pointers/immediates throughout, mcmodel=kernel addressing), so
+// mkfs's own iappend() hit "assert(fbn < MAXFILE)" packing it into
+// fs.img.
+//
+// A first attempt fixed this by doubling BSIZE instead (512 -> 1024,
+// mirroring forks/riscv/kernel/fs.h's own BSIZE 1024) - that multiplies
+// MAXFILE's NINDIRECT term without touching struct dinode's layout at
+// all. It built and mkfs succeeded, but broke booting: it silently
+// changes kernel/ide.c's own "sector_per_block = BSIZE/SECTOR_SIZE"
+// from 1 to 2, and this fork's ideintr() assumes exactly ONE interrupt
+// per idestart() request, doing a single insl() of the WHOLE transfer
+// - correct when sector_per_block is 1 (BSIZE==SECTOR_SIZE, the config
+// every version of this fork has ever actually been tested with), but
+// a real ATA PIO "READ SECTORS" (not "READ MULTIPLE") command raises
+// one interrupt PER SECTOR, not one for the whole multi-sector
+// request. Confirmed via gdb-multiarch (see
+// docs/claude_notes/notes_arch_x86_64.txt): ideintr() fired twice per
+// idestart() once BSIZE=1024, and the first process's own disk read
+// (loading /init) got stuck reading corrupted/incomplete data as a
+// result - reproducibly booted further under gdb (whose breakpoint
+// pauses happened to give the second sector time to actually become
+// ready) than at full untraced speed, a classic race-condition
+// signature. Rather than teach ideintr() to handle multi-sector PIO
+// transfers correctly (a real fix, but a bigger and riskier change to
+// this fork's disk driver), raising NDIRECT instead keeps
+// sector_per_block at 1 - the configuration this driver was actually
+// built and tested for - and solves the exact same MAXFILE*BSIZE
+// shortfall without ever exercising the buggy path at all.
+//
+// NDIRECT can't be just any value large enough, either: tools/mkfs.c's
+// own main() asserts "BSIZE % sizeof(struct dinode) == 0" (inodes must
+// pack evenly into a block, no partial inode wasted at the end), and
+// since BSIZE(512) = 2^9, sizeof(dinode) - 24 + 4*(NDIRECT+1) bytes -
+// must itself be a power of two for that to hold. NDIRECT=26
+// (dinode=128 bytes) very nearly works (MAXFILE*BSIZE=78848) but falls
+// 880 bytes short of the 79728-byte usertests binary; the next valid
+// value up is NDIRECT=58 (dinode=256 bytes, IPB=512/256=2), giving
+// MAXFILE*BSIZE=95232 - comfortable margin.
+#define NDIRECT 58
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 

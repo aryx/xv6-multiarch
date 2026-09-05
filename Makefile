@@ -13,10 +13,9 @@
 # riscv64 port; forks/x86 is the i386 one). See ./configure's own header
 # comment for why the directories themselves aren't renamed to match.
 #
-# Currently wired for riscv64 and i386 - see
-# docs/claude_notes/build-and-test-plan.md, Phases 1-2: one arch from each
-# of the two layout families before replicating this shape to the other
-# eleven ports.
+# Currently wired for riscv64, i386, and x86_64 - see
+# docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4's
+# first port (see docs/claude_notes/notes_arch_x86_64.txt).
 
 -include Makefile.config
 
@@ -24,9 +23,12 @@ TOOLPREFIX_RISCV64 ?=
 QEMU_RISCV64 ?= qemu-system-riscv64
 TOOLPREFIX_I386 ?=
 QEMU_I386 ?= qemu-system-i386
+TOOLPREFIX_X86_64 ?=
+QEMU_X86_64 ?= qemu-system-x86_64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
+        build-x86_64 run-x86_64 test-x86_64 clean-x86_64 kill-x86_64 check-x86_64-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -104,17 +106,66 @@ kill-i386:
 	-pkill -f '$(QEMU_I386)' 2>/dev/null || true
 
 ###############################################################################
+# x86_64 (forks/x86_64, jserv/xv6-x86_64)
+###############################################################################
+
+check-x86_64-toolchain:
+	@if [ "$(TOOLPREFIX_X86_64)" = NONE ] || [ "$(QEMU_X86_64)" = NONE ]; then \
+		echo "Makefile: x86_64 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+# forks/x86_64/Makefile has no TOOLPREFIX at all - it's CROSS_COMPILE
+# there (see ./configure's own x86_64 section for why this repo still
+# calls the detected value TOOLPREFIX_X86_64 for naming consistency with
+# every other arch, just passed under the name this fork's Makefile
+# actually expects).
+#
+# CPUS=2: forks/x86_64/Makefile's own "ifndef CPUS" default is this
+# HOST's own core count (`grep -c ^processor /proc/cpuinfo`), unlike
+# every other fork here (forks/riscv hardcodes 3, forks/x86 hardcodes 2)
+# - harmless on a native x86_64 deployment, but on this 64-core dev
+# machine it means qemu-nox boots 64 vCPUs. xv6 itself only ever starts
+# min(that count, NCPU=8) of them, so the extra vCPUs do nothing useful,
+# but QEMU still pays real per-vCPU TCG overhead for all 64 - confirmed
+# this alone was enough to blow past test-xv6.py's 60s boot-detection
+# window (a real full boot to a shell prompt, verified separately with
+# -smp 2, took under 30s). Not a logic bug, just a bad default to
+# inherit unmodified into an automated/CI context - pass a small,
+# explicit CPUS here rather than edit that default in the fork itself.
+build-x86_64: check-x86_64-toolchain
+	$(MAKE) -C forks/x86_64 CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) out/kernel.elf fs.img xv6.img
+
+run-x86_64: check-x86_64-toolchain
+	$(MAKE) -C forks/x86_64 CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) CPUS=2 qemu-nox
+
+# Unlike forks/riscv's/forks/x86's own QEMU vars, forks/x86_64/Makefile's
+# is "QEMU ?= qemu-system-x86_64" (a conditional default) - so QEMU
+# genuinely threads through the environment correctly here, not just
+# CROSS_COMPILE. CPUS is also "ifndef"-guarded (like TOOLPREFIX
+# elsewhere), so it too threads through the environment correctly into
+# test-xv6.py's own "make qemu-nox" subprocess call.
+test-x86_64: check-x86_64-toolchain build-x86_64
+	cd forks/x86_64 && CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) CPUS=2 ./test-xv6.py
+
+clean-x86_64:
+	$(MAKE) -C forks/x86_64 clean
+
+kill-x86_64:
+	-pkill -f '$(QEMU_X86_64)' 2>/dev/null || true
+
+###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386
+build-all: build-riscv64 build-i386 build-x86_64
 
-test-all: test-riscv64 test-i386
+test-all: test-riscv64 test-i386 test-x86_64
 
-clean-all: clean-riscv64 clean-i386
+clean-all: clean-riscv64 clean-i386 clean-x86_64
 
-kill-all: kill-riscv64 kill-i386
+kill-all: kill-riscv64 kill-i386 kill-x86_64
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

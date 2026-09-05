@@ -8,11 +8,12 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only two arches
-# are wired up so far (riscv64, i386 - build-and-test-plan.md's Phases 1
-# and 2), not all thirteen forks/ - extend the ARCH case below (both the
-# apt-get and the build/test one) as more arches get their own
-# ./configure detection, matching build.md's own Phase 4 order.
+# for the general reasoning this one reuses. Simpler here: only three
+# arches are wired up so far (riscv64, i386, x86_64 - build-and-test-
+# plan.md's Phases 1, 2, and the start of 4), not all thirteen forks/ -
+# extend the ARCH case below (both the apt-get and the build/test one)
+# as more arches get their own ./configure detection, matching
+# build.md's own Phase 4 order.
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own
@@ -74,9 +75,12 @@ RUN case "$ARCH" in \
                  gcc-riscv64-unknown-elf qemu-system-misc bc ;; \
       i386)    apt-get install -y --no-install-recommends \
                  gcc-i686-linux-gnu libc6-dev-i386-cross qemu-system-x86 ;; \
+      x86_64)  apt-get install -y --no-install-recommends \
+                 gcc-x86-64-linux-gnu qemu-system-x86 ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \
-                 gcc-i686-linux-gnu libc6-dev-i386-cross qemu-system-x86 ;; \
+                 gcc-i686-linux-gnu libc6-dev-i386-cross \
+                 gcc-x86-64-linux-gnu qemu-system-x86 ;; \
       *) echo "Dockerfile: unknown ARCH=$ARCH" >&2; exit 1 ;; \
     esac
 
