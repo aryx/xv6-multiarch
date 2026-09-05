@@ -1,0 +1,28 @@
+# Build and boot xv6-multiarch's riscv64 and i386 ports via docker.
+# See also the Dockerfile at the root of the project, and
+# docs/claude_notes/build-and-test-plan.md's own Phase 5 ("CI").
+#
+# claude: modeled on ~/c--/.github/workflows/docker.yml and
+# ~/tiger/.github/workflows/docker.yml's own shape - single job, no
+# --target (this repo's Dockerfile is single-stage, unlike ~/goken's).
+# No "submodules: recursive" needed either - this repo has no
+# .gitmodules (see ./configure's own header comment: it doesn't do any
+# git submodule handling, unlike ~/c--/configure's --skip-submodules).
+
+name: docker
+
+on:
+  pull_request_target: {}
+  workflow_dispatch: null
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # optional if don't need multi-arch build
+      - uses: docker/setup-buildx-action@v3
+      # alt: make build-docker
+      - run: docker build -t xv6-multiarch .
