@@ -4,12 +4,14 @@
 [factorization-plan.md](factorization-plan.md) — merging files you cannot
 build is how the gitlab predecessor of this project died.
 
-## Do we need to move to a Linux machine?
+## Which machine?
 
-**No — but we do need Linux containers, and Docker is already installed.**
+**Use the arm64 Linux machine.** It is the better host, and not merely by
+convenience — it solves a problem macOS cannot.
 
-The surprising finding is that emulation is not the gap. Your Mac already has
-QEMU with every target these ports need:
+Worth knowing first: emulation is *not* the gap on either host. The Mac
+already has QEMU with every target these ports need, running natively on
+arm64:
 
 ```
 qemu-system-i386  qemu-system-x86_64  qemu-system-arm  qemu-system-aarch64
@@ -17,49 +19,69 @@ qemu-system-riscv32  qemu-system-riscv64  qemu-system-mips  qemu-system-mipsel
 qemu-system-loongarch64
 ```
 
-These run natively on arm64 macOS and are fine to drive from the host. What is
-missing is (a) cross-compilers, and (b) a GNU userland. On macOS specifically:
+What is missing on macOS is (a) cross-compilers and (b) a GNU userland:
 
-- `make` is **GNU Make 3.81** (2006 — Apple won't ship GPLv3). Several of
-  these Makefiles use newer syntax.
-- `sed` and `awk` are BSD variants; xv6's build and `runoff` scripts assume GNU
-  behaviour.
-- `mkfs`, the *host* tool that builds `fs.img`, is compiled with the host
+- `make` is **GNU Make 3.81** (2006 — Apple won't ship GPLv3).
+- `sed` and `awk` are BSD variants; xv6's build and `runoff` scripts assume
+  GNU behaviour.
+- `mkfs`, the *host* tool that builds `fs.img`, compiles with the host
   compiler. Old xv6 `mkfs.c` collides with macOS headers — the xv6-d1 author
-  already hit this and committed "changed types - remove _t to avoid clash with
-  macos includes for mkfs".
-- Every one of these ports documents a Linux build in its own README.
-  Following upstream instructions verbatim is much cheaper than porting the
-  build to macOS thirteen times.
+  hit exactly this and committed "changed types - remove _t to avoid clash
+  with macos includes for mkfs".
+- Every port documents a Linux build in its own README. Following upstream
+  instructions verbatim beats porting thirteen build systems to macOS.
 
-So the recommendation is: **build inside a Debian container, run QEMU either
-inside the container or on the host.** That keeps your machine as-is, gives a
-reproducible toolchain set, and turns directly into CI later. Moving to a
-dedicated Linux box would also work but buys nothing a container doesn't.
+All of that is simply absent on Linux: `apt install` the toolchains and the
+GNU userland is already correct. Containers stop being a workaround and become
+optional — still worth adding later to *pin* the toolchain for CI, but not
+needed to start.
 
-### The Apple Silicon wrinkle
+### The one thing the Linux machine genuinely fixes
 
-You are on arm64. Debian arm64 provides most cross-toolchains as native arm64
-binaries, so they run at full speed:
+Both hosts are arm64, so moving OS does **not** by itself solve the LoongArch
+toolchain problem — Loongson's CLFS cross-tools ship as **x86_64-Linux
+binaries**, and an arm64 host cannot run them natively either way.
 
-| target | Debian package | native on arm64? |
+But Linux can make that invisible:
+
+```sh
+sudo apt install qemu-user-static binfmt-support
+```
+
+With `binfmt_misc` registered, x86_64 ELF binaries execute transparently, so
+the Loongson toolchain simply runs — no wrapper, no separate container, no
+`--platform` juggling. The compile is emulated and therefore slow, which is
+fine. On macOS the equivalent is an emulated amd64 Docker container, which is
+clumsier and slower. This alone justifies the move.
+
+Check for a native package first — `apt-cache search loongarch` — since recent
+Debian/Ubuntu may carry a `loongarch64-linux-gnu` cross-gcc built for arm64,
+which would avoid emulation entirely.
+
+### Toolchain packages
+
+| target | Debian/Ubuntu package | native on arm64? |
 |---|---|---|
 | riscv64 / riscv32 bare metal | `gcc-riscv64-unknown-elf` | yes |
 | ARM 32-bit bare metal | `gcc-arm-none-eabi` | yes |
 | aarch64 | `gcc-aarch64-linux-gnu` | yes |
 | MIPS | `gcc-mipsel-linux-gnu`, `gcc-mips-linux-gnu` | yes |
 | i386 / x86-64 | `gcc-i686-linux-gnu`, `gcc-x86-64-linux-gnu` | yes |
-| **LoongArch** | Loongson CLFS tarball is **x86_64-Linux binaries** | **no** |
+| LoongArch | check `apt-cache search loongarch`; else Loongson CLFS via `binfmt_misc` | probably not |
 
-LoongArch is the one exception. Either find an arm64 loongarch64 toolchain (a
-recent Debian `gcc-*-loongarch64-linux-gnu` may exist — check first), or run
-just that build in a `--platform linux/amd64` container under emulation. It's
-a compile, so slow is acceptable.
+The ports want *bare-metal* ELF toolchains; where only a `-linux-gnu` cross
+exists, `-ffreestanding -nostdlib -static` generally substitutes. xv6's
+Makefiles auto-detect via `TOOLPREFIX` and will need that list extended.
 
-Note the ports want *bare-metal* ELF toolchains; where only a `-linux-gnu`
-cross exists, `-ffreestanding -nostdlib -static` generally substitutes. xv6's
-Makefiles usually auto-detect via `TOOLPREFIX`, and will need that list
-extended.
+### Two practical notes
+
+- It is a **work machine**. Installing a dozen cross-toolchains and registering
+  `binfmt_misc` handlers is intrusive; if that is awkward, do it in a container
+  *there* — on Linux, containers are near-native, so you keep the speed and the
+  binfmt trick still works from the host.
+- Getting the repo across: push to GitHub first, then clone. Avoid copying the
+  working tree by hand — the point of this repo is its history, and a `scp` of
+  the checkout would lose it.
 
 ## Set expectations: this will not be thirteen green ticks
 
@@ -108,7 +130,7 @@ smoke script.
 ```
 tools/
   arches/<name>.conf     # TOOLPREFIX, QEMU, MACHINE, EXTRA, BANNER
-  build.sh <arch>        # builds in the container
+  build.sh <arch>        # builds one arch with its toolchain
   boot.sh <arch>         # boots under QEMU, -nographic, with a timeout
   smoke.py <arch>        # expect-style: wait for shell, run `ls`, assert, exit
   matrix.sh              # runs everything, emits the status table
@@ -125,7 +147,8 @@ rather than inventing one.
 ## Phases
 
 **Phase 0 — scaffolding.** Create `tools/` and the per-arch manifests. No
-builds yet. Decide container base image and pin it.
+builds yet. On the Linux box, install the toolchains from the table above and
+record the exact package versions used, so the set is reproducible later.
 
 **Phase 1 — one arch end to end: `riscv`.** Highest chance of success, and it
 brings its own test script. Getting `build.sh riscv && smoke.py riscv` green
@@ -135,9 +158,11 @@ proves the whole harness shape before it is replicated.
 families differ in layout and build system (see the factorization plan), so
 proving both shapes early prevents designing the harness around one of them.
 
-**Phase 3 — container image.** Fold the toolchains discovered in phases 1-2
-into a pinned Dockerfile. Add the amd64-emulated LoongArch path only if the
-arm64 toolchain search fails.
+**Phase 3 — pin the toolchain.** Capture the working toolchain set from phases
+1-2 as a Dockerfile, so CI and any second machine reproduce it exactly. This is
+about reproducibility, not capability — the native Linux install already works
+by this point. Set up `binfmt_misc` here if LoongArch needs the emulated
+x86_64 Loongson toolchain.
 
 **Phase 4 — the remaining ten**, cheapest first: `x86_64`, `amd64`, `rv32`,
 `aarch64`, `loongarch`, `mips`, then the four ARM board ports, then `d1` as
