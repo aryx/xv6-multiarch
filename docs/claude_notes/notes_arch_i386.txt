@@ -1,0 +1,197 @@
+notes_arch_i386.txt
+====================
+
+Written: 2026-09-05, against commit 78876cc (the riscv64 build+boot commit,
+parent of the commit adding i386 support to ./configure/Makefile and this
+file). This is Phase 2 of docs/claude_notes/build-and-test-plan.md: one arch
+from the OTHER layout family (see factorization-plan.md's own "two families"
+finding) - forks/x86, MIT's original xv6-public (2006-2020), the ancestor
+every other port in this tree ultimately traces back to. All claims below
+are VERIFIED on this machine (Ubuntu 24.04.2 LTS, aarch64 host), not
+inferred from upstream docs.
+
+Naming: this port lives at forks/x86 (named for its upstream repo, per the
+root README's port table), but is referred to as "i386" everywhere else -
+Makefile targets (build-i386/run-i386/test-i386), ./configure's own
+TOOLPREFIX_I386/QEMU_I386 - matching ~/goken/include/arch's and ~/c--'s
+bare-ISA naming convention (see ~/goken/include/arch/i386/, distinct from
+its own arch/386/ - Plan 9's traditional shorthand for the same ISA). The
+forks/x86 directory itself is deliberately NOT renamed to match - see
+./configure's own header comment for why (that's factorization-phase work,
+which depends on the directory names being stable while blame gets
+established, not this phase's).
+
+What this is
+------------
+Unlike forks/riscv (Phase 1, see notes_arch_riscv64.txt), this port is NOT
+actively maintained upstream - it's the original 2006-2020 teaching kernel,
+retired once MIT moved to RISC-V (see the root README's fork-point table:
+"x86 only has 4 [own commits] because the x86 repo was retired shortly
+after RISC-V took over"). So unlike riscv64's zero-code-changes bring-up,
+this one hit real 2013-era-kernel-vs-2020s-compiler friction, exactly the
+kind build-and-test-plan.md warned about in general and riscv64 happened to
+dodge. Two real GCC false-positive warnings, both fixed with targeted
+-Wno-* flags (see below) - no other code changes needed.
+
+Toolchain: installed, but forks/x86/Makefile's own auto-detect doesn't know it
+-------------------------------------------------------------------------------
+`i686-linux-gnu-gcc` was already on this host (`dpkg -l | grep i686` showed
+gcc-i686-linux-gnu + libc6-dev-i386-cross already installed). The gap: this
+fork's own TOOLPREFIX auto-detect (`forks/x86/Makefile`'s `ifndef TOOLPREFIX`
+block) only tries two things - `i386-jos-elf-objdump` (the classic
+teaching-OS toolchain name this fork's own README expects, via
+https://github.com/riscv/riscv-gnu-toolchain-style JOS course infrastructure
+that doesn't exist as a real Debian/Ubuntu package) or a bare/native probe
+(only true on an actual x86 Linux host). It has NO candidate for
+`i686-linux-gnu-`, which is what Ubuntu/Debian actually package - so left
+unconfigured on this aarch64 host, `make -C forks/x86` fails outright with
+its own "Couldn't find an i386-*-elf version of GCC/binutils" error. This is
+the real value ./configure adds here, more than for riscv64 (where the
+fork's own auto-detect already covered the toolchain that was actually
+installed): ./configure's own `detect_toolprefix` tries i386-jos-elf-, then
+i686-linux-gnu-, then bare, in that order, and explicitly overrides
+TOOLPREFIX on the `make` command line - the fork's own ifndef-guarded
+autodetect never even runs once that override is present.
+
+`qemu-system-i386` was ALSO already installed (`qemu-system-x86` - a
+different Debian/Ubuntu package from qemu-system-misc, which is what
+riscv64 needed; see notes_arch_riscv64.txt's own "what was missing"
+section). No MIN_QEMU_VERSION check exists in forks/x86/Makefile at all
+(unlike forks/riscv/Makefile's own check-qemu-version/bc dependency) - this
+fork predates that convention, so ./configure's own detect_qemu_system call
+for i386 skips the version-floor argument entirely.
+
+Two real GCC-13 false positives, both from warnings added AFTER this code was written
+------------------------------------------------------------------------------------------
+forks/x86/Makefile builds with `-Wall -Werror -m32`, same discipline as
+forks/riscv's own `-Wall -Werror`. Two of GCC's newer warnings (both added
+to -Wall's default set well after 2020, this code's whole active-development
+window) misfire here and, because of -Werror, are fatal rather than just
+noisy:
+
+1. `-Warray-bounds` (strengthened in GCC 10+) on mp.c's `mpconfig()`/
+   `mpinit()`: these functions cast a BIOS-supplied physical address
+   (`mp->physaddr`) to a `struct mpconf *` and dereference fields at small
+   offsets from it. GCC's interprocedural array-bounds analysis
+   misinterprets this as indexing a huge on-stack/inline array (the error
+   text literally says "array subscript -48806446 is outside array bounds
+   of void[2147483647]" - nonsense for what is actually just a pointer
+   cast). This is a well-known false-positive class for freestanding
+   kernel code doing exactly this kind of raw-pointer-to-physical-memory
+   cast (the Linux kernel itself disables -Warray-bounds in several places
+   for the identical reason) - not a real out-of-bounds access, confirmed
+   by the kernel booting and enumerating CPUs correctly afterward (mpinit()
+   is what finds the second CPU under QEMU's `-smp 2`).
+2. `-Winfinite-recursion` (added in GCC 12) on sh.c's `runcmd()`: a
+   classic recursive-descent command-tree interpreter (pipe/redirection/
+   background/list nodes each recurse into their sub-commands). GCC's
+   heuristic flags it because every path it can see ends in another
+   `runcmd()` call - it doesn't model that the actual leaf case (a plain
+   `EXEC` command) calls `exec()`, which either replaces the process image
+   (never returning to recurse further) or fails and calls `exit()`. Also
+   a known heuristic false-positive class, not a real infinite loop -
+   confirmed empirically: the shell runs pipelines, redirections, and
+   `&&`-style command lists correctly throughout the usertests run below,
+   which exercises exactly this code path repeatedly.
+
+Fixed by adding `-Wno-array-bounds` and `-Wno-infinite-recursion` directly
+to forks/x86/Makefile's CFLAGS (the user explicitly said this session that
+files under forks/ are fair game to modify, unlike the more hands-off
+posture taken with forks/riscv - "we should feel free to modify files under
+forks/ to facilitate things... don't restrict yourself to changes that try
+to keep forks/ as is"). Both are narrowly scoped to the exact warning class
+that misfires, not a blanket `-Wno-error` - real new warnings in this code
+would still be caught.
+
+Two linker warnings observed, both benign
+---------------------------------------------
+Every link step (`bootblock`, `entryother`, `initcode`, `kernel`, every
+`_<prog>` userland binary) prints:
+
+  ld: warning: <file>.o: missing .note.GNU-stack section implies executable stack
+  ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+  ld: warning: <name> has a LOAD segment with RWX permissions
+
+Both are modern binutils (2.42 here) defaulting to stricter
+security-hardening expectations (non-executable stack markings, W^X
+segment permissions) that 2006-era hand-written assembly (bootasm.S,
+entryother.S, the raw `_start`-style userland link with `-N -e main
+-Ttext 0`) simply predates - there is no `.note.GNU-stack` section to mark
+because nothing in this code was ever built with that convention in mind.
+These are LINKER warnings, not compiler ones, so -Werror (a compiler flag)
+does not touch them - they do not fail the build, and the resulting kernel
+and binaries run correctly under QEMU regardless. Recorded here only so a
+future "does the build log look clean" pass doesn't mistake noise for a
+real problem.
+
+No upstream test harness - wrote a minimal forks/x86/test-xv6.py
+-----------------------------------------------------------------------
+Unlike forks/riscv (which ships its own actively-maintained test-xv6.py,
+per notes_arch_riscv64.txt), this older fork has no test harness of its own
+and no crash/log/orphan-recovery test programs at all (its Makefile's
+UPROGS list is a strict subset of riscv's: no _grind/_sync/_logstress/
+_forphan/_dorphan). So the only thing worth automating is a usertests run.
+Wrote forks/x86/test-xv6.py, modeled on forks/riscv/test-xv6.py's own QEMU
+class but pared down to just that.
+
+One real discovery while writing it: this usertests.c has no unified
+printf-based "ALL TESTS PASSED" banner the way riscv's rewritten one does.
+Instead, its very last action - `exectest()`, the final call in `main()` -
+does `exec("echo", echoargv)` where `echoargv` (declared at the top of the
+file) is `{"echo","ALL","TESTS","PASSED",0}`. A successful exec() replaces
+the usertests process image with `echo`, which prints exactly that line
+and exits normally - i.e. this is the ORIGINAL mechanism riscv's own
+usertests.c later replaced with a direct printf of the same string. Same
+success string, entirely different code path producing it - worth knowing
+before assuming every fork's usertests.c implements "success" the same
+way.
+
+Also discovered: use `qemu-nox`, not `qemu`, for scripted/headless
+automation. This fork's plain `qemu` target runs `$(QEMU) -serial
+mon:stdio $(QEMUOPTS)` with NO `-nographic` - i.e. it still tries to open a
+graphical display window in addition to the serial console, which fails or
+hangs on a headless host. `qemu-nox` adds `-nographic` and drops
+`-serial mon:stdio`, giving the same all-on-one-terminal shape
+forks/riscv's own (single) `qemu` target already defaults to. The
+top-level Makefile's `run-i386`/`test-i386` targets both use `qemu-nox`
+for exactly this reason.
+
+Verification: build and full usertests, two flags patched, no other changes
+--------------------------------------------------------------------------------
+  ./configure
+    -> found i686-linux-gnu-gcc (i386)
+    -> found /usr/bin/qemu-system-i386 (i386)
+  make build-i386
+    -> failed twice before the two -Wno- fixes above (mp.o, then sh.o);
+       clean build after both were added - kernel, xv6.img, fs.img all
+       built successfully
+  make test-i386
+    -> boots under qemu-system-i386 -nographic, runs the full usertests
+       suite via forks/x86/test-xv6.py, ends "ALL TESTS PASSED", process
+       exit 0
+
+One line in the transcript is worth flagging so it isn't mistaken for a
+regression later, same category as notes_arch_riscv64.txt's own
+lazy_unmap item: during the `uio` test, the kernel prints
+`pid 591 usertests: trap 13 err 0 on cpu 0 eip 0x35d3 addr 0x801dc130--kill proc`
+to the console, then the test suite continues normally to `exec test` and
+`ALL TESTS PASSED`. This is expected: uio() deliberately passes invalid
+user-space pointers to the kernel to verify it validates and rejects them
+(trap 13 = general protection fault) rather than crashing - killing the
+offending process is the CORRECT kernel behavior being tested, not a
+fault in this repo's setup.
+
+Still open (not done this session)
+--------------------------------------
+- Same items notes_arch_riscv64.txt already flagged as cross-cutting, not
+  repeated in full here: Makefile.config is gitignored now (done in the
+  riscv64 commit), but the tools/ scaffold build-and-test-plan.md describes
+  (arches/<name>.conf, build.sh, boot.sh, smoke.py, matrix.sh) still doesn't
+  exist - this repo's ./configure + top-level Makefile covers the same
+  ground per-arch instead; reconciling the two designs is still undecided.
+- forks/x86/test-xv6.py is new, written for this repo, not upstream - it
+  has not been checked against any REAL hardware-adjacent quirks (bochs,
+  the `.gdbinit.tmpl`-based GDB flow, `qemu-memfs`/`kernelmemfs`) - only
+  the `qemu-nox` + usertests path was exercised.
+- Phase 3+ of build-and-test-plan.md (pinning the toolchain, the remaining
+  ten ports) has not been started.

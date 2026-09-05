@@ -78,6 +78,18 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+# claude: GCC 10+'s -Warray-bounds (part of -Wall) misfires on mp.c's BIOS-
+# memory pointer casts (mpconfig()/mpinit() treat a small physical address
+# as if it indexed a huge on-stack array) - a well-known false-positive
+# class for freestanding kernel code on modern GCC, fatal here only
+# because of -Werror above. Confirmed via i686-linux-gnu-gcc 13.3.0.
+CFLAGS += -Wno-array-bounds
+# claude: GCC 12+'s -Winfinite-recursion (also part of -Wall) misfires on
+# sh.c's runcmd(), a genuinely-terminating recursive-descent interpreter
+# whose base cases (exec()/exit() on the leaf command types) the
+# heuristic can't see through - confirmed it actually runs fine under
+# qemu. Same -Werror-makes-it-fatal situation as -Warray-bounds above.
+CFLAGS += -Wno-infinite-recursion
 ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null | head -n 1)

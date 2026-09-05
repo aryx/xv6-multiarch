@@ -7,33 +7,48 @@
 # do not edit by hand, re-run ./configure instead), and gives every port
 # short "build-<arch>"/"run-<arch>" targets.
 #
-# Currently wired for riscv only (forks/riscv) - see
-# docs/claude_notes/build-and-test-plan.md, Phase 1: get one arch building
-# and booting before replicating this shape to the other twelve ports.
+# Target names use the bare ISA (riscv64, i386, ...), matching ./configure's
+# own TOOLPREFIX_<ARCH>/QEMU_<ARCH> naming - NOT the forks/<name> directory
+# name, which instead names the upstream repo/port (forks/riscv is the
+# riscv64 port; forks/x86 is the i386 one). See ./configure's own header
+# comment for why the directories themselves aren't renamed to match.
+#
+# Currently wired for riscv64 and i386 - see
+# docs/claude_notes/build-and-test-plan.md, Phases 1-2: one arch from each
+# of the two layout families before replicating this shape to the other
+# eleven ports.
 
 -include Makefile.config
 
-TOOLPREFIX_RISCV ?=
-QEMU_RISCV ?= qemu-system-riscv64
+TOOLPREFIX_RISCV64 ?=
+QEMU_RISCV64 ?= qemu-system-riscv64
+TOOLPREFIX_I386 ?=
+QEMU_I386 ?= qemu-system-i386
 
-.PHONY: build-riscv run-riscv test-riscv clean-riscv check-riscv-toolchain clean kill-riscv kill
+.PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
+        build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
+        clean kill
+
+###############################################################################
+# riscv64 (forks/riscv, RV64GC - MIT's current xv6-riscv)
+###############################################################################
 
 # NONE is ./configure's own sentinel for "looked, found nothing" (see its
-# TOOLPREFIX_RISCV=NONE/QEMU_RISCV=NONE assignments) - caught here so a
+# TOOLPREFIX_RISCV64=NONE/QEMU_RISCV64=NONE assignments) - caught here so a
 # missing toolchain fails with a clear pointer to ./configure instead of
 # forks/riscv/Makefile trying to run "NONEgcc" or a qemu binary that isn't
 # on PATH.
-check-riscv-toolchain:
-	@if [ "$(TOOLPREFIX_RISCV)" = NONE ] || [ "$(QEMU_RISCV)" = NONE ]; then \
-		echo "Makefile: riscv toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+check-riscv64-toolchain:
+	@if [ "$(TOOLPREFIX_RISCV64)" = NONE ] || [ "$(QEMU_RISCV64)" = NONE ]; then \
+		echo "Makefile: riscv64 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
-build-riscv: check-riscv-toolchain
-	$(MAKE) -C forks/riscv TOOLPREFIX=$(TOOLPREFIX_RISCV) QEMU=$(QEMU_RISCV) kernel/kernel fs.img
+build-riscv64: check-riscv64-toolchain
+	$(MAKE) -C forks/riscv TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) kernel/kernel fs.img
 
-run-riscv: check-riscv-toolchain
-	$(MAKE) -C forks/riscv TOOLPREFIX=$(TOOLPREFIX_RISCV) QEMU=$(QEMU_RISCV) qemu
+run-riscv64: check-riscv64-toolchain
+	$(MAKE) -C forks/riscv TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) qemu
 
 # forks/riscv/test-xv6.py drives plain "make qemu" itself (see that
 # script's own QEMU class), so there's no command line to pass TOOLPREFIX/
@@ -42,26 +57,57 @@ run-riscv: check-riscv-toolchain
 # included); QEMU does NOT (forks/riscv/Makefile's own "QEMU =
 # qemu-system-riscv64" is an unconditional assignment with no ifndef
 # guard, so a plain makefile assignment always wins over the environment)
-# - harmless in practice since QEMU_RISCV is just the bare command name
+# - harmless in practice since QEMU_RISCV64 is just the bare command name
 # qemu-system-riscv64 once found on PATH, identical to that hardcoded
 # default.
-test-riscv: check-riscv-toolchain build-riscv
-	cd forks/riscv && TOOLPREFIX=$(TOOLPREFIX_RISCV) ./test-xv6.py usertests
+test-riscv64: check-riscv64-toolchain build-riscv64
+	cd forks/riscv && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py usertests
 
-clean-riscv:
+clean-riscv64:
 	$(MAKE) -C forks/riscv clean
 
-# Umbrella target - just clean-riscv for now, grows a clean-<arch>
-# prerequisite per port as each one gets wired up above.
-clean: clean-riscv
-
-# "run-riscv"/"test-riscv" run QEMU attached to this shell (-nographic),
+# "run-riscv64"/"test-riscv64" run QEMU attached to this shell (-nographic),
 # but a stuck boot (or a Ctrl-C that missed) can leave qemu-system-riscv64
 # running headless in the background - this kills it by matching the exact
-# QEMU_RISCV command ./configure detected, not just the bare binary name,
+# QEMU_RISCV64 command ./configure detected, not just the bare binary name,
 # so it doesn't reach for some other arch's qemu-system-* by accident.
-kill-riscv:
-	-pkill -f '$(QEMU_RISCV)' 2>/dev/null || true
+kill-riscv64:
+	-pkill -f '$(QEMU_RISCV64)' 2>/dev/null || true
 
-# Umbrella target - just kill-riscv for now, same growth path as "clean".
-kill: kill-riscv
+###############################################################################
+# i386 (forks/x86, MIT xv6-public - the original teaching OS)
+###############################################################################
+
+check-i386-toolchain:
+	@if [ "$(TOOLPREFIX_I386)" = NONE ] || [ "$(QEMU_I386)" = NONE ]; then \
+		echo "Makefile: i386 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-i386: check-i386-toolchain
+	$(MAKE) -C forks/x86 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) kernel fs.img xv6.img
+
+run-i386: check-i386-toolchain
+	$(MAKE) -C forks/x86 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) qemu-nox
+
+# forks/x86/test-xv6.py (this repo's own, not upstream - see its own header
+# comment) drives plain "make qemu-nox" the same way forks/riscv's does -
+# same TOOLPREFIX-via-environment/QEMU-via-PATH split applies (forks/x86/
+# Makefile's own "QEMU = ..." auto-detect has no ifndef guard either).
+test-i386: check-i386-toolchain build-i386
+	cd forks/x86 && TOOLPREFIX=$(TOOLPREFIX_I386) ./test-xv6.py
+
+clean-i386:
+	$(MAKE) -C forks/x86 clean
+
+kill-i386:
+	-pkill -f '$(QEMU_I386)' 2>/dev/null || true
+
+###############################################################################
+# Umbrella targets - grow a per-arch prerequisite as each new port is wired
+# up above.
+###############################################################################
+
+clean: clean-riscv64 clean-i386
+
+kill: kill-riscv64 kill-i386

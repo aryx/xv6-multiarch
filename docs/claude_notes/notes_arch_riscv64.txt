@@ -34,7 +34,7 @@ prefix's own `objdump -i | grep elf64-big`) picks riscv64-unknown-elf-
 first, and that is sufficient - no flag surgery, no `-Wno-error` overrides,
 none of the "expect breakage" 2013-2023-kernel-vs-2020s-compiler friction
 build-and-test-plan.md warns about elsewhere in the tree. `make
-build-riscv` (this repo's own top-level target, see below) compiles kernel
+build-riscv64` (this repo's own top-level target, see below) compiles kernel
 + userland + mkfs and links fs.img on the first try.
 
 What WAS missing: qemu-system-riscv64 and bc
@@ -113,28 +113,28 @@ for a single call site; add one when a second arch actually needs it, per
 the user's own explicit steer this session).
 
 Detects and writes:
-  TOOLPREFIX_RISCV   (riscv64-unknown-elf-, matching forks/riscv/Makefile's
+  TOOLPREFIX_RISCV64   (riscv64-unknown-elf-, matching forks/riscv/Makefile's
                       own probe order exactly, so ./configure's choice
                       never disagrees with what that Makefile would pick
                       on its own)
-  QEMU_RISCV         (full path via `command -v qemu-system-riscv64`)
+  QEMU_RISCV64         (full path via `command -v qemu-system-riscv64`)
 
 Top-level Makefile targets (all riscv-only for now, each with a matching
 umbrella target that will grow a per-arch prerequisite as more forks land):
-  build-riscv   - kernel/kernel + fs.img
-  run-riscv     - interactive boot, -nographic (see "exiting QEMU" below)
-  test-riscv    - runs forks/riscv/test-xv6.py's own `usertests` tier -
+  build-riscv64   - kernel/kernel + fs.img
+  run-riscv64     - interactive boot, -nographic (see "exiting QEMU" below)
+  test-riscv64    - runs forks/riscv/test-xv6.py's own `usertests` tier -
                   this doubles as the "does qemu actually work" smoke test,
                   reusing MIT's upstream harness rather than writing a new
                   one, per build-and-test-plan.md's own explicit guidance
                   ("Model it on arch/riscv/test-xv6.py... reuse its
                   approach rather than inventing one")
-  clean-riscv, clean   - $(MAKE) -C forks/riscv clean
-  kill-riscv, kill     - pkill -f against the exact QEMU_RISCV command
+  clean-riscv64, clean   - $(MAKE) -C forks/riscv clean
+  kill-riscv64, kill     - pkill -f against the exact QEMU_RISCV64 command
                   ./configure detected (not just the bare binary name),
                   for a stuck/detached qemu-system-riscv64 left running in
-                  the background after an interactive `run-riscv`/
-                  `test-riscv` session
+                  the background after an interactive `run-riscv64`/
+                  `test-riscv64` session
 
 One real subtlety documented in the Makefile itself: forks/riscv/Makefile
 guards TOOLPREFIX with `ifndef` (so an environment-sourced value, e.g. one
@@ -143,7 +143,7 @@ correctly takes effect - ifndef only checks for a non-empty value,
 regardless of origin) but does NOT guard QEMU the same way - `QEMU =
 qemu-system-riscv64` is an unconditional plain assignment, which always
 wins over an environment-sourced QEMU regardless of origin. Harmless in
-practice (QEMU_RISCV is just the bare command name once found on PATH,
+practice (QEMU_RISCV64 is just the bare command name once found on PATH,
 identical to that hardcoded default), but worth knowing before assuming
 every var this fork's Makefile defines is environment-overridable the same
 way.
@@ -153,10 +153,10 @@ Verification: build and full usertests, no patches needed
   ./configure
     -> found riscv64-unknown-elf-gcc (riscv)
     -> found /usr/bin/qemu-system-riscv64, version 8.2.2 (riscv)
-  make build-riscv
+  make build-riscv64
     -> kernel/kernel and fs.img built clean, zero warnings-as-errors hit
        (forks/riscv/Makefile builds with -Wall -Werror)
-  make test-riscv
+  make test-riscv64
     -> boots under qemu-system-riscv64 -machine virt -bios none, runs the
        full usertests suite via test-xv6.py, ends "ALL TESTS PASSED",
        process exit 0
@@ -170,7 +170,7 @@ AMO page fault) as part of what it's testing, not a fault in this repo's
 setup - included here only so a future "does the log look clean" check
 doesn't waste time re-investigating it.
 
-Exiting QEMU after `make run-riscv`
+Exiting QEMU after `make run-riscv64`
 ---------------------------------------
 `-nographic` attaches the guest's serial console directly to the
 invoking terminal, so ordinary keystrokes (including Ctrl-C/Ctrl-D) go to
@@ -179,7 +179,7 @@ QEMU's own escape is Ctrl-A then a single key: **Ctrl-A X** quits QEMU
 immediately; **Ctrl-A C** instead switches to the QEMU monitor (a
 `(qemu)` prompt) where `quit` does the same more deliberately. If a
 session is detached/killed without going through either of these (e.g. an
-interrupted `run-riscv`), `make kill-riscv`/`make kill` cleans up the
+interrupted `run-riscv64`), `make kill-riscv64`/`make kill` cleans up the
 orphaned qemu-system-riscv64 process - confirmed by leaving one running
 this session and observing `pkill -f` remove it while leaving the
 Makefile-invoking shell itself untouched.

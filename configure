@@ -18,43 +18,59 @@ set -eu
 #
 #  1. An upfront, one-place report of what's missing for a given arch,
 #     instead of discovering it deep inside a Makefile's $(shell ...)
-#     probe (whose errors are easy to miss) or, worse, inside
-#     check-qemu-version's `bc` invocation, which fails cryptically if
-#     `bc` itself isn't installed.
-#  2. Detection of qemu-system-<arch> (the FULL-SYSTEM emulator that boots
-#     the compiled kernel image), which no fork's Makefile auto-detects at
-#     all - forks/riscv/Makefile just hardcodes "QEMU = qemu-system-riscv64"
-#     and assumes it's on PATH. This is not the same thing as qemu-user's
+#     probe (whose errors are easy to miss).
+#  2. A candidate toolchain prefix each fork's own probe doesn't know
+#     about but that's what's actually packaged for this host (e.g.
+#     i686-linux-gnu- for forks/x86 - Ubuntu ships no i386-jos-elf-
+#     package at all, and forks/x86/Makefile's own probe only tries
+#     i386-jos-elf- or bare/native, never i686-linux-gnu-).
+#  3. Detection of qemu-system-<arch> (the FULL-SYSTEM emulator that boots
+#     the compiled kernel image) - not the same thing as qemu-user's
 #     per-arch "qemu-<arch>" user-mode binaries (see ~/c--/configure's own
-#     RUN_<ARCH> detection) - xv6 is a freestanding kernel, not a Linux
-#     binary, so it needs a full virtual machine (RAM, UART, virtio disk),
+#     RUN_<ARCH> detection): xv6 is a freestanding kernel, not a Linux
+#     binary, so it needs a full virtual machine (RAM, UART, disk/virtio),
 #     not user-mode syscall translation.
 #
-# Scope: riscv only for now - this is Phase 1 of
-# docs/claude_notes/build-and-test-plan.md (get one arch building and
-# booting before replicating the shape to the other twelve forks/<name>
-# trees). Extend by adding another block below, following the riscv one,
-# plus a matching build-<arch>/run-<arch> pair in the top-level Makefile -
-# do not generalize into a detect_backend-style helper until a second arch
-# actually needs one; a single call site isn't worth the indirection yet.
+# Naming: arch names here are the bare ISA (riscv64, i386, ...), matching
+# ~/goken/include/arch/ and ~/c--'s CC<ARCH>/RUN_<ARCH> convention - NOT
+# necessarily the forks/<name> directory name, which instead names the
+# upstream repo/port (forks/x86 is the i386 port; forks/riscv is the
+# riscv64 one - see the root README's own port table). Do not rename the
+# forks/<name> directories to match - that's the factorization phase's
+# job (docs/claude_notes/factorization-plan.md), not this one's, and
+# renaming them now would break the blame-preserving history that phase
+# depends on.
+#
+# Scope: riscv64 and i386 for now - Phases 1 and 2 of
+# docs/claude_notes/build-and-test-plan.md (one arch from each of the two
+# layout families - see that plan and factorization-plan.md's own "two
+# families" finding - before replicating this shape to the other eleven
+# forks/<name> trees).
 
 ###############################################################################
 # Entry point
 ###############################################################################
 
-TOOLPREFIX_RISCV=${TOOLPREFIX_RISCV:-}
-QEMU_RISCV=${QEMU_RISCV:-}
+TOOLPREFIX_RISCV64=${TOOLPREFIX_RISCV64:-}
+QEMU_RISCV64=${QEMU_RISCV64:-}
+TOOLPREFIX_I386=${TOOLPREFIX_I386:-}
+QEMU_I386=${QEMU_I386:-}
 
 for arg in "$@"; do
     case "$arg" in
-        --toolprefix-riscv=*) TOOLPREFIX_RISCV="${arg#--toolprefix-riscv=}" ;;
-        --qemu-riscv=*)       QEMU_RISCV="${arg#--qemu-riscv=}" ;;
+        --toolprefix-riscv64=*) TOOLPREFIX_RISCV64="${arg#--toolprefix-riscv64=}" ;;
+        --qemu-riscv64=*)       QEMU_RISCV64="${arg#--qemu-riscv64=}" ;;
+        --toolprefix-i386=*)    TOOLPREFIX_I386="${arg#--toolprefix-i386=}" ;;
+        --qemu-i386=*)          QEMU_I386="${arg#--qemu-i386=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
-            echo "  --toolprefix-riscv=PREFIX  override the riscv64 cross-toolchain prefix"
-            echo "                             (e.g. riscv64-unknown-elf-)"
-            echo "  --qemu-riscv=CMD           override the riscv64 qemu-system binary"
-            echo "TOOLPREFIX_RISCV/QEMU_RISCV may also be set in the environment."
+            echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
+            echo "                               (e.g. riscv64-unknown-elf-)"
+            echo "  --qemu-riscv64=CMD           override the riscv64 qemu-system binary"
+            echo "  --toolprefix-i386=PREFIX     override the i386 cross-toolchain prefix"
+            echo "                               (e.g. i686-linux-gnu-)"
+            echo "  --qemu-i386=CMD              override the i386 qemu-system binary"
+            echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
         *)
@@ -70,98 +86,157 @@ done
 PKGMGR_HINTED=no
 note_other_pkgmgr() {
     if [ "$PKGMGR_HINTED" = no ]; then
-        echo "  (other distros/OSes: look for the equivalent riscv64 packages in" >&2
-        echo "  your own package manager, e.g. pacman/dnf/brew)" >&2
+        echo "  (other distros/OSes: look for the equivalent packages in your own" >&2
+        echo "  package manager, e.g. pacman/dnf/brew)" >&2
         PKGMGR_HINTED=yes
     fi
 }
 
 ###############################################################################
-# riscv64 toolchain (forks/riscv, RV64GC - MIT xv6-riscv)
+# detect_toolprefix: probe a list of candidate TOOLPREFIX values via each
+# candidate's own "<prefix>objdump -i", the same mechanism every
+# forks/<name>/Makefile already uses for its own auto-detect - so this
+# script's choice, when it finds one, is always something that fork's
+# Makefile would also accept, just found here first so the gap is
+# reported up front instead of deep inside a $(shell ...) probe.
 ###############################################################################
-# Candidate order and the objdump/"elf64-big" probe are copied verbatim from
-# forks/riscv/Makefile's own TOOLPREFIX auto-detect, so this script's choice
-# always agrees with what "make -C forks/riscv" would pick on its own if
-# left unconfigured - the point of probing here first is only to REPORT the
-# gap up front, not to make a different decision than the fork's Makefile
-# would.
+# arg1 = display name (for messages), arg2 = variable name to set,
+# arg3 = objdump -i marker regex to grep for, arg4.. = candidate prefixes
+# to try in order (an empty string "" means "native, no prefix").
+# Sets $arg2 to the found prefix, or NONE; returns 1 if none found (the
+# caller prints its own tailored apt-hint, since the right package differs
+# per arch).
+detect_toolprefix() {
+    name=$1; varname=$2; marker=$3
+    shift 3
+    eval "val=\${$varname}"
+    if [ -z "$val" ]; then
+        for prefix in "$@"; do
+            if "${prefix}objdump" -i 2>&1 | grep -q "$marker" 2>/dev/null; then
+                val=$prefix
+                break
+            fi
+        done
+    fi
+    if [ -n "$val" ]; then
+        echo "configure: found ${val}gcc ($name)"
+        eval "$varname=\$val"
+        return 0
+    else
+        eval "$varname=NONE"
+        return 1
+    fi
+}
 
-if [ -z "$TOOLPREFIX_RISCV" ]; then
-    for prefix in riscv64-unknown-elf- riscv64-elf- riscv64-none-elf- riscv64-linux-gnu- riscv64-unknown-linux-gnu-; do
-        if "${prefix}objdump" -i 2>&1 | grep -q 'elf64-big' 2>/dev/null; then
-            TOOLPREFIX_RISCV=$prefix
-            break
+###############################################################################
+# detect_qemu_system: find a full-system qemu-system-<arch> binary and,
+# optionally, enforce a minimum version - in pure shell arithmetic, not
+# sed -E/bc (see docs/claude_notes/notes_arch_riscv64.txt's own "PATH
+# hazard" section for why: a host can have a same-named tool earlier on
+# PATH that silently does the wrong thing, e.g. this box's ~/goken build
+# used to shadow the real GNU sed/bc with its own minimal ones - found the
+# hard way while writing the first version of this check).
+###############################################################################
+# arg1 = display name, arg2 = variable name to set, arg3 = qemu-system-*
+# binary name to look for, arg4 = min major version (or "" to skip the
+# version check entirely - not every fork's Makefile enforces one),
+# arg5 = min minor version (required if arg4 is given).
+# Sets $arg2 to the found binary's path, or NONE; returns 1 on any failure.
+detect_qemu_system() {
+    name=$1; varname=$2; qbin=$3; minmajor=${4:-}; minminor=${5:-}
+    eval "val=\${$varname}"
+    if [ -z "$val" ]; then
+        val=`command -v "$qbin" 2>/dev/null || true`
+    fi
+    if [ -z "$val" ] || ! command -v "$val" >/dev/null 2>&1; then
+        eval "$varname=NONE"
+        return 1
+    fi
+    if [ -n "$minmajor" ]; then
+        version_line=`"$val" --version | head -n 1`
+        # "QEMU emulator version 8.2.2 (Debian ...)" -> "8.2.2" -> 8, 2
+        qversion=${version_line#*version }
+        qversion=${qversion%% *}
+        qmajor=${qversion%%.*}
+        qminor_rest=${qversion#*.}
+        qminor=${qminor_rest%%.*}
+        if [ "$qmajor" -gt "$minmajor" ] 2>/dev/null || \
+           { [ "$qmajor" -eq "$minmajor" ] && [ "$qminor" -ge "$minminor" ]; } 2>/dev/null; then
+            echo "configure: found $val, version $qversion ($name)"
+        else
+            echo "configure: warning: $val is version $qversion, need >= $minmajor.$minminor" >&2
+            eval "$varname=NONE"
+            return 1
         fi
-    done
-fi
+    else
+        echo "configure: found $val ($name)"
+    fi
+    eval "$varname=\$val"
+    return 0
+}
 
-if [ -n "$TOOLPREFIX_RISCV" ]; then
-    echo "configure: found ${TOOLPREFIX_RISCV}gcc (riscv)"
-else
+###############################################################################
+# riscv64 (forks/riscv, RV64GC - MIT's current xv6-riscv)
+###############################################################################
+
+if ! detect_toolprefix riscv64 TOOLPREFIX_RISCV64 elf64-big \
+        riscv64-unknown-elf- riscv64-elf- riscv64-none-elf- \
+        riscv64-linux-gnu- riscv64-unknown-linux-gnu-; then
     echo "configure: warning: no riscv64 toolchain on PATH (needed for forks/riscv)" >&2
     echo "  install one, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install gcc-riscv64-unknown-elf" >&2
     echo "  or:" >&2
     echo "    sudo apt install gcc-riscv64-linux-gnu" >&2
     note_other_pkgmgr
-    TOOLPREFIX_RISCV=NONE
 fi
 
-###############################################################################
-# qemu-system-riscv64 (full-system emulation, boots forks/riscv's kernel)
-###############################################################################
 # forks/riscv/Makefile hardcodes QEMU = qemu-system-riscv64 and separately
 # enforces MIN_QEMU_VERSION = 7.2 via its own check-qemu-version target
-# (which shells out to `bc` - see the note about that below). Reproducing
-# the same version check here, in pure shell arithmetic rather than sed -E/
-# bc, means a too-old or missing qemu is reported clearly by ./configure,
-# not by a cryptic failure deep inside "make qemu" - and, unlike sed -E/bc,
-# doesn't depend on which of possibly several same-named tools a given
-# host's PATH happens to resolve first (found the hard way: on this box,
-# ~/goken's own self-built minimal sed/bc shadow the real GNU ones and
-# silently do the wrong thing - no -E support, no bare boolean-expression
-# bc - so this script deliberately avoids both rather than relying on
-# /usr/bin/sed and /usr/bin/bc specifically being first on PATH).
-
-MIN_QEMU_MAJOR=7
-MIN_QEMU_MINOR=2
-
-if [ -z "$QEMU_RISCV" ]; then
-    QEMU_RISCV=`command -v qemu-system-riscv64 2>/dev/null || true`
-fi
-
-if [ -n "$QEMU_RISCV" ] && command -v "$QEMU_RISCV" >/dev/null 2>&1; then
-    QEMU_VERSION_LINE=`"$QEMU_RISCV" --version | head -n 1`
-    # "QEMU emulator version 8.2.2 (Debian ...)" -> "8.2.2" -> major=8 minor=2
-    QEMU_VERSION=${QEMU_VERSION_LINE#*version }
-    QEMU_VERSION=${QEMU_VERSION%% *}
-    QEMU_MAJOR=${QEMU_VERSION%%.*}
-    QEMU_MINOR_REST=${QEMU_VERSION#*.}
-    QEMU_MINOR=${QEMU_MINOR_REST%%.*}
-    if [ "$QEMU_MAJOR" -gt "$MIN_QEMU_MAJOR" ] 2>/dev/null || \
-       { [ "$QEMU_MAJOR" -eq "$MIN_QEMU_MAJOR" ] && [ "$QEMU_MINOR" -ge "$MIN_QEMU_MINOR" ]; } 2>/dev/null; then
-        echo "configure: found $QEMU_RISCV, version $QEMU_VERSION (riscv)"
-    else
-        echo "configure: warning: $QEMU_RISCV is version $QEMU_VERSION," \
-             "need >= $MIN_QEMU_MAJOR.$MIN_QEMU_MINOR" >&2
-        QEMU_RISCV=NONE
-    fi
-    if ! command -v bc >/dev/null 2>&1; then
-        echo "configure: warning: 'bc' not on PATH" >&2
-        echo "  forks/riscv/Makefile's own check-qemu-version target (a" >&2
-        echo "  dependency of its 'qemu' target) needs it regardless of" >&2
-        echo "  the check above:" >&2
-        echo "    sudo apt install bc" >&2
-    fi
-else
-    echo "configure: warning: no qemu-system-riscv64 on PATH" >&2
+# (which shells out to `bc`) - reproducing that same floor here means a
+# too-old qemu is reported by ./configure, not by a cryptic failure deep
+# inside "make qemu".
+if ! detect_qemu_system riscv64 QEMU_RISCV64 qemu-system-riscv64 7 2; then
+    echo "configure: warning: no working qemu-system-riscv64 on PATH" >&2
     echo "  install it, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install qemu-system-misc" >&2
     echo "  (qemu-system-misc bundles the FULL-SYSTEM emulators for the" >&2
     echo "  less-common targets - riscv, mips, loongarch, m68k, sparc,..." >&2
     echo "  distinct from qemu-user's per-arch user-mode binaries)" >&2
     note_other_pkgmgr
-    QEMU_RISCV=NONE
+fi
+if [ "$QEMU_RISCV64" != NONE ] && ! command -v bc >/dev/null 2>&1; then
+    echo "configure: warning: 'bc' not on PATH" >&2
+    echo "  forks/riscv/Makefile's own check-qemu-version target (a" >&2
+    echo "  dependency of its 'qemu' target) needs it regardless of the" >&2
+    echo "  check ./configure just did:" >&2
+    echo "    sudo apt install bc" >&2
+fi
+
+###############################################################################
+# i386 (forks/x86, MIT xv6-public - the original teaching OS)
+###############################################################################
+# i386-jos-elf- is the classic toolchain name this port's own README
+# expects; i686-linux-gnu- is what Ubuntu/Debian actually package (there
+# is no i386-jos-elf- package) and what forks/x86/Makefile's own
+# auto-detect does NOT know to look for - the reason ./configure earns its
+# keep here specifically. Bare "" (native) is tried last, for a real
+# 32-bit-or-64-bit x86 Linux host where the host gcc itself emits
+# elf32-i386 (e.g. via its own default or -m32 support).
+
+if ! detect_toolprefix i386 TOOLPREFIX_I386 elf32-i386 \
+        i386-jos-elf- i686-linux-gnu- ''; then
+    echo "configure: warning: no i386 toolchain on PATH (needed for forks/x86)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-i686-linux-gnu libc6-dev-i386-cross" >&2
+    note_other_pkgmgr
+fi
+
+# forks/x86/Makefile enforces no minimum QEMU version of its own.
+if ! detect_qemu_system i386 QEMU_I386 qemu-system-i386; then
+    echo "configure: warning: no qemu-system-i386 on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-x86" >&2
+    note_other_pkgmgr
 fi
 
 ###############################################################################
@@ -176,12 +251,19 @@ fi
     echo "# generated by ./configure - do not edit, re-run configure instead"
     echo
     echo "# riscv64 (forks/riscv, RV64GC - MIT xv6-riscv)"
-    echo "export TOOLPREFIX_RISCV=$TOOLPREFIX_RISCV"
-    echo "export QEMU_RISCV=$QEMU_RISCV"
+    echo "export TOOLPREFIX_RISCV64=$TOOLPREFIX_RISCV64"
+    echo "export QEMU_RISCV64=$QEMU_RISCV64"
+    echo
+    echo "# i386 (forks/x86 - MIT xv6-public)"
+    echo "export TOOLPREFIX_I386=$TOOLPREFIX_I386"
+    echo "export QEMU_I386=$QEMU_I386"
 } > Makefile.config
 
 echo "wrote Makefile.config"
-echo "  TOOLPREFIX_RISCV = $TOOLPREFIX_RISCV"
-echo "  QEMU_RISCV       = $QEMU_RISCV"
+echo "  TOOLPREFIX_RISCV64 = $TOOLPREFIX_RISCV64"
+echo "  QEMU_RISCV64       = $QEMU_RISCV64"
+echo "  TOOLPREFIX_I386     = $TOOLPREFIX_I386"
+echo "  QEMU_I386           = $QEMU_I386"
 echo
-echo "Next: make build-riscv && make run-riscv"
+echo "Next: make build-riscv64 && make run-riscv64"
+echo "  or: make build-i386 && make run-i386"
