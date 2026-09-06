@@ -41,9 +41,9 @@ set -eu
 # renaming them now would break the blame-preserving history that phase
 # depends on.
 #
-# Scope: riscv64, i386, and x86_64 so far - Phases 1, 2 and (the start
-# of) 4 of docs/claude_notes/build-and-test-plan.md - see
-# docs/claude_notes/notes_arch_x86_64.txt for x86_64's own bring-up.
+# Scope: riscv64, i386, x86_64, amd64, and riscv32 so far - Phases 1, 2
+# and (the start of) 4 of docs/claude_notes/build-and-test-plan.md - see
+# docs/claude_notes/notes_arch_*.txt for each arch's own bring-up.
 
 ###############################################################################
 # Entry point
@@ -57,6 +57,8 @@ TOOLPREFIX_X86_64=${TOOLPREFIX_X86_64:-}
 QEMU_X86_64=${QEMU_X86_64:-}
 TOOLPREFIX_AMD64=${TOOLPREFIX_AMD64:-}
 QEMU_AMD64=${QEMU_AMD64:-}
+TOOLPREFIX_RISCV32=${TOOLPREFIX_RISCV32:-}
+QEMU_RISCV32=${QEMU_RISCV32:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -68,6 +70,8 @@ for arg in "$@"; do
         --qemu-x86_64=*)        QEMU_X86_64="${arg#--qemu-x86_64=}" ;;
         --toolprefix-amd64=*)   TOOLPREFIX_AMD64="${arg#--toolprefix-amd64=}" ;;
         --qemu-amd64=*)         QEMU_AMD64="${arg#--qemu-amd64=}" ;;
+        --toolprefix-riscv32=*) TOOLPREFIX_RISCV32="${arg#--toolprefix-riscv32=}" ;;
+        --qemu-riscv32=*)       QEMU_RISCV32="${arg#--qemu-riscv32=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -82,6 +86,9 @@ for arg in "$@"; do
             echo "  --toolprefix-amd64=PREFIX    override the amd64 cross-toolchain prefix"
             echo "                               (e.g. x86_64-linux-gnu-)"
             echo "  --qemu-amd64=CMD             override the amd64 qemu-system binary"
+            echo "  --toolprefix-riscv32=PREFIX  override the riscv32 cross-toolchain prefix"
+            echo "                               (e.g. riscv64-unknown-elf-, multilib)"
+            echo "  --qemu-riscv32=CMD           override the riscv32 qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -309,6 +316,37 @@ if ! detect_qemu_system amd64 QEMU_AMD64 qemu-system-x86_64; then
 fi
 
 ###############################################################################
+# riscv32 (forks/rv32, michaelengel/xv6-rv32)
+###############################################################################
+# Ubuntu ships no dedicated riscv32-unknown-elf- package at all - the
+# riscv64-unknown-elf- toolchain (already needed for riscv64 above) is
+# multilib and happily targets rv32 given explicit -march/-mabi flags
+# (forks/rv32/Makefile's own CFLAGS already carries these - see
+# docs/claude_notes/notes_arch_rv32.txt), so it's tried here as a
+# fallback candidate after the (currently nonexistent-on-Debian/Ubuntu)
+# dedicated 32-bit names. Marker is "elf32-littleriscv" specifically,
+# not riscv64's own "elf64-big" - a multilib toolchain's objdump lists
+# both, so this confirms 32-bit ELF support rather than just "some kind
+# of riscv toolchain".
+
+if ! detect_toolprefix riscv32 TOOLPREFIX_RISCV32 elf32-littleriscv \
+        riscv32-unknown-elf- riscv32-elf- riscv32-linux-gnu- \
+        riscv64-unknown-elf- riscv64-elf- riscv64-linux-gnu-; then
+    echo "configure: warning: no riscv32-capable toolchain on PATH (needed for forks/rv32)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu (multilib, covers riscv64 too):" >&2
+    echo "    sudo apt install gcc-riscv64-unknown-elf" >&2
+    note_other_pkgmgr
+fi
+
+# forks/rv32/Makefile enforces no minimum QEMU version of its own.
+if ! detect_qemu_system riscv32 QEMU_RISCV32 qemu-system-riscv32; then
+    echo "configure: warning: no qemu-system-riscv32 on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-misc" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -334,6 +372,10 @@ fi
     echo "# amd64 (forks/amd64 - MIT's own abandoned 2018 x86-64 experiment)"
     echo "export TOOLPREFIX_AMD64=$TOOLPREFIX_AMD64"
     echo "export QEMU_AMD64=$QEMU_AMD64"
+    echo
+    echo "# riscv32 (forks/rv32 - michaelengel/xv6-rv32)"
+    echo "export TOOLPREFIX_RISCV32=$TOOLPREFIX_RISCV32"
+    echo "export QEMU_RISCV32=$QEMU_RISCV32"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -345,8 +387,11 @@ echo "  TOOLPREFIX_X86_64   = $TOOLPREFIX_X86_64"
 echo "  QEMU_X86_64         = $QEMU_X86_64"
 echo "  TOOLPREFIX_AMD64    = $TOOLPREFIX_AMD64"
 echo "  QEMU_AMD64          = $QEMU_AMD64"
+echo "  TOOLPREFIX_RISCV32  = $TOOLPREFIX_RISCV32"
+echo "  QEMU_RISCV32        = $QEMU_RISCV32"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
 echo "  or: make build-x86_64 && make run-x86_64"
 echo "  or: make build-amd64 && make run-amd64"
+echo "  or: make build-riscv32 && make run-riscv32"

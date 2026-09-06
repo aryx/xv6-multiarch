@@ -13,9 +13,11 @@
 # riscv64 port; forks/x86 is the i386 one). See ./configure's own header
 # comment for why the directories themselves aren't renamed to match.
 #
-# Currently wired for riscv64, i386, x86_64, and amd64 - see
-# docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4
-# (see docs/claude_notes/notes_arch_x86_64.txt, notes_arch_amd64.txt).
+# Currently wired for riscv64, i386, x86_64, amd64, and riscv32 - see
+# docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4 (see
+# docs/claude_notes/notes_arch_x86_64.txt, notes_arch_amd64.txt,
+# notes_arch_rv32.txt - riscv32 boots to a shell but test-riscv32 does
+# not pass yet, see that last file's own "bug 4").
 
 -include Makefile.config
 
@@ -27,11 +29,14 @@ TOOLPREFIX_X86_64 ?=
 QEMU_X86_64 ?= qemu-system-x86_64
 TOOLPREFIX_AMD64 ?=
 QEMU_AMD64 ?= qemu-system-x86_64
+TOOLPREFIX_RISCV32 ?=
+QEMU_RISCV32 ?= qemu-system-riscv32
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
         build-x86_64 run-x86_64 test-x86_64 clean-x86_64 kill-x86_64 check-x86_64-toolchain \
         build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
+        build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -189,17 +194,53 @@ kill-amd64:
 	-pkill -f '$(QEMU_AMD64)' 2>/dev/null || true
 
 ###############################################################################
+# riscv32 (forks/rv32, michaelengel/xv6-rv32)
+###############################################################################
+
+check-riscv32-toolchain:
+	@if [ "$(TOOLPREFIX_RISCV32)" = NONE ] || [ "$(QEMU_RISCV32)" = NONE ]; then \
+		echo "Makefile: riscv32 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+# Same "kernel/kernel"+"fs.img", no separate whole-disk image, shape as
+# riscv64 - forks/rv32 boots via QEMU's own "-kernel" loading straight to
+# 0x80000000, no bootblock stage (see docs/claude_notes/notes_arch_rv32.txt).
+#
+# NOTE: this port is NOT fully working yet - it boots to an interactive
+# shell prompt, but the shell itself then crashes (see
+# notes_arch_rv32.txt's "bug 4", not yet fixed) - test-riscv32 below will
+# fail until that's resolved. build-riscv32/run-riscv32 do work.
+build-riscv32: check-riscv32-toolchain
+	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
+
+run-riscv32: check-riscv32-toolchain
+	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) qemu
+
+# Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
+# forks/riscv's/forks/x86's own test-<arch> targets (forks/rv32/Makefile's
+# own "QEMU = qemu-system-riscv32 -monitor ..." has no ifndef guard either).
+test-riscv32: check-riscv32-toolchain build-riscv32
+	cd forks/rv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py
+
+clean-riscv32:
+	$(MAKE) -C forks/rv32 clean
+
+kill-riscv32:
+	-pkill -f '$(QEMU_RISCV32)' 2>/dev/null || true
+
+###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64 build-amd64
+build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32
 
-test-all: test-riscv64 test-i386 test-x86_64 test-amd64
+test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64
+clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64
+kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header
