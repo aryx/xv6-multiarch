@@ -1,0 +1,193 @@
+notes_arch_aarch64.txt
+=======================
+
+Written: 2026-09-06, against commit 03b3f9f (the riscv32 wiring commit),
+during the aarch64 bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, fourth port attempted from
+that phase's list. Status: NOT fully working yet - one real bug fixed
+proactively before it was even hit (missing user/user.ld, the same class
+rv32 needed), one GCC false positive fixed, and the kernel boots to an
+interactive shell prompt on the very first real attempt - but a second
+bug remains open: sh crashes shortly after printing its prompt, in a way
+that structurally resembles rv32's own still-open "bug 4" (see
+notes_arch_rv32.txt) closely enough to be worth treating as a pattern,
+not a coincidence.
+
+What this is
+------------
+forks/aarch64 is k-mrm/xv6-aarch64 (2021-2023) - the newest and most
+recently maintained of the remaining Phase 4 ports as of this writing.
+Same kernel/user-split MIT xv6-riscv lineage as forks/riscv and
+forks/rv32 (confirmed via `git log --follow` on kernel/exec.c: all three
+share the exact same tail commits, a real common ancestor, not just
+structural resemblance), adapted for AArch64/GICv3 instead of RISC-V's
+CLINT/PLIC: kernel/trapasm.S's own vector table (`alltraps`, ARMv8's
+standard 16-entry-times-4-category layout) replaces kernelvec.S/
+uservec.S, kernel/gicv3.c replaces plic.c, kernel/timer.c replaces
+riscv64's own CLINT-based timerinit(). start() is trivial (`main();`
+directly - "in qemu-system-aarch64, default EL is 1" per its own
+comment, so unlike RISC-V's M-mode-to-S-mode `mret` dance, there is no
+privilege-level transition at boot to get wrong here at all).
+
+Toolchain: aarch64-linux-gnu-gcc, already installed - no gaps
+------------------------------------------------------------------
+Unlike every prior arch in this repo, aarch64 needed no toolchain
+detection surprises at all: `aarch64-linux-gnu-gcc` and
+`qemu-system-aarch64` were both already on this box, and the fork's own
+TOOLPREFIX auto-detect (copy-pasted from the same riscv64-style template
+every other fork here uses, checking "elf64-big" - a marker that has
+nothing to do with aarch64 specifically, just confirms it's some 64-bit
+toolchain) works well enough in practice since `aarch64-linux-gnu-` is
+already one of its own tried candidates.
+
+Bug 0 (real, fixed proactively - before ever hitting it): missing user/user.ld
+------------------------------------------------------------------------------------
+Checked for this BEFORE attempting a single build, on the strength of
+notes_debugging_techniques.txt item 13 ("a linker script gap on one
+sibling fork can be invisible until a later pipeline stage") - this
+fork's kernel/exec.c has the exact same `ph.vaddr % PGSIZE != 0` check
+forks/rv32's does, and its Makefile links user programs with the same
+bare `-N -e main -Ttext 0` forks/rv32 originally had. Copied
+forks/riscv/user/user.ld over (adjusted only its `OUTPUT_ARCH` from
+"riscv" to "aarch64" - verified this bfd target name is accepted by
+`aarch64-linux-gnu-ld -V` first) and switched the Makefile's generic
+`_%:` rule to `-T $U/user.ld`, matching forks/riscv's own rule exactly.
+This worked on the first real build - no unaligned-segment failure was
+ever actually observed here, unlike rv32's own bring-up, precisely
+because the fix was applied before the bug could manifest.
+
+Same `-Winfinite-recursion` false positive as every xv6-derived sh.c
+--------------------------------------------------------------------------
+Identical to every other fork here - fixed identically,
+`CFLAGS += -Wno-infinite-recursion`.
+
+Verification so far: boots to a shell prompt on the first real attempt
+------------------------------------------------------------------------------
+  make TOOLPREFIX=aarch64-linux-gnu- QEMU=qemu-system-aarch64 kernel/kernel fs.img
+    -> both build clean (one -Wno- fix, the proactive user.ld swap)
+  qemu-system-aarch64 -cpu cortex-a72 -machine virt,gic-version=3
+    -kernel kernel/kernel -drive file=fs.img,... -smp 1 -m 128M -nographic
+    -> "xv6 kernel is booting", "init: starting sh", "$ " - first real
+       attempt, no iteration needed to get this far
+
+Bug 1 (open, NOT fixed): sh crashes shortly after printing its prompt
+------------------------------------------------------------------------------
+Immediately after "$ " prints, every spawned `sh` crashes identically -
+reproduces from the very first instance (pid=2) through at least pid=16,
+with -smp 1 (ruled out an SMP/TLB-staleness theory this way - see below)
+and both with and without the extra harts -smp 4 (default) enables:
+
+  usertrap(): unexpected ec 0x0 pid=<N>
+              elr=0x34 far=0x0
+
+ec=0 is ARMv8's "Unknown reason" exception class. Cross-checked directly
+against QEMU's own `-d int,guest_errors -D <file>` trace (the same
+technique that cracked rv32's PMP bug - see
+notes_debugging_techniques.txt item 11) rather than trusting the
+kernel's own ESR_EL1 read in isolation (this kernel's usertrap() clears
+ESR_EL1 to 0 immediately after reading it into a local `ec` variable, so
+its OWN diagnostic printf re-reads the now-cleared register and always
+prints 0 regardless of the real cause - a real but ultimately unrelated
+print-only bug, not the actual crash's root cause, confirmed by adding a
+temporary probe that printed the real `ec` local variable directly:
+still genuinely 0). QEMU's trace confirms this independently:
+
+  Taking exception 1 [Undefined Instruction] on CPU 2
+  ...from EL0 to EL1
+  ...with ESR 0x0/0x2000000
+  ...with ELR 0x34
+  ...to EL1 PC 0xffffff8040005c00
+
+address 0x34 in user/_sh disassembles to `mov w1, w20` (encoding
+`2a1403e1`) - the instruction immediately after `bl memset` returns in
+getcmd()'s own body (`fprintf(2,"$ "); memset(buf,0,nbuf); gets(buf,nbuf);`
+- the exact same three-call sequence rv32's own bug 4 crashes inside of,
+right down to which call in the sequence). This is a completely ordinary,
+validly-encoded AArch64 instruction; there is no architectural reason
+executing it should trap as "Undefined Instruction".
+
+Reading the actual memory content at the fault, two independent ways
+(both agreeing, ruling out either being a read-side artifact):
+  1. A temporary kernel-side probe using this kernel's own exported
+     `copyin()` (added a `nop` after it and broke there with gdb-multiarch,
+     reading the copied bytes as real C values rather than trusting a
+     printf - see the "%x reads 32 bits, %p reads 64" note below for why
+     printf's own output was NOT trustworthy here on the first attempt).
+  2. gdb-multiarch's own direct `x/8i 0x0` at the same breakpoint.
+
+Both show: byte 0 = 0xfd (matching the low byte of what SHOULD be the
+first instruction's real encoding, 0xa9be7bfd - `stp x29,x30,[sp,#-32]!`),
+every other byte in the first 32+ bytes = 0x00. This does not match
+EITHER of this kernel's own kalloc.c poison conventions (kalloc() fills
+freshly-allocated pages with the byte 0x05; kfree() fills freed pages
+with 0x01 - see that file's own "fill with junk" comments) - ruling out
+"reading an already-freed or never-yet-written page" as the explanation.
+It looks instead like a page that was correctly zeroed (uvmalloc's own
+usual convention for freshly grown memory) and then had only ONE byte of
+real segment content successfully written into it, not the full segment.
+
+What's been ruled out so far:
+  - SMP/cross-hart TLB staleness: identical crash, same elr, with -smp 1.
+  - The kernel's own ESR_EL1 misreport: confirmed via QEMU's own -d int
+    trace that ec really is 0 ("Undefined Instruction"), not a printf
+    artifact of the register being cleared before the diagnostic read.
+  - kalloc()/kfree()'s own debug poisoning as an explanation for the
+    all-zero pattern - neither poison byte (0x05/0x01) matches.
+  - loadseg()/uva2ka()/P2V()/either_copyout() were all read closely and,
+    on inspection, are structurally equivalent to forks/riscv's own
+    already-working equivalents (uva2ka wraps walkaddr()+P2V() where
+    forks/riscv's own loadseg uses a raw physical address directly,
+    consistent with riscv64 xv6 identity-mapping kernel VA==PA and
+    aarch64 not; readi()'s own either_copyout(user_dst=0, ...) path is a
+    plain memmove(dst,...), the same shape as the kernel-dst path
+    everywhere else in this codebase) - no obvious bug spotted by
+    inspection alone, though this was not exhaustively bisected.
+
+Not yet tried:
+  - Bisecting readi()'s own per-block loop (`for(tot=0; tot<n; ...)`,
+    kernel/fs.c) with a probe that logs `tot`/`m`/`off` on every
+    iteration for THIS specific loadseg() call, to see whether the loop
+    actually only executes once (returning early with tot==n reported
+    correctly despite a implementaion bug) versus running the expected
+    number of iterations but each one only writing 1 byte via
+    either_copyout somehow.
+  - Checking bmap()/the virtio_disk.c read path specifically for a
+    partial-transfer bug analogous to forks/x86_64's own multi-sector
+    ATA PIO race (see notes_arch_x86_64.txt) - virtio is a different
+    mechanism (ring buffers, not PIO polling) but "reads only the first
+    unit of a multi-unit transfer" is the same *shape* of bug, worth
+    checking for specifically rather than assumed absent.
+  - A binary search by disabling pieces of sh.c's own getcmd()/main() to
+    see whether ANY memset() call of a similar size crashes the same
+    way, or whether it's specific to this exact 100-byte buffer/call
+    site - forks/rv32's own bug 4 crash was ALSO inside a memset() call
+    from getcmd() (a different immediate symptom - corrupted arguments
+    there, vs a literal instruction-fetch trap here - but the same call
+    site across two otherwise-unrelated ports is suspicious enough to be
+    worth checking whether it's coincidence or a shared upstream gap).
+
+A cross-arch pattern worth flagging explicitly: two unrelated ports (rv32,
+aarch64), forked by different authors in different years, both crash
+inside or immediately around a `memset()` call from sh.c's `getcmd()`,
+on the very first real invocation, in ways that have resisted a full
+root-cause after substantial gdb-multiarch + QEMU-trace investigation on
+each. This might be coincidence (getcmd() genuinely is the first
+non-trivial code path any freshly-exec'd shell hits), or might point at
+something more systemic - worth keeping in mind when the next kernel/
+user-split-lineage port (loongarch, per build-and-test-plan.md's own
+order) is attempted: if IT also crashes around the same call site, that
+would be strong evidence for a shared, not-yet-understood root cause
+rather than three independent unlucky ports.
+
+Fully wired up this session (build/run work; test does not)
+------------------------------------------------------------------------------
+- `./configure`: TOOLPREFIX_AARCH64/QEMU_AARCH64 detection.
+- Top-level Makefile: build-aarch64/run-aarch64/test-aarch64/
+  clean-aarch64/kill-aarch64, folded into the -all targets.
+- forks/aarch64/test-xv6.py, modeled on forks/rv32's own (same
+  usertests-only shape - this fork's own UPROGS list has no crash/log/
+  orphan-recovery programs beyond the extra `grind` stress test, which
+  usertests.c's own suite already exercises via the existing harness).
+- build-aarch64/run-aarch64 work; test-aarch64 currently fails on the
+  open bug above, same as riscv32's own test-riscv32 - verified this is
+  the known failure mode, not a wiring problem, before committing.

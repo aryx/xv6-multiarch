@@ -59,6 +59,12 @@ CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
+# claude: same GCC 12+ -Winfinite-recursion false positive on user/sh.c's
+# runcmd() as every other MIT-lineage xv6 fork here (see
+# forks/x86/Makefile's own fix) - it's a mutually-recursive tree walk
+# over "struct cmd", not real infinite recursion.
+CFLAGS += -Wno-infinite-recursion
+
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
 CFLAGS += -fno-pie -no-pie
@@ -86,8 +92,14 @@ tags: $(OBJS) _init
 
 ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 
-_%: %.o $(ULIB)
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+# claude: -T $U/user.ld (matching forks/riscv's own rule, ported here as
+# user/user.ld) instead of the original "-N -e main -Ttext 0" - the latter
+# packs .text/.data with no page-alignment between them, which
+# kernel/exec.c's own ph.vaddr%PGSIZE==0 check rejects at runtime (see
+# notes_arch_rv32.txt's "bug 2", the same issue in the rv32 sibling fork).
+# forktest below deliberately keeps the old style.
+_%: %.o $(ULIB) $U/user.ld
+	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 

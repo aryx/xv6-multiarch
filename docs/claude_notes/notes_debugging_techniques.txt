@@ -287,3 +287,55 @@ missing a convention a sibling has (a linker script, a CSR setup step,
 an extra build flag), check whether the missing piece is load-bearing by
 looking at what *consumes* its output downstream, not just whether the
 producing step itself succeeds.
+
+14. When a diagnostic printf's own output looks impossible, suspect the print, and verify with gdb before chasing it
+--------------------------------------------------------------------------------------------------------------------------
+During aarch64's bring-up, `usertrap()`'s own "unexpected ec" print
+always showed `0x0`, which looked like it might mean "this was really a
+misrouted interrupt, not a real synchronous exception" (interrupts don't
+populate ESR_EL1 the same way). The real explanation was mundane: the
+function reads ESR_EL1 into a local `ec` a few lines earlier, then
+immediately writes 0 back into the register (`w_esr_el1(0)`) - so the
+diagnostic printf's own *second* read of the same register, later, could
+only ever print 0, regardless of what the real value had been. This was
+a real bug (in the print, not the crash), and it would have sent the
+investigation in a wrong direction (chasing an interrupt-routing theory)
+if trusted at face value. Caught by printing the *local variable*
+(captured before the clear) instead of re-reading the register - still
+0, which is what finally confirmed the exception class itself really was
+the anomaly, not the print. Separately on the same investigation: a
+custom `printf("...%x...", some_uint32_t)` call produced values that
+didn't match a same-moment `gdb` read of the identical C variable at a
+`nop` placed right after the call - not a variadic width bug here (this
+kernel's own `%x` and the caller's `uint32_t` argument agreed at 32
+bits), but enough of a discrepancy on the first pass to burn real time
+second-guessing the print instead of the underlying data. General rule:
+when a print's output contradicts everything else you know to be true,
+verify the *same value* via `gdb print` (of the actual variable, or of a
+`copyin`-style probe result stored somewhere gdb can read it directly)
+before spending more time reasoning about what the printed number could
+mean - a homegrown kernel `printf`/`vprintf` is exactly the kind of code
+most likely to have its own quiet bugs, especially in a 15-20-year-old
+freestanding codebase never exercised against every format specifier
+combination.
+
+15. A crash at the same call site across two unrelated forks is a hypothesis, not yet a conclusion - but worth writing down either way
+------------------------------------------------------------------------------------------------------------------------------------------------
+rv32's still-open "bug 4" and aarch64's still-open "bug 1" (see both
+forks' own notes_arch_*.txt) both crash a freshly-exec'd `sh` shortly
+after its first prompt, inside or immediately around the very first
+`memset()` call in `getcmd()` - two ports from different original
+authors, different years, different ISAs, with no shared code for this
+specific bug to live in (each has its own independently-written
+kernel/exec.c, trap handling, etc.). This might be pure coincidence
+(getcmd() is genuinely the first non-trivial thing any shell does after
+its prompt, so it's an unsurprising place for ANY bug to first surface,
+unrelated to what the bug actually is in each case) - but it's the kind
+of pattern that's cheap to write down and expensive to silently miss.
+When a second unrelated port hits a symptom that rhymes with an already-
+documented open bug on a sibling, note the resemblance explicitly in
+that port's own notes_arch_*.txt (even before knowing whether it's the
+same root cause) - if a THIRD port in the same lineage repeats it, that
+upgrades the pattern from "interesting coincidence" to "go looking for a
+shared root cause in the common ancestor code" rather than re-diagnosing
+each one from scratch.
