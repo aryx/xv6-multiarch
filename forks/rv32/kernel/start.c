@@ -37,6 +37,26 @@ start()
   w_medeleg(0xffff);
   w_mideleg(0xffff);
 
+  // claude: this fork's own start() never configured PMP at all, unlike
+  // forks/riscv/kernel/start.c (MIT's current xv6-riscv, forked years
+  // after this rv32 port), which sets exactly this pmpaddr0/pmpcfg0 pair
+  // right here. Without any PMP entry configured, an unmatched physical
+  // memory access from M-mode is allowed by the RISC-V privileged spec's
+  // default, but an unmatched access from S/U-mode is DENIED once PMP is
+  // implemented at all - so the mret below (M -> S) faulted on its very
+  // first post-transition instruction fetch with "Instruction access
+  // fault" (confirmed via "qemu-system-riscv32 -d int": cause:1,
+  // desc=fault_fetch, looping forever since timervec's own mret keeps
+  // returning to the same faulting mepc). README.md's "tested with
+  // qemu-5.0.0" suggests that QEMU version's rv32 CPU model either didn't
+  // implement PMP or didn't enforce this default-deny - qemu 8.2.2 (this
+  // repo's own pinned version) does. TOR (top-of-range, matching
+  // forks/riscv's own pmpcfg=0xf choice) from address 0 up to
+  // pmpaddr0<<2: 0xffffffff<<2 covers the entire rv32 physical address
+  // range (up to Sv32's 34-bit PA width), i.e. "allow everything".
+  w_pmpaddr0(0xffffffff);
+  w_pmpcfg0(0xf);
+
   // ask for clock interrupts.
   timerinit();
 

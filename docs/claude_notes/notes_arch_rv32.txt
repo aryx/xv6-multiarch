@@ -1,0 +1,274 @@
+notes_arch_rv32.txt
+===================
+
+Written: 2026-09-06, against commit 9f43752 (the amd64 commit), during
+the rv32 bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, third port attempted from that
+phase's list. Status: NOT fully working yet - three real bugs found and
+fixed (a missing PMP setup, a missing user-program linker script, a
+corrupt ELF32 program-header struct), and the kernel now boots all the
+way to an interactive shell prompt, but a fourth bug remains open: the
+freshly-exec'd shell crashes on its first command-prompt loop iteration
+with an unexplained register corruption. See
+docs/claude_notes/notes_debugging_techniques.txt items 10-13 for the
+general techniques this investigation produced.
+
+What this is
+------------
+forks/rv32 is michaelengel/xv6-rv32 (2020-2021), a 32-bit RISC-V port of
+MIT's kernel/user-split xv6-riscv - structurally much closer to
+forks/riscv (rv64) than to the older MIT xv6-public lineage
+(forks/x86/forks/x86_64/forks/amd64): same kernel/user directory split,
+same trapframe/trampoline.S user-trap mechanism, same virtio_disk.c. The
+README documents "tested with qemu-5.0.0" - this repo pins qemu 8.2.2,
+three major versions later, which turned out to matter (see bug 1 below).
+
+Toolchain: no dedicated riscv32 package needed - the riscv64 multilib toolchain covers it
+------------------------------------------------------------------------------------------------
+Ubuntu ships no riscv32-unknown-elf- package at all, but
+gcc-riscv64-unknown-elf is multilib and happily targets rv32 given
+explicit flags:
+
+  riscv64-unknown-elf-gcc -march=rv32imac_zicsr_zifencei -mabi=ilp32 ...
+  riscv64-unknown-elf-ld  -m elf32lriscv ...
+
+Two things the fork's own Makefile didn't already have, both needed
+because this repo has no dedicated 32-bit toolchain to fall back on:
+
+- `-march`/`-mabi` had to be added to CFLAGS explicitly (the fork's
+  Makefile never sets them at all, relying on a *dedicated*
+  riscv32-unknown-elf- compiler's own 32-bit default - a multilib rv64
+  compiler instead defaults to rv64/lp64d and must be told). The march
+  string's exact shape came from two sources: `imac` (not just the
+  README's documented "ia") matches ~/c--/configure's own already-
+  verified "riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32" bare-
+  metal combo for its -riscv32 backend - reusing a value the user had
+  already confirmed works on this exact toolchain, rather than guessing.
+  `_zicsr_zifencei` was then required *in addition*: newer binutils
+  (2.38+, following the RISC-V ISA manual's 20191213 spec split) no
+  longer folds CSR instructions (`csrr`/`csrw`, used throughout this
+  kernel's trap/mtvec/satp/mie setup) or `fence.i` into the base "I"
+  extension - they're their own named extensions now and must be listed
+  explicitly, or the assembler rejects them as unrecognized opcodes.
+  c--'s own -riscv32 backend never touches CSRs (it's a freestanding/
+  picolibc user-mode target), so it never needed this half.
+- `ASFLAGS = $(CFLAGS)` had to be added. entry.S/swtch.S/trampoline.S/
+  kernelvec.S build via make's builtin implicit `.S.o` rule
+  ($(CC) $(ASFLAGS) ... -c), which this Makefile never overrode - with
+  ASFLAGS empty, these files were assembled at the toolchain's 64-bit
+  default even though every .c file got the 32-bit flags via CFLAGS,
+  causing a 32-vs-64-bit ELF class mismatch at final link ("file class
+  ELFCLASS64 incompatible with ELFCLASS32").
+- The linker needs `-m elf32lriscv` explicitly too (LDFLAGS) - a
+  multilib riscv64-unknown-elf-ld otherwise defaults its output
+  emulation to elf64lriscv regardless of the actual input objects' ELF
+  class, and fails the link with "ABI is incompatible with that of the
+  selected emulation" instead of doing the sensible thing.
+
+Same `-Winfinite-recursion` false positive as every xv6-derived sh.c
+--------------------------------------------------------------------------
+Identical to every other fork here - `user/sh.c`'s `runcmd()` recursive
+tree-walk trips GCC 12+'s new warning. Fixed identically,
+`CFLAGS += -Wno-infinite-recursion`.
+
+Bug 1 (real, fixed): missing PMP setup - mret into S-mode faulted forever
+------------------------------------------------------------------------------
+Symptom: the kernel never printed anything at all, not even its own
+"xv6 kernel is booting" banner - main() was never reached. Adding a raw
+`*(volatile unsigned char*)0x10000000 = 'Z'` UART probe at the very top
+of start() (before any CSR writes) confirmed the CPU was alive and
+running that far; a matching probe at the top of main() never printed,
+confirming execution never got past start()'s own `mret`.
+
+gdb-multiarch's own CSR reads (`$mepc`/`$mcause`/`$priv`) looked
+consistent across independent samples and pointed at the `mret`
+instruction's own address repeating forever - but see
+notes_debugging_techniques.txt item 11 for why that alone wasn't
+trusted: QEMU's own `-d int,guest_errors -D <file>` trace settled it
+authoritatively, logging (at 100,000+ occurrences/second):
+
+  riscv_cpu_do_interrupt: hart:0, async:0, cause:00000001,
+    epc:0x80000114, tval:0x00000000, desc=fault_fetch
+
+cause=1 is "Instruction access fault", and it recurred at the exact same
+epc (the kernel's own `mret`) forever. Isolating further (temporarily
+replacing `asm volatile("mret")` with a plain spin loop at the same
+program point) confirmed it was specifically the *mret instruction*
+faulting, not "this address is unfetchable" in general - the spin loop
+ran fine at the same address. And disabling the timer interrupt entirely
+(commenting out timerinit()'s MIE/MTIE-enabling tail) didn't help
+either, ruling out a timer-refire race as the cause.
+
+Root cause: per the RISC-V privileged spec, once a hart implements PMP
+at all, an access from M-mode that matches no PMP entry is *allowed* by
+default, but the same unmatched access from S/U-mode is *denied*. This
+fork's `start()` never configured a single PMP entry before `mret`-ing
+into Supervisor mode - so the very first instruction fetch after the
+privilege transition (fetching main(), in S-mode) was denied outright,
+trapping straight back into the M-mode timervec handler (this kernel's
+only trap vector, used for interrupts and exceptions alike), which
+`mret`s right back to the same faulting `mepc`, forever.
+
+forks/riscv (MIT's *current* xv6-riscv, forked from a later point in the
+same lineage than this rv32 port) already carries the fix in its own
+kernel/start.c:
+
+  w_pmpaddr0(0x3fffffffffffffull);
+  w_pmpcfg0(0xf);
+
+...meaning MIT added PMP configuration to xv6-riscv at some point after
+this rv32 fork was cut in 2020 - very plausibly in response to exactly
+this class of QEMU/spec-compliance tightening, since the README's own
+"tested with qemu-5.0.0" is three major QEMU versions behind this repo's
+pinned 8.2.2. Ported the same fix to rv32, sized for 32-bit CSRs
+(`w_pmpaddr0(uint32)`/`w_pmpcfg0(uint32)` added to kernel/riscv.h,
+called from kernel/start.c right before `mret`): TOR (top-of-range) mode
+from address 0 up to `pmpaddr0<<2`, with `pmpaddr0 = 0xffffffff` covering
+essentially the whole rv32 physical address range (Sv32's 34-bit PA
+width) - "allow everything", matching forks/riscv's own choice of cfg
+value (0xf = R|W|X|TOR).
+
+Bug 2 (real, fixed): no user-program linker script - exec() rejected the unaligned result
+------------------------------------------------------------------------------------------------
+Symptom, once bug 1 was fixed and main() was finally reached: kernel
+booted, printed its banner, then immediately hit `panic: init exiting` -
+init.c's very first `fork()`+`exec("sh", ...)` never got anywhere close
+to printing "init: starting sh". Instrumenting kernel/exec.c's every
+`goto bad;` site with a distinguishing printf (removed again once
+diagnosed - see notes_debugging_techniques.txt item 13's own framing of
+this) isolated it to `ph.vaddr % PGSIZE != 0` on the *second* ELF program
+header of every user program: `vaddr not page aligned 74`.
+
+Root cause: this fork's Makefile linked every user program with a flat
+`-N -e main -Ttext 0`, packing `.text` and `.data`/`.bss` back to back
+with no page-alignment padding between them - producing a second
+`PT_LOAD` segment whose `p_vaddr` lands wherever `.text` happened to
+end (not on a 4096-byte boundary). This is entirely valid ELF; it's
+just not valid input to *this* kernel's own exec(), which enforces
+page-aligned segments (needed since it maps each PT_LOAD segment as
+whole pages via uvmalloc()/loadseg()). forks/riscv - built from the same
+kernel/exec.c lineage - never hits this because it links user programs
+against a dedicated `user/user.ld` that explicitly
+`. = ALIGN(0x1000);` before `.data`. rv32 never had that linker script
+at all. Fixed by copying forks/riscv/user/user.ld verbatim into
+forks/rv32/user/user.ld and switching the Makefile's generic `_%:` rule
+from `-N -e main -Ttext 0` to `-T $U/user.ld` (matching forks/riscv's
+own rule byte-for-byte apart from the ported linker script's path);
+`_forktest`'s own special-cased rule (deliberately kept minimal "to be
+able to max out the proc table", per its own comment) was left on the
+old `-N` style, exactly as forks/riscv itself keeps it.
+
+Bug 3 (real, fixed): corrupt struct proghdr - missing the ELF32 "flags" field
+------------------------------------------------------------------------------------
+Symptom, once bug 2 was fixed: kernel now reached exec()'s program-header
+loop without an alignment complaint, but a probe printing each loaded
+segment's own vaddr/pa/filesz right after loadseg() showed only *one*
+segment's worth of output where two were expected, and that one segment
+reported `filesz=0` when `readelf -l` on the same binary plainly showed
+0x10/0x84 bytes for the two real LOAD segments.
+
+Root cause: kernel/elf.h's `struct proghdr` was missing the `flags`
+field entirely, with a comment claiming it's "not in 32 bit ELF!" - this
+is wrong. The real Elf32_Phdr layout is `type, offset, vaddr, paddr,
+filesz, memsz, flags, align` (`flags` moved position relative to
+Elf64_Phdr's `type, flags, offset, vaddr, paddr, filesz, memsz, align`,
+but it's present in both). Dropping it made `sizeof(struct proghdr)` 28
+bytes instead of the real 32-byte on-disk stride - and since
+kernel/exec.c's phdr loop advances its file offset by `sizeof(ph)` per
+iteration, only the *first* phdr (whose fields all happen to land
+correctly regardless, since the missing field is at the very end) read
+right; every subsequent one was read 4 bytes short of its real file
+position, scrambling every field. forks/x86's own elf.h (also a real
+ELF32 target) has the correct 8-field layout including `flags` - used as
+the reference to fix this one. Fixed by adding the field back (with a
+comment explaining why, in case a future "helpful" cleanup tries to
+remove it again believing the old comment).
+
+Verification so far: boots to a shell prompt, one bug open
+------------------------------------------------------------------------------
+  make TOOLPREFIX=riscv64-unknown-elf- fs.img kernel/kernel
+    -> kernel, fs.img both build clean (one -Wno- fix, two toolchain-flag
+       additions, the user.ld swap)
+  qemu-system-riscv32 -machine virt -bios none -kernel kernel/kernel
+    -drive file=fs.img,... -smp 1 -m 1024M -nographic
+    -> "xv6 kernel is booting", "init: starting sh", "$ " - all three of
+       the above bugs are genuinely fixed, this is real progress from a
+       kernel that never printed anything at all
+
+Bug 4 (open, NOT fixed): sh crashes on its very first getcmd() call
+------------------------------------------------------------------------------
+Immediately after the "$ " prompt is printed (before any human/scripted
+input is even sent), every single spawned `sh` instance crashes
+identically:
+
+  usertrap(): unexpected scause 0x0000000f pid=<N>
+              sepc=0x00001080 stval=0x00003000
+
+scause 0xf = Store/AMO page fault. init.c's own for(;;) loop then
+respawns sh, which crashes the same way again - forever, on every pid
+(confirmed identical sepc/stval from pid=2 through at least pid=511),
+ruling out state accumulating across iterations as the cause.
+
+sepc=0x1080 disassembles to inside `memset`'s own byte-store loop
+(`sb a1,0(a5)` at user/_sh's 0x1080, called from getcmd()'s
+`memset(buf, 0, nbuf)` - the first thing getcmd() does after printing
+the prompt). Reading the live trapframe at the fault (via a kernel-side
+breakpoint on trap.c's "unexpected scause" printf, since raw breakpoints
+at user-space virtual addresses are unreliable here - see below) showed:
+
+  a0=1  a1=0  a2=4fe1  a5=3000  epc=1080
+
+memset's own prologue is `mv a5,a0; add a2,a2,a0` before the loop, so
+these numbers mean memset was actually invoked as `memset(1, 0,
+0x4fe0)` - dst=1, n=20448 - not the expected `memset(0x2020, 0, 100)`
+(0x2020 is `buf`'s real, correctly-linked static address per `nm
+user/_sh`; 100 is `sizeof(buf)`).
+
+What's been *ruled out* so far, each checked directly rather than
+assumed:
+  - The compiled call sites are correct on both ends. main()'s own
+    disassembly shows `auipc s1,0x1 / addi s1,s1,316` correctly
+    resolving to 0x2020 (matching objdump's own `# 2020 <buf.0>`
+    annotation) and `li a1,100 / mv a0,s1` immediately before the call
+    to getcmd - both arguments right at the call site.
+  - getcmd()'s own disassembly correctly forwards `mv a2,s2 / li a1,0 /
+    mv a0,s1` into the call to memset - not a compiler codegen bug in
+    the immediate caller either.
+  - struct trapframe (kernel/proc.h) and trampoline.S's hardcoded
+    save/restore offsets agree exactly, field-by-field, for every
+    register including a0/a1/s1/s2 - ruled out as a repeat of bug 3's
+    class of mistake (a struct laid out for the wrong word size).
+  - vprintf()/fprintf() (called by getcmd() just before the failing
+    memset(), to print "$ ") do save/restore the callee-saved registers
+    they use (s1-s7) at entry/exit, per their own disassembly - not an
+    obvious calling-convention violation there either.
+  - Disabling the timer interrupt entirely did not change the boot
+    hang investigation's outcome for bug 1, and this fault reproduces
+    on the very first-ever `sh` invocation (pid=2) with no preceding
+    process history to have left corrupted state - a scheduler/context-
+    switch bug remains plausible but is unconfirmed, not ruled out.
+
+Not yet tried: single-stepping getcmd() from its own first instruction
+in user space. Raw gdb breakpoints at user virtual addresses are risky
+here before a process's own page table is confirmed active (a `break
+*0xf18` attempt with no process yet scheduled at that address appeared
+to hang/corrupt boot state harmlessly recoverable only by restarting
+QEMU) - the next session should either wait until the *second* sh
+instance is about to run (so a first pass through the same code has
+already proven the page table is live) before setting the breakpoint,
+or add another temporary kernel-side print (this time comparing
+`myproc()->trapframe` register values at consecutive scheduler
+timer-tick boundaries during getcmd()'s brief window) to catch a context
+switch in the act, if one is even occurring during this short window.
+
+Still open / not investigated this session
+--------------------------------------------------
+- Bug 4 above.
+- The Docker/CI wiring (Dockerfile ARCH case, docker.yml matrix entry,
+  top-level Makefile build-rv32/run-rv32/test-rv32/clean-rv32/kill-rv32
+  targets, ./configure detection block) - deliberately deferred until
+  bug 4 is resolved and a real `test-xv6.py` can pass end to end,
+  per this repo's own "fix it, don't route around it" bring-up
+  convention (docs/claude_notes/build-and-test-plan.md's own "Deliberately
+  out of scope" section is about *not fixing* being acceptable, not
+  about wiring up CI for something that doesn't boot to a shell yet).

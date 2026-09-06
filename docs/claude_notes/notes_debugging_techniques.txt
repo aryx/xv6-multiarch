@@ -198,3 +198,92 @@ changed *yet*. This isn't evidence a fix failed; it's evidence of
 checking at the wrong instant. Use `finish` (run until the current
 function returns) or move the breakpoint to a point past the relevant
 mutation before concluding anything from the state you read.
+
+10. `pkill -f`/`pgrep -f` can match this very tool call's own wrapper shell - use the bare name instead
+------------------------------------------------------------------------------------------------------------
+`pkill -f <pattern>` matches a process's *entire command line*, not just
+the target binary. In this harness, every shell command runs inside a
+wrapper (`bash -c "... eval '<your whole multi-line script>' ..."`) whose
+own argv contains the literal text of the script being run. If that
+script's own text contains the same `<pattern>` you're killing (which it
+almost always does - you just typed the target's name in the `pkill`
+line itself, in the same script), `pkill -f` matches and kills that
+wrapper process, silently aborting the entire tool call with no output
+at all: no error message, no partial stdout, just an opaque "Exit code
+1" (or 137) and every subsequent `;`-separated command in the same call
+lost. This cost a long stretch of apparently-inexplicable silent
+failures during rv32 bring-up (`pkill -9 -f qemu-system-riscv32 ...`
+immediately followed by nothing, even a plain `echo` after it). Fix:
+avoid `-f` when the plain process name is enough (`pkill -9
+<15-char-or-shorter-name>`), or when the name is truncated/too long for
+non-`-f` matching (as `qemu-system-riscv32` is, at 20 characters), filter
+`ps -eo pid,comm` yourself instead: `ps -eo pid,comm | awk
+'$2 ~ /qemu-system-r/{print $1}' | xargs -r kill -9` - `comm` is the
+kernel's own short process name for the *target*, and never contains
+your wrapper shell's own command-line text.
+
+11. QEMU's own `-d int,guest_errors -D <file>` beats guessing from gdb's CSR reads when a trap is looping
+------------------------------------------------------------------------------------------------------------
+When a kernel is stuck retaking the same trap forever (a boot hang that
+never advances), attaching gdb-multiarch and reading `$mepc`/`$mcause`/
+`$priv` convention registers is one option, but those reads go through
+the target's remote-protocol register map, and for less-common
+architectures/register sets that map can be incomplete or stale in ways
+that are hard to distinguish from a real, reproducible finding (this
+happened during rv32 bring-up: gdb's `$mepc` looked consistent across
+independent samples, which read as "real" until QEMU's own trace flatly
+confirmed it). QEMU itself will log every trap it takes, authoritatively,
+with `-d int,guest_errors -D /path/to/file`: each line names the real
+`cause`, whether it's `async` (interrupt) or synchronous (exception),
+the real `epc`, and `tval`. Grepping that log's *first* occurrence (not
+just the repeating tail) confirmed a genuine, 100%-reproducible
+"fault_fetch" exception on every single execution of a specific `mret`,
+which is what led to the missing-PMP-setup fix (see
+notes_arch_rv32.txt). Reach for this whenever a trap is looping and the
+question is "what does the hardware actually think is happening", not
+"what does my mental model predict" - it also gives an instant node
+count (`wc -l` on the trace) that quantifies just how tight the loop is.
+
+12. A struct copied from a 64-bit sibling port needs its on-disk/on-wire layout re-verified, not just its field types
+--------------------------------------------------------------------------------------------------------------------------
+Changing `uint64` fields to `uint32` in a struct ported from a 64-bit
+sibling fixes the obvious problem (field width) but not necessarily a
+more subtle one: some ELF64 structures have a genuinely *different field
+order* from their ELF32 counterparts, not just different field widths.
+`Elf64_Phdr` is `type, flags, offset, vaddr, paddr, filesz, memsz,
+align`; `Elf32_Phdr` is `type, offset, vaddr, paddr, filesz, memsz,
+flags, align` - `flags` moves from second to second-to-last. rv32's
+`kernel/elf.h` had dropped `flags` entirely (with a comment claiming it
+"not in 32 bit ELF!" - wrong; it's in ELF32 too, just relocated), making
+`sizeof(struct proghdr)` 4 bytes short of the real on-disk stride. The
+first program header read fine anyway (its own fields all landed right,
+since the missing field is at the very end); every subsequent one, in a
+loop that advances the file offset by `sizeof(ph)` per iteration, read
+completely scrambled. The tell: instrumenting each phdr-processing step
+with a `printf` showed the very first LOAD segment's iteration produce
+no output at all (silently misclassified as a non-LOAD type from
+garbled field values) while the second produced a `filesz` that plainly
+contradicted `readelf -l`'s own report for that same binary. When a
+struct is ported from a 64-bit sibling, cross-check its *field order*
+against the real on-disk/on-wire format for the 32-bit case specifically
+(a working 32-bit sibling fork's own copy of the same struct, if one
+exists in the repo, settles it fastest - forks/x86's `elf.h` had the
+correct ELF32 layout all along).
+
+13. A linker script gap on one sibling fork can be invisible until a later pipeline stage
+------------------------------------------------------------------------------------------------
+forks/riscv (rv64) links user programs with a dedicated `user/user.ld`
+that explicitly page-aligns `.data` after `.text`
+(`. = ALIGN(0x1000);`); forks/rv32 instead used a bare `-N -e main
+-Ttext 0`, which packs sections with no such alignment. Both link
+*successfully* - the gap only became visible three steps later, at
+runtime, when this kernel's own `exec()` rejected the resulting
+non-page-aligned second `PT_LOAD` segment (`ph.vaddr % PGSIZE != 0`).
+Nothing in the build itself (compiler, assembler, linker, even `readelf`
+run without comparison) flags this as wrong - `-N` binaries with
+back-to-back unaligned segments are perfectly valid ELF, just not valid
+input to *this specific* `exec()`'s stricter check. When a fork is
+missing a convention a sibling has (a linker script, a CSR setup step,
+an extra build flag), check whether the missing piece is load-bearing by
+looking at what *consumes* its output downstream, not just whether the
+producing step itself succeeds.

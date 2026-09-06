@@ -175,10 +175,26 @@ r_stvec()
 }
 
 // Machine-mode interrupt vector
-static inline void 
+static inline void
 w_mtvec(uint32 x)
 {
   asm volatile("csrw mtvec, %0" : : "r" (x));
+}
+
+// claude: Physical Memory Protection - ported from forks/riscv/kernel/riscv.h
+// (MIT's current xv6-riscv), sized for rv32's 32-bit CSRs instead of that
+// port's 64-bit ones. See kernel/start.c's own comment at the call site for
+// why this fork needs it (it didn't originally have it at all).
+static inline void
+w_pmpcfg0(uint32 x)
+{
+  asm volatile("csrw pmpcfg0, %0" : : "r"(x));
+}
+
+static inline void
+w_pmpaddr0(uint32 x)
+{
+  asm volatile("csrw pmpaddr0, %0" : : "r"(x));
 }
 
 // use riscv's sv32 page table scheme.

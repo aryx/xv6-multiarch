@@ -24,12 +24,20 @@ struct elfhdr {
 // Program section header
 struct proghdr {
   uint32 type;
-  // uint32 flags; // not in 32 bit ELF!
   uint32 off;
   uint32 vaddr;
   uint32 paddr;
   uint32 filesz;
   uint32 memsz;
+  // claude: the real Elf32_Phdr has "flags" here, between memsz and align
+  // (see forks/x86/elf.h's own struct proghdr, also ELF32, which has it) -
+  // this field was missing entirely, so sizeof(struct proghdr) was 28
+  // bytes instead of the true 32-byte on-disk stride. exec.c's phdr loop
+  // advances "off" by sizeof(ph) per iteration, so every phdr after the
+  // first was read 4 bytes short of where it actually starts - garbling
+  // every field (observed as a phantom "vaddr=0x1000 filesz=0" reading for
+  // what should have been two distinct, correctly-sized LOAD segments).
+  uint32 flags;
   uint32 align;
 };
 

@@ -56,10 +56,45 @@ OBJDUMP = $(TOOLPREFIX)objdump
 
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
 CFLAGS += -MD
+# claude: this repo has no dedicated riscv32-unknown-elf- package (Ubuntu's
+# gcc-riscv64-unknown-elf is multilib and defaults to rv64/lp64d) - without
+# an explicit -march/-mabi here the TOOLPREFIX detection above falls through
+# to riscv64-unknown-elf- (see xv6-multiarch's own ./configure) and silently
+# builds 64-bit code, which this kernel's 32-bit pointer/register assumptions
+# (see kernel.ld's own comments, virtio_disk.c) do not tolerate. README.md
+# documents this port as "rv32ia" - the spinlock.c amoswap.w atomic requires
+# the 'a' extension; "m"/"c" added to match ~/c--/configure's own already-
+# verified "riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32" bare-metal
+# combo for this same multilib toolchain (its -riscv32 backend), rather than
+# risk GCC emitting soft-multiply calls (__mulsi3 etc.) with nothing to
+# link them against under -nostdlib. _zicsr_zifencei: newer binutils (2.38+,
+# per the RISC-V ISA manual's own 20191213 spec split) no longer folds the
+# CSR/fence.i instructions this kernel's trap/mtvec/satp setup uses into the
+# base "I" extension - they're their own named extensions now, so they must
+# be listed explicitly or the assembler rejects "csrr"/"csrw"/"fence.i" as
+# unrecognized (c--'s own -riscv32 backend never touches CSRs, so it never
+# needed this).
+CFLAGS += -march=rv32ima_zicsr_zifencei -mabi=ilp32
 CFLAGS += -mcmodel=medany
 CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+
+# claude: entry.S/swtch.S/trampoline.S/kernelvec.S build via make's builtin
+# implicit .S.o rule ($(CC) $(ASFLAGS) ... -c), which this Makefile never
+# overrode - so with ASFLAGS empty they were assembled at the toolchain's
+# 64-bit default (elf64-littleriscv) even though every .c file above got
+# -march=rv32imac...-mabi=ilp32 via CFLAGS, causing a 32-vs-64-bit ELF class
+# mismatch at final link ("file class ELFCLASS64 incompatible with
+# ELFCLASS32"). Reusing CFLAGS here keeps the two in sync.
+ASFLAGS = $(CFLAGS)
+
+# claude: same GCC 12+ -Winfinite-recursion false positive on user/sh.c's
+# runcmd() as every other MIT-lineage xv6 fork here (see
+# forks/x86/Makefile's own fix and notes_arch_i386.txt's first writeup) -
+# it's a mutually-recursive tree walk over "struct cmd", not real infinite
+# recursion.
+CFLAGS += -Wno-infinite-recursion
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
@@ -69,7 +104,14 @@ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
 
-LDFLAGS = -z max-page-size=4096
+# claude: riscv64-unknown-elf-ld defaults its emulation to 64-bit
+# (elf64lriscv) regardless of the actual object files' ELF class - a
+# dedicated riscv32-unknown-elf- toolchain would default to elf32lriscv
+# instead, but this repo only has the riscv64 multilib package (see the
+# CFLAGS -march/-mabi comment above), so the 32-bit emulation must be
+# selected explicitly or every link fails with "ABI is incompatible with
+# that of the selected emulation".
+LDFLAGS = -m elf32lriscv -z max-page-size=4096
 
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode
 	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS) 
@@ -87,8 +129,14 @@ tags: $(OBJS) _init
 
 ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 
-_%: %.o $(ULIB)
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+# claude: -T $U/user.ld (matching forks/riscv's own rule, ported here as
+# user/user.ld) instead of the original "-N -e main -Ttext 0" - the latter
+# packs .text/.data with no page-alignment between them, which
+# kernel/exec.c's own ph.vaddr%PGSIZE==0 check rejects at runtime for any
+# program whose .text doesn't happen to end exactly on a page boundary
+# (every real UPROG here). forktest below deliberately keeps the old style.
+_%: %.o $(ULIB) $U/user.ld
+	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 

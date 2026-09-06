@@ -1,1 +1,10 @@
 /Makefile.config
+
+*.o
+
+# dependencies?
+*.d
+
+#?
+*.sym
+#*.asm
