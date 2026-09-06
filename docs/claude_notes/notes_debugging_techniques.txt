@@ -339,3 +339,31 @@ same root cause) - if a THIRD port in the same lineage repeats it, that
 upgrades the pattern from "interesting coincidence" to "go looking for a
 shared root cause in the common ancestor code" rather than re-diagnosing
 each one from scratch.
+
+16. QEMU's own `info mtree` monitor command is authoritative for "what's really at this address" - don't trust a kernel's own hardcoded constant
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+When a kernel hangs polling a device that should respond, or writes to
+something that seems to have no effect, the fastest way to settle "is
+this address even right" is to ask QEMU directly rather than cross-
+checking against documentation, source comments, or the port's own
+(possibly stale) assumptions. Start QEMU halted with an extra monitor
+endpoint - `-S -monitor unix:/path/to/sock,server,nowait` (a Unix
+socket is easier to script against than the interactive `-monitor
+stdio` this repo's forks' own Makefiles use) - then, from a second
+shell, `echo "info mtree" | nc -U /path/to/sock` (`nc`, not `socat`,
+if the latter isn't installed - both work). This prints the *actual*,
+live physical memory map: every device's real base address and size,
+organized by which internal bus/address-space it lives in, straight
+from QEMU's own device model. During mips bring-up this immediately
+showed `0x14000000` (what the kernel's own `io_port_base` assumed was
+the legacy PCI/ISA I/O window) actually belongs to the GT64120 system
+controller's PCI config-space registers, an unrelated device - the
+real I/O window was aliased at `0x10000000`, a 64MB difference that
+had been silently sending every `inb()`/`outb()` in the kernel to the
+wrong device for an unknown number of years. This is the same class of
+technique as item 11's `-d int,guest_errors` trace (ask the emulator
+directly instead of reasoning from source), applied to address-space
+layout instead of trap/exception history - reach for `info mtree`
+specifically when the question is "where does this address actually
+land", and item 11's trace when the question is "what trap did the CPU
+actually take".

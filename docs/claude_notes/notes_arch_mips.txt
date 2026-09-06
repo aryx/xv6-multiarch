@@ -1,0 +1,266 @@
+notes_arch_mips.txt
+===================
+
+Written: 2026-09-06, against commit 7a91ab9 (the aarch64->arm64 rename
+commit), during the mips bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, fifth port attempted from that
+phase's list. Status: NOT fully working yet - four real bugs found and
+fixed (a modern-toolchain calling-convention mismatch, a removed QEMU
+machine type, a wrong I/O-space base address, and a linker/objcopy bug
+that inflated a bootstrap blob to 4.2MB), and the kernel now builds
+clean and boots without panicking or hanging - but produces zero visible
+console output, for a reason now well understood (see "Bug 5" below) but
+not yet fixed.
+
+What this is
+------------
+forks/mips is nullpo-head/xv6-mips (2014-2016) - the oldest and least
+recently touched of the remaining Phase 4 ports (build-and-test-plan.md
+rated its own expectation "unknown; 2016 code", the lowest confidence of
+any remaining arch). Structurally it's the OLDEST MIT xv6-public lineage
+(BIOS-bootblock-shaped, `bootasm.S`/`bootmain.c` files present though
+unused by the actual boot path - see below), ported to 32-bit MIPS by
+reusing PC-compatible legacy hardware (8259 PIC, i8253 PIT, IDE, 16550
+UART) accessed through QEMU's "malta" board's PIIX4 south-bridge ISA/PCI
+I/O window - explaining file names like ide.c/mp.c/picirq.c that look
+like x86 leftovers at first glance but are genuinely MIPS-adapted (they
+`#include "mips.h"`, not an x86 header) and structurally appropriate,
+since Malta really does emulate that legacy PC-compatible peripheral set
+for exactly this kind of "port a PC-shaped teaching OS to MIPS" use case.
+
+Toolchain: mipsel-linux-gnu-gcc, already installed; qemu-system-mips needed a separate install
+------------------------------------------------------------------------------------------------------
+`mipsel-linux-gnu-gcc` was already on this box (no gap). `qemu-system-mips`
+is a SEPARATE apt package from `qemu-system-misc` (which covers riscv/
+riscv32) - `sudo apt install qemu-system-mips` (installs both
+`qemu-system-mips` and `qemu-system-mipsel`).
+
+Bug 1 (real, fixed): `-mabicalls` (GOT-based calls) overflows this kernel's tiny GOT window
+--------------------------------------------------------------------------------------------------
+Symptom: the very first link attempt failed with dozens of "relocation
+truncated to fit: R_MIPS_GOT16/R_MIPS_CALL16 against `<symbol>`" errors,
+despite CFLAGS already passing `-fno-pic`.
+
+Root cause: `-fno-pic` only controls *data* addressing; MIPS's separate
+`-mabicalls` switch controls whether *function calls* go through the
+GOT (a PIC-adjacent but independently-toggled calling convention) -
+confirmed via `mipsel-linux-gnu-gcc -Q --help=target`, which shows
+`-mabicalls [enabled]` as this toolchain's default. A freestanding,
+single statically-linked kernel image has no runtime linker to populate
+a GOT for, and the image's real size overflows GOT16/CALL16's 16-bit
+relative range. The 2014-era `mipsel-sde-elf-` toolchain this Makefile's
+own comments were written against most likely defaulted this off for a
+bare-metal target; this modern Ubuntu Linux-userspace-oriented cross
+toolchain does not. Fixed with `-mno-abicalls` added to both CFLAGS and
+ASFLAGS (needed for both C files and the hand-written .S files, which
+build via make's own implicit `.S.o` rule using ASFLAGS, not CFLAGS -
+see notes_arch_rv32.txt's own item on this exact same class of gap).
+
+Bug 2 (real, fixed): QEMU removed the "mips" machine type this fork's Makefile hardcodes
+------------------------------------------------------------------------------------------------
+`qemu-system-mipsel -M mips` fails outright ("unsupported machine type")
+on this repo's pinned QEMU 8.2.2 - `-machine help` lists only `malta`,
+`mipssim`, and `none`. The plain, simple "mips" board this port's
+Makefile was written against no longer exists in modern QEMU. `malta`
+(QEMU's actively-maintained, PC-compatible-peripheral-equipped MIPS
+board) is the right target given this kernel's own PIIX4-style ide.c/
+picirq.c/uart.c design (see "What this is" above) - not fixed in the
+Makefile itself yet (see "Still open" below), verified ad hoc on the
+command line for this session's investigation.
+
+Bug 3 (real, fixed): `io_port_base` is off by exactly 0x04000000 (64MB) from QEMU malta's real PCI/ISA I/O window
+------------------------------------------------------------------------------------------------------------------------
+Symptom: after fixing bugs 1-2, the kernel built and the `kernel` (disk-
+based) target hung forever in `ide.c`'s very first `idewait()` call
+(called unconditionally at the top of `ideinit()`, before even checking
+which drive is present) - QEMU's own `-d in_asm` trace confirmed the CPU
+was genuinely spinning in that function's polling loop indefinitely, not
+crashed or stuck elsewhere.
+
+Root cause: `mips.h`'s `io_port_base = 0xb4000000` (KSEG1-uncached
+virtual, i.e. physical 0x14000000) does not correspond to any real
+device on QEMU malta - confirmed directly via the QEMU monitor's own
+`info mtree`, which shows physical address 0x14000000 belongs to the
+GT64120 system controller's own PCI config-space registers
+(`gt64120-isd`, with `pci-conf-idx`/`pci-conf-data` sub-regions at
+0x14000cf8/0x14000cfc), a completely different device. The real PCI/ISA
+I/O aperture - where the classic ports this driver uses (0x1f0 ide,
+0x3f6 ide-control, 0x3f8 COM1, etc.) actually live - is aliased at
+physical **0x10000000** (`info mtree`: "alias pci0-io @io
+0000000000000000-0000000001ffffff"), i.e. **0xb0000000** in KSEG1-
+uncached terms, not 0xb4000000. Fixed by changing `io_port_base` to
+`0xb0000000`, with a comment explaining the mtree evidence (see
+notes_debugging_techniques.txt's own new item on using `info mtree` this
+way). This one 4-line address change alone resolved the ideinit() hang
+completely - confirmed by re-tracing and finding the kfree/panic
+sequence (bug 4 below) reached soon after, rather than the same
+idewait() spin.
+
+Whether this was always wrong (a mistake in the port's own original
+memory-map research) or reflects an actual QEMU memory-map change since
+this fork's 2014-2016 vintage was not determined - either is plausible
+given this project's own repeated experience with version-drift-induced
+address/API changes across many of these ports.
+
+Bug 4 (real, fixed): `objcopy` forgot to strip `.reginfo`, inflating `initcode` to 4.2MB and starving kinit1()'s first-phase boundary
+------------------------------------------------------------------------------------------------------------------------------------------
+Symptom: after fixing bug 3, `kernelmemfs` (the in-memory-filesystem
+build variant this fork's own Makefile explicitly recommends - see "The
+`kernel` disk-based boot path was never finished by the port's own
+author" below) built and booted past the ide hang, but immediately hit
+`panic("kfree")` on the very first page freed during `kinit1()`.
+
+Root cause, traced via gdb (`v < end` was the failing check; `v` was
+`P2V(4*1024*1024)`, `end` was `0x805955b0` - i.e. `end` itself, the real
+compiled-kernel-image boundary, sat well *past* the hardcoded 4MB
+boundary `main.c`'s own `kinit1(end, P2V(4*1024*1024))` call assumes is
+already covered by the low, fixed `entrypgdir` mapping used during phase
+1 of physical memory bring-up): the `initcode` file - a tiny bootstrap
+blob that should be a few dozen bytes - was actually **4,194,536 bytes**
+on disk. `readelf -l` on the intermediate `initcode.out` ELF showed why:
+the default MIPS linker script places `.MIPS.abiflags` and `.reginfo` at
+virtual address `~0x004000b8`, nearly 4MB away from `.text` at address
+0 (this Makefile's own `-N -e start -Ttext 0` link has no custom script
+telling the linker to co-locate them). `objcopy -O binary` fills the
+*entire* gap between the lowest and highest surviving section with zero
+bytes - and the Makefile's own `objcopy -R .MIPS.abiflags -S -O binary`
+step already excluded `.MIPS.abiflags` (evidence the port's original
+author was aware of half this problem) but forgot the second stray
+section, `.reginfo`, at the neighboring address - leaving the ~4MB gap
+still present via that one remaining section. This inflated `initcode`
+gets embedded whole into the kernel image via `kernel:`'s own `-b binary
+... initcode` link step, pushing the kernel's real `end` symbol from a
+few hundred KB up to ~5.6MB - past the hardcoded 4MB boundary, so the
+very first `kfree()` call (freeing a page that's legitimately still
+*before* the real `end`, by kinit1's own now-wrong arithmetic) tripped
+its own sanity check. Fixed by adding `-R .reginfo` alongside the
+already-present `-R .MIPS.abiflags` - `initcode` shrank to the expected
+64 bytes, and the kfree panic disappeared entirely on the very next
+boot attempt.
+
+This is a real, previously-latent bug in the port's own Makefile,
+independent of any QEMU version drift - it would have produced a
+correctly-sized `initcode` under the ORIGINAL 2014-era toolchain only if
+that toolchain's default linker script happened not to introduce
+`.reginfo`/`.MIPS.abiflags` at all (plausible for pre-N32/N64-ABI-era
+MIPS binutils, which predate these sections becoming a standard part of
+the O32 ABI object format) - i.e., this may be the one bug in this
+session's mips investigation that's genuinely toolchain-generation-
+dependent rather than a QEMU-version-drift issue.
+
+The `kernel` disk-based boot path was never finished by the port's own author
+------------------------------------------------------------------------------------
+Before finding bug 3, it's worth recording precisely what was actually
+tested and what wasn't: this fork's own Makefile has TWO built kernel
+variants - `kernel` (boots via `-kernel kernel -hdb fs.img`, reading the
+filesystem from a real IDE-emulated disk) and `kernelmemfs` (embeds
+`fs.img` directly into the kernel binary via `-b binary`, avoiding the
+IDE driver entirely). The `qemu:` target (which drives the `kernel`
+variant) contains this exact line, unmodified from upstream:
+
+  @echo -e "\033[0;31m'make qemu' is not implemented at current. Run 'make qemu-memfs'!\033[0m"
+
+...i.e. the ORIGINAL AUTHOR already knew the disk-based path didn't work
+and explicitly pointed users at the memfs variant instead. Separately,
+the `kernel` variant's own QEMUOPTS attaches `fs.img` as `-hdb` (the
+*slave* drive) while `ide.c`'s own `iderw()` panics on any buffer with
+`b->dev != 0` unless `havedisk1` was set - i.e. ordinary filesystem I/O
+(`dev == 0`) expects the *master* drive, not the slave `-hdb` position -
+a second, independent bug in the same disk-based path the author had
+already given up on. Given the author's own admission, this session
+followed the same shortcut and moved directly to bring-up via
+`kernelmemfs` rather than also fixing the `-hdb`-vs-`-hda` placement in
+`QEMUOPTS`; that gap is recorded here as "still open" below for
+completeness, in case a future session wants the disk-based path
+working too.
+
+Bug 5 (open, NOT fixed): correct UART logic, but nothing visible ever reaches the console
+--------------------------------------------------------------------------------------------------
+Once bug 4 was fixed, `kernelmemfs` boots all the way through
+`kinit1`/`kinit2`/`kvmalloc`/`mpinit`/`lapicinit`(no-op stub for this
+uniprocessor-in-practice fork)/`consoleinit`/`uartinit`/`userinit` -
+confirmed via a `-d in_asm` trace showing a rich, varied call sequence
+(setupkvm, mappages, walkpgdir, iget, namex, allocproc, ...) with no
+repeating spin and no panic - genuinely alive, scheduling, and running
+real kernel logic. But zero characters ever appear on `-nographic`'s
+console, under any of `-nographic`, `-display none -serial stdio`, or
+the fork's own literal `-serial mon:stdio` invocation.
+
+Traced with gdb-multiarch step by step, ruling out the kernel-code
+explanations one at a time, each directly confirmed rather than assumed:
+  - `uartinit()`'s own "is a real UART present?" check
+    (`inb(COM1+5) == 0xFF`) correctly evaluates false (the byte read
+    back was genuinely `0x0`, confirmed via the actual `$v0` register
+    value right after the real `jal inb` instruction, not a stale/
+    unrelated read) - so `uart = 1` really does get set, confirmed by
+    breaking at the very next `uartputc()` call and reading it directly.
+  - `uartputc()` is called with a real, sensible character (`'x'`,
+    consistent with "xv6 kernel is booting" or similar) - not garbage.
+  - `outb(COM1+0, c)` (a plain, unguarded pointer store at `-O0`, so no
+    reordering/elision risk) genuinely executes - stepped past it
+    directly and confirmed via `x/i $pc` that the real store instruction
+    ran.
+  - The I/O address itself is correct per bug 3's own fix and re-
+    confirmed against `info mtree`'s literal `0x1f0`/`0x2f8`/`0x3f8`-
+    range "ide"/"serial" entries inside the malta board's own ISA/PCI-IO
+    sub-bus.
+  - Swapping `COM1` from `0x3f8` to `0x2f8` (testing the hypothesis that
+    QEMU's default `-serial stdio` wiring for malta's two legacy UARTs
+    attaches to the "other" one) made no difference either way - still
+    zero output with either port.
+
+The likely real explanation, not yet confirmed by directly fixing it:
+`info mtree`'s own *top-level* system memory map (not the ISA/PCI-IO
+sub-bus) shows a *third*, separate "serial" device registered directly
+at physical address `0x1f000900` (part of the malta-fpga region) -
+almost certainly QEMU malta board's own dedicated, board-specific
+console UART (distinct from the legacy-PC-compatible PIIX4 ISA ports
+this kernel exclusively uses), and very plausibly the device
+`-nographic`/`-serial stdio` actually wires to `serial0` by default for
+this specific board type (`info chardev` showed exactly one real
+`serial0: filename=stdio` and one `discarding-serial1: filename=null` -
+confirming QEMU genuinely instantiates two serial chardevs for this
+board, consistent with two candidate UARTs existing, but not proving
+which physical one is which). This was not fixed or even conclusively
+confirmed this session - it would require either (a) porting `uart.c`
+to target the malta-fpga UART's own register layout/stride instead of
+the classic 8250-compatible one (a real code change, register widths
+and strides for FPGA-mapped UARTs on MIPS platforms are commonly wider
+than the byte-per-register 8250 convention, so this isn't a simple
+address-constant swap the way bug 3 was), or (b) finding a QEMU option
+that reroutes `-serial`/`-nographic`'s stdio wiring to the legacy ISA
+ports instead of malta's own FPGA console (not found in `-M malta,help`
+in this session's search).
+
+Verification so far
+------------------------
+  make TOOLPREFIX=mipsel-linux-gnu- kernelmemfs
+    -> builds clean (two real fixes: -mno-abicalls, .reginfo stripped)
+  qemu-system-mipsel -kernel kernelmemfs -smp 1 -m 256 -M malta -nographic
+    -> boots all the way through real kernel init and scheduling (traced
+       via gdb and -d in_asm) with no panic and no hang - but prints
+       nothing visible, per bug 5 above.
+
+Still open / not investigated this session
+--------------------------------------------------
+- Bug 5 above (no console output) - this is what blocks everything else
+  (usertests, the disk-based `kernel` path, wiring up a real
+  test-xv6.py) from being verifiable at all right now.
+- The `kernel` (disk-based, non-memfs) boot path's own `-hdb`-vs-`-hda`
+  bug (see "The `kernel` disk-based boot path was never finished by the
+  port's own author" above) - lower priority than bug 5, since even
+  fixing it wouldn't produce visible output either.
+- `usertests.c` exists in `usr/` but is deliberately excluded from this
+  fork's own `UPROGS` list (only present in a separate, unused
+  `BACK_UPROGS` list) - worth checking, once bug 5 is fixed, whether
+  this fork's own `NDIRECT`/`MAXFILE`/`FSSIZE` headroom
+  (`fs.h`: `BSIZE=512, NDIRECT=12` -> `MAXFILE*BSIZE = 71680` bytes) is
+  enough for its usertests binary, or whether it needs the same class of
+  fix forks/x86_64 needed (see notes_arch_x86_64.txt) - this may be
+  *why* the port's own author excluded it in the first place, not yet
+  checked.
+- CI/Docker/./configure/top-level Makefile wiring - deliberately
+  deferred until bug 5 is resolved and there's at least a way to observe
+  whether the kernel is doing the right thing, per this repo's own
+  "Adding a new arch" convention (see notes_arch_rv32.txt's own
+  "Still open" section for the same reasoning applied there).

@@ -76,7 +76,20 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
-ASFLAGS = -gdwarf-2 -I. -G0 -march=mips4
+# claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
+# "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -
+# a PIC-adjacent ABI convention independent from -fno-pic (which only
+# controls data addressing, not the calling convention). This kernel is
+# a single statically-linked freestanding image with no runtime linker
+# to populate a GOT for, and its many-KB size overflows GOT16/CALL16's
+# 16-bit relative range, failing the link with "relocation truncated to
+# fit". -mno-abicalls switches to direct absolute jumps/calls instead -
+# the toolchain this Makefile's own comments target (a 2014-era
+# mipsel-sde-elf-, matching the port's original author's setup) likely
+# defaulted -mabicalls off for a bare-metal target; this modern Ubuntu
+# Linux-userspace-oriented cross toolchain does not.
+CFLAGS += -mno-abicalls
+ASFLAGS = -gdwarf-2 -I. -G0 -march=mips4 -mno-abicalls
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m elf32ltsmip -L. -G0
 
@@ -96,10 +109,21 @@ bootblock: bootasm.S bootmain.c
 	$(OBJCOPY) -S -O binary -j .text bootblock.o bootblock
 	./sign.pl bootblock
 
+# claude: also strip .reginfo, not just .MIPS.abiflags - both get placed
+# by the default MIPS linker script at a virtual address ~4MB away from
+# .text (this Makefile's own "-N -Ttext 0" has no script telling the
+# linker to co-locate them), and "objcopy -O binary" fills the entire
+# gap between the lowest and highest surviving section with zero bytes -
+# so leaving .reginfo in produced a ~4.2MB "initcode" file (should be a
+# few dozen bytes), embedded whole into the kernel image via the
+# "kernel: ... -b binary initcode" link step below, which in turn pushed
+# the kernel's own `end` symbol past main.c's hardcoded 4MB kinit1()
+# phase-1 boundary and made every very first kfree() call fail its own
+# "v < end" sanity check (see docs/claude_notes/notes_arch_mips.txt).
 initcode: initcode.S
 	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o initcode.out initcode.o
-	$(OBJCOPY) -R .MIPS.abiflags -S -O binary initcode.out initcode
+	$(OBJCOPY) -R .MIPS.abiflags -R .reginfo -S -O binary initcode.out initcode
 	$(OBJDUMP) -S initcode.o > initcode.asm
 
 kernel: $(OBJS) entry.o initcode kernel.ld

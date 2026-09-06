@@ -4,7 +4,20 @@
 
 #define MAXASID 255
 
-static int io_port_base = 0xb4000000;
+// claude: this used to be 0xb4000000. QEMU's "malta" board aliases the
+// PCI/ISA I/O port space (where the legacy 0x1f0/0x3f6/0x3f8-style
+// ports this driver uses actually live) at PHYSICAL address 0x10000000
+// - confirmed directly via the monitor's own "info mtree"
+// ("0000000010000000-0000000011ffffff ... alias pci0-io @io"), not
+// 0x14000000 (that address is the GT64120 system controller's own
+// config-space registers, a different device entirely). In KSEG1
+// (uncached, +0xA0000000) terms that's 0xB0000000, not 0xB4000000 - a
+// 64MB-off mistake (whether inherited from an older QEMU version's
+// memory map or original to this port isn't known) that silently sent
+// every inb()/outb() to unmapped RAM/empty-slot space instead of any
+// real device, hanging ideinit()'s very first idewait() call forever
+// (see docs/claude_notes/notes_arch_mips.txt).
+static int io_port_base = 0xb0000000;
 
 static inline volatile uchar
 inb(ushort port)
