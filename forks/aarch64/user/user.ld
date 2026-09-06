@@ -1,5 +1,5 @@
 /* claude: ported from forks/riscv/user/user.ld (same fix rv32 needed too -
- * see docs/claude_notes/notes_arch_rv32.txt's "bug 2" and
+ * see docs/claude_notes/notes_arch_riscv32.txt's "bug 2" and
  * notes_debugging_techniques.txt item 13) - this fork also links user
  * programs with a flat "-N -Ttext 0" (see its own Makefile's "_%:" rule)
  * and its own kernel/exec.c also enforces "ph.vaddr % PGSIZE == 0" on

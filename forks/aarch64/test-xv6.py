@@ -5,7 +5,7 @@
 # `grind` (a stress test) beyond what rv32 has, but usertests.c's own
 # suite is still the whole test here - grind is not separately driven.
 #
-# claude: as of docs/claude_notes/notes_arch_aarch64.txt's "bug 1", this
+# claude: as of docs/claude_notes/notes_arch_arm64.txt's "bug 1", this
 # currently does NOT pass - the freshly-exec'd sh crashes shortly after
 # printing its prompt, so the "usertests\n" command below is never
 # actually processed. Written and wired up anyway, per this repo's own

@@ -96,7 +96,7 @@ ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 # user/user.ld) instead of the original "-N -e main -Ttext 0" - the latter
 # packs .text/.data with no page-alignment between them, which
 # kernel/exec.c's own ph.vaddr%PGSIZE==0 check rejects at runtime (see
-# notes_arch_rv32.txt's "bug 2", the same issue in the rv32 sibling fork).
+# notes_arch_riscv32.txt's "bug 2", the same issue in the rv32 sibling fork).
 # forktest below deliberately keeps the old style.
 _%: %.o $(ULIB) $U/user.ld
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)

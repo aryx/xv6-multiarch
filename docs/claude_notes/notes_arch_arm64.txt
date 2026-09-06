@@ -1,5 +1,5 @@
-notes_arch_aarch64.txt
-=======================
+notes_arch_arm64.txt
+====================
 
 Written: 2026-09-06, against commit 03b3f9f (the riscv32 wiring commit),
 during the aarch64 bring-up itself. Phase 4 of
@@ -10,7 +10,7 @@ rv32 needed), one GCC false positive fixed, and the kernel boots to an
 interactive shell prompt on the very first real attempt - but a second
 bug remains open: sh crashes shortly after printing its prompt, in a way
 that structurally resembles rv32's own still-open "bug 4" (see
-notes_arch_rv32.txt) closely enough to be worth treating as a pattern,
+notes_arch_riscv32.txt) closely enough to be worth treating as a pattern,
 not a coincidence.
 
 What this is

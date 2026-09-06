@@ -13,12 +13,19 @@
 # riscv64 port; forks/x86 is the i386 one). See ./configure's own header
 # comment for why the directories themselves aren't renamed to match.
 #
-# Currently wired for riscv64, i386, x86_64, amd64, riscv32, and aarch64
-# - see docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4
+# Currently wired for riscv64, i386, x86_64, amd64, riscv32, and arm64 -
+# see docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4
 # (see docs/claude_notes/notes_arch_x86_64.txt, notes_arch_amd64.txt,
-# notes_arch_rv32.txt, notes_arch_aarch64.txt - riscv32 and aarch64 both
+# notes_arch_riscv32.txt, notes_arch_arm64.txt - riscv32 and arm64 both
 # boot to a shell but their own test-<arch> does not pass yet, see those
 # last two files' own open bugs).
+#
+# arm64, not aarch64: forks/aarch64 is still named for its upstream repo
+# (k-mrm/xv6-aarch64), but the Makefile target/./configure variable name
+# follows ~/c--'s and ~/goken's own CCARM64/RUN_ARM64/arch/arm64/
+# convention for this ISA - same bare-ISA-name-not-directory-name
+# reasoning as riscv64/i386/riscv32 above, just a different bare name
+# than the directory happens to use.
 
 -include Makefile.config
 
@@ -32,15 +39,15 @@ TOOLPREFIX_AMD64 ?=
 QEMU_AMD64 ?= qemu-system-x86_64
 TOOLPREFIX_RISCV32 ?=
 QEMU_RISCV32 ?= qemu-system-riscv32
-TOOLPREFIX_AARCH64 ?=
-QEMU_AARCH64 ?= qemu-system-aarch64
+TOOLPREFIX_ARM64 ?=
+QEMU_ARM64 ?= qemu-system-aarch64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
         build-x86_64 run-x86_64 test-x86_64 clean-x86_64 kill-x86_64 check-x86_64-toolchain \
         build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
-        build-aarch64 run-aarch64 test-aarch64 clean-aarch64 kill-aarch64 check-aarch64-toolchain \
+        build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -209,11 +216,11 @@ check-riscv32-toolchain:
 
 # Same "kernel/kernel"+"fs.img", no separate whole-disk image, shape as
 # riscv64 - forks/rv32 boots via QEMU's own "-kernel" loading straight to
-# 0x80000000, no bootblock stage (see docs/claude_notes/notes_arch_rv32.txt).
+# 0x80000000, no bootblock stage (see docs/claude_notes/notes_arch_riscv32.txt).
 #
 # NOTE: this port is NOT fully working yet - it boots to an interactive
 # shell prompt, but the shell itself then crashes (see
-# notes_arch_rv32.txt's "bug 4", not yet fixed) - test-riscv32 below will
+# notes_arch_riscv32.txt's "bug 4", not yet fixed) - test-riscv32 below will
 # fail until that's resolved. build-riscv32/run-riscv32 do work.
 build-riscv32: check-riscv32-toolchain
 	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
@@ -234,51 +241,51 @@ kill-riscv32:
 	-pkill -f '$(QEMU_RISCV32)' 2>/dev/null || true
 
 ###############################################################################
-# aarch64 (forks/aarch64, k-mrm/xv6-aarch64)
+# arm64 (forks/aarch64, k-mrm/xv6-aarch64)
 ###############################################################################
 
-check-aarch64-toolchain:
-	@if [ "$(TOOLPREFIX_AARCH64)" = NONE ] || [ "$(QEMU_AARCH64)" = NONE ]; then \
-		echo "Makefile: aarch64 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+check-arm64-toolchain:
+	@if [ "$(TOOLPREFIX_ARM64)" = NONE ] || [ "$(QEMU_ARM64)" = NONE ]; then \
+		echo "Makefile: arm64 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
 # NOTE: this port is NOT fully working yet - it boots to an interactive
 # shell prompt on the first real attempt, but the shell itself then
-# crashes (see notes_arch_aarch64.txt's "bug 1", not yet fixed) -
-# test-aarch64 below will fail until that's resolved. build-aarch64/
-# run-aarch64 do work.
-build-aarch64: check-aarch64-toolchain
-	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_AARCH64) QEMU=$(QEMU_AARCH64) kernel/kernel fs.img
+# crashes (see notes_arch_arm64.txt's "bug 1", not yet fixed) -
+# test-arm64 below will fail until that's resolved. build-arm64/
+# run-arm64 do work.
+build-arm64: check-arm64-toolchain
+	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) kernel/kernel fs.img
 
-run-aarch64: check-aarch64-toolchain
-	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_AARCH64) QEMU=$(QEMU_AARCH64) qemu
+run-arm64: check-arm64-toolchain
+	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
 # forks/riscv's/forks/x86's own test-<arch> targets (forks/aarch64/
 # Makefile's own "QEMU = $(QEMUPREFIX)qemu-system-aarch64" has no ifndef
 # guard either).
-test-aarch64: check-aarch64-toolchain build-aarch64
-	cd forks/aarch64 && TOOLPREFIX=$(TOOLPREFIX_AARCH64) ./test-xv6.py
+test-arm64: check-arm64-toolchain build-arm64
+	cd forks/aarch64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
 
-clean-aarch64:
+clean-arm64:
 	$(MAKE) -C forks/aarch64 clean
 
-kill-aarch64:
-	-pkill -f '$(QEMU_AARCH64)' 2>/dev/null || true
+kill-arm64:
+	-pkill -f '$(QEMU_ARM64)' 2>/dev/null || true
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-aarch64
+build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64
 
-test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-aarch64
+test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-aarch64
+clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-aarch64
+kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

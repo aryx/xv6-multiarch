@@ -5,7 +5,7 @@
 # UPROGS list - no grind/sync/logstress/forphan/dorphan), so a usertests
 # run is the whole test.
 #
-# claude: as of docs/claude_notes/notes_arch_rv32.txt's "bug 4", this
+# claude: as of docs/claude_notes/notes_arch_riscv32.txt's "bug 4", this
 # currently does NOT pass - the freshly-exec'd sh crashes on its own
 # first getcmd() call before ever printing a real prompt response, so
 # the "usertests\n" command below is never actually processed. Written

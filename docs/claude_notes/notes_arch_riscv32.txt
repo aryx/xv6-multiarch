@@ -1,5 +1,5 @@
-notes_arch_rv32.txt
-===================
+notes_arch_riscv32.txt
+======================
 
 Written: 2026-09-06, against commit 9f43752 (the amd64 commit), during
 the rv32 bring-up itself. Phase 4 of

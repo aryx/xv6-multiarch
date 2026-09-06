@@ -239,7 +239,7 @@ the real `epc`, and `tval`. Grepping that log's *first* occurrence (not
 just the repeating tail) confirmed a genuine, 100%-reproducible
 "fault_fetch" exception on every single execution of a specific `mret`,
 which is what led to the missing-PMP-setup fix (see
-notes_arch_rv32.txt). Reach for this whenever a trap is looping and the
+notes_arch_riscv32.txt). Reach for this whenever a trap is looping and the
 question is "what does the hardware actually think is happening", not
 "what does my mental model predict" - it also gives an instant node
 count (`wc -l` on the trace) that quantifies just how tight the loop is.
@@ -290,7 +290,7 @@ producing step itself succeeds.
 
 14. When a diagnostic printf's own output looks impossible, suspect the print, and verify with gdb before chasing it
 --------------------------------------------------------------------------------------------------------------------------
-During aarch64's bring-up, `usertrap()`'s own "unexpected ec" print
+During arm64's bring-up, `usertrap()`'s own "unexpected ec" print
 always showed `0x0`, which looked like it might mean "this was really a
 misrouted interrupt, not a real synchronous exception" (interrupts don't
 populate ESR_EL1 the same way). The real explanation was mundane: the
@@ -321,7 +321,7 @@ combination.
 
 15. A crash at the same call site across two unrelated forks is a hypothesis, not yet a conclusion - but worth writing down either way
 ------------------------------------------------------------------------------------------------------------------------------------------------
-rv32's still-open "bug 4" and aarch64's still-open "bug 1" (see both
+riscv32's still-open "bug 4" and arm64's still-open "bug 1" (see both
 forks' own notes_arch_*.txt) both crash a freshly-exec'd `sh` shortly
 after its first prompt, inside or immediately around the very first
 `memset()` call in `getcmd()` - two ports from different original
