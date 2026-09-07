@@ -242,6 +242,16 @@ qemu: fs.img kernel
 qemu-memfs: kernelmemfs
 	$(QEMU) -serial mon:stdio $(QEMUOPTSMEMFS)
 
+# claude: upstream never paired -nographic with the memfs boot path (only
+# "qemu-nox", which is the disk-based QEMUOPTS - the path this port's own
+# Makefile admits "is not implemented at current", see notes_arch_mips.txt).
+# Without -nographic, "qemu-memfs" opens a QEMU GTK window ("Guest has not
+# initialized the display (yet)") since this kernel only ever writes to
+# the serial port, never a framebuffer - the window is empty by design,
+# not a hang, but it's not what "make run-mips" should show.
+qemu-nox-memfs: kernelmemfs
+	$(QEMU) -nographic $(QEMUOPTSMEMFS)
+
 qemu-nox: fs.img xv6.img
 	$(QEMU) -nographic $(QEMUOPTS)
 

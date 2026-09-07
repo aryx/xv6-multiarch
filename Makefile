@@ -305,7 +305,7 @@ build-mips: check-mips-toolchain
 	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) kernelmemfs
 
 run-mips: check-mips-toolchain
-	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) qemu-memfs
+	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) qemu-nox-memfs
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
