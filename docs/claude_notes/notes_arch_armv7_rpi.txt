@@ -2,25 +2,27 @@ notes_arch_armv7_rpi.txt
 ========================
 
 Written: 2026-09-07, against commit 425440a (the armv6-rpi bring-up
-commit), during the armv7-rpi bring-up itself; updated the same day in a
-follow-up session that reached a real, visible, booting shell prompt.
-Phase 4 of docs/claude_notes/build-and-test-plan.md, eighth port
-attempted from that phase's list, second of the four ARM board ports.
+commit), during the armv7-rpi bring-up itself; updated twice the same
+day in follow-up sessions - first to reach a real, visible, booting
+shell prompt, then to make it genuinely interactive. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, eighth port attempted from
+that phase's list, second of the four ARM board ports.
 
-STATUS (updated): boots all the way to a working shell prompt under
-QEMU - "init: starting sh" / "$ " both genuinely appear on the console,
-confirmed via a full boot transcript. This is the first of the four ARM
-board ports brought up this phase to reach a visible, interactive-
-looking prompt. Ten real bugs found and fixed in total (see bugs 1-10
-below - the original seven from the first session, plus three more:
-the missing SMP boot-gate, a genuine ARM/Thumb interworking mismatch,
-and switching the console from the Mini-UART to the PL011). One gap
-remains open: typed input does not yet reach the shell - the interrupt
-routing only handles GIC/PIC "GPU0" IRQs (0-31), but the PL011's own
-real hardware interrupt line falls in the unhandled "GPU1" bank (32-63)
-- see "Gap 2" below, left open for a following session per the user's
-own explicit sequencing ("commit the progress and then wire up
-interactive input").
+STATUS (updated): boots to a genuinely interactive shell under QEMU -
+"init: starting sh" / "$ " appear, and typed commands ("ls", "echo ...")
+produce real, correct output, confirmed via two independent scripted
+test harnesses. This is the first of the four ARM board ports brought up
+this phase to reach real interactivity, not just a visible prompt.
+Eleven real bugs found and fixed in total (see bugs 1-11 below - the
+original seven from the first session, plus four more: the missing SMP
+boot-gate, a genuine ARM/Thumb interworking mismatch, switching the
+console from the Mini-UART to the PL011, and fixing the interrupt-
+controller routing that made RX interrupts - and in fact ANY GPU-routed
+interrupt on real hardware, not just the UART - silently never work at
+all). One gap remains, newly discovered while checking overall
+stability rather than something the user asked to be chased:
+"usertests" hangs partway through, on its own "preempt" sub-test - see
+"Gap 3" below.
 
 What this is, and how it differs structurally from armv6-rpi
 ----------------------------------------------------------------
@@ -265,44 +267,87 @@ With bugs 8-10 all fixed, a plain "qemu-system-arm -M raspi2b -nographic
 "enter kmain"/"gic_init kmain"/"consoleinit kmain"/etc debug trace, then
 "init: starting sh" and a genuine "$ " shell prompt.
 
-Gap 2 (open, NOT fixed): typed input does not reach the shell - PL011's real interrupt falls in an unhandled IRQ bank
----------------------------------------------------------------------------------------------------------------------------
-The shell prompt is visible but not yet interactive: sending characters
-to the emulated console (confirmed via two independently-implemented
-test harnesses - a pty-based one and a plain stdin/stdout pipe one, to
-rule out a test-script bug before concluding this was real) produces no
+Bug 11 (real, fixed): typed input never reached the shell - PL011's real interrupt falls in an IRQ bank this driver never checked at all
+-------------------------------------------------------------------------------------------------------------------------------------------------
+The shell prompt was visible but not interactive: sending characters to
+the emulated console (confirmed via two independently-implemented test
+harnesses - a pty-based one and a plain stdin/stdout pipe one, to rule
+out a test-script bug before concluding this was real) produced no
 response at all. Root cause: device/uart.c's uart_enable_rx() still
-configures RX interrupts via the Mini-UART's own AUX_MU_IER_REG and
+configured RX interrupts via the Mini-UART's own AUX_MU_IER_REG and
 IRQ_ENABLE1 bit 29 (PIC_UART0) - matching bug 10's discarded peripheral,
 not the PL011 this port now actually uses for output. The PL011's own
 real hardware interrupt line on BCM2835/2836 is a DIFFERENT number (57,
 in the interrupt controller's "GPU1" bank covering IRQs 32-63) - and
 device/gic.c's own pic_dispatch()/pic_enable()/isrs[] machinery only
-ever reads/enables the "GPU0" bank (IRQs 0-31, a single 32-bit pending/
-enable word) - VIC_IRQPENDING_GPU1 is defined but never actually
-checked anywhere in the live code (visible as commented-out
-scaffolding throughout pic_dispatch() - a previous author clearly
-explored this and backed it out). Extending gic.c to genuinely support
-the GPU1 bank (a second 32-entry isrs[] range or an offset scheme, a
-GPU1-aware pic_enable()/pic_dispatch(), and pointing uart_enable_rx() at
-the real PL011 interrupt number/UARTIMSC register instead of the
-Mini-UART's own) is real, moderate-scope new code, not a one-line fix -
-left open per the user's own explicit sequencing (commit this progress
-first, then return to wire up interactive input).
+ever read/enabled the "GPU0" bank (IRQs 0-31, a single 32-bit pending/
+enable word) - VIC_IRQPENDING_GPU1 was defined but never actually
+checked anywhere in the live code (visible as commented-out scaffolding
+throughout pic_dispatch() - a previous author clearly explored this and
+backed it out).
+
+A second, deeper layer of the same bug, found while fixing this: even
+for GPU0-range interrupts, pic_enable()/pic_disable() were writing to
+the wrong hardware register entirely - the "ENABLE_BASIC_IRQS"/
+"DISABLE_BASIC_IRQS" registers (offsets 0x18/0x24 from VIC_BASE),
+which only control a handful of ARM-local sources (bit 0 = the ARM
+Timer, which is why PIC_TIMER0=0 happened to already work correctly -
+sheer coincidence of using a small n that also happens to be a valid
+BASIC-register bit), not the real per-GPU-IRQ "ENABLE_IRQS_1"/
+"ENABLE_IRQS_2"/"DISABLE_IRQS_1"/"DISABLE_IRQS_2" registers (offsets
+0x10/0x14/0x1C/0x20) real hardware actually uses for GPU-routed
+interrupts 0-63. This meant NO GPU-routed interrupt (UART, on either
+the old Mini-UART or the new PL011) was ever correctly enabled at the
+hardware level, regardless of which IRQ number was used - masked until
+now by every earlier bug in this bring-up.
+
+Fixed by: (1) extending device/gic.c's isrs[] to 64 entries and its
+pic_enable()/pic_disable() to route by IRQ number - n==0 (the timer)
+keeps using the BASIC register exactly as before, n<32 now correctly
+uses ENABLE/DISABLE_IRQS_1, n>=32 uses ENABLE/DISABLE_IRQS_2; (2) adding
+a GPU1 pending check to pic_dispatch() for PIC_UART0_PL011 (a new
+constant, 57, added to memlayout.h); (3) pointing uart_enable_rx() at
+the PL011's own UARTIMSC register (RXIM|RTIM) and PIC_UART0_PL011
+instead of the Mini-UART's own registers/IRQ number. Verified via two
+independent interactive test harnesses: "ls" produces a real directory
+listing and "echo hello-interactive" echoes correctly - genuinely
+interactive, not just a static prompt.
+
+Gap 3 (open, NOT fixed, newly discovered): usertests hangs partway through, on the "preempt" sub-test
+-----------------------------------------------------------------------------------------------------------
+Not something the user asked to be chased this session - noted here
+for completeness since it was discovered while checking overall
+stability after bug 11's fix, and matters for whether test-armv7-rpi/
+build-all/test-all can safely be wired up. Running "usertests"
+interactively gets through bigarg/bigwrite/bss/validate/open/small
+file/big files/many-creates-then-unlink/mem/pipe1 all printing "ok",
+then prints "preempt: " and hangs with no further output for at least
+500 seconds (confirmed via a scripted wait, not just impatience) -
+genuinely stuck, not merely slow. Plausibly related to this session's
+own bug 8 (secondary-CPU WFE parking) or the scheduler's own
+timer-interrupt-driven yield() path interacting with something specific
+to the "preempt" test's fork/kill/wait pattern, but NOT investigated -
+purely a discovered-in-passing finding, left for a future session.
+Given this, test-armv7-rpi should NOT be wired up as a full "run
+usertests, expect ALL TESTS PASSED" script yet (it would hang/time out)
+- the safe, verified level right now is "boots to an interactive shell,
+basic commands (ls/echo) work".
 
 Verification so far
 --------------------
   make CROSSCOMPILE=arm-linux-gnueabihf- kernel.elf
-    -> builds clean, all 10 bugs above fixed
+    -> builds clean, all 11 bugs above fixed
   qemu-system-arm -M raspi2b -nographic -kernel xv6.img
-    -> boots all the way to "init: starting sh" / "$ " - a real, visible
-       shell prompt, confirmed via a full transcript capture. Typed
-       input does not yet produce a response (Gap 2 above).
+    -> boots all the way to "init: starting sh" / "$ ", genuinely
+       interactive ("ls"/"echo" both confirmed working over two
+       independent test harnesses) - but "usertests" itself hangs
+       partway through (Gap 3 above), not yet a clean full pass.
 
 Wired up in ./configure and the top-level Makefile as build-armv7-rpi/
 run-armv7-rpi only (same scope as the sibling armv6-rpi port) - no
 test-armv7-rpi/clean-armv7-rpi/kill-armv7-rpi yet, and not folded into
-build-all/run-all/test-all: there is now real, genuine console output to
-build a pass/fail signal around, but not yet a way to actually DRIVE the
-shell (send commands, check responses) until Gap 2 is fixed - worth
-revisiting once interactive input works.
+build-all/run-all/test-all: the shell is now genuinely interactive, but
+"usertests" (this port's only real automated pass/fail signal, matching
+every other fork in this repo) hangs partway through (Gap 3) - wiring a
+scripted test around that would just time out. Worth revisiting once
+Gap 3 is resolved.

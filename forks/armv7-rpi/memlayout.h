@@ -215,6 +215,15 @@ extern rpi_irq_controller_t* RPI_GetIrqController( void  );
 //#define RPI_INTERRUPT_CONTROLLER_BASE   (0x3F00B200+KERNBASE)
 
 #define PIC_UART0           29
+// claude: added - PIC_UART0 (29) is the Mini-UART's own real BCM2835/36
+// interrupt number (GPU IRQ 29, "GPU0" bank, IRQs 0-31); the PL011 this
+// port actually uses for its console now (see start.c/device/uart.c's
+// own "claude:" comments) has a DIFFERENT real interrupt number, 57,
+// which falls in the separate "GPU1" bank (IRQs 32-63) - see
+// device/gic.c's own extended pic_enable()/pic_dispatch() for how that
+// bank is now handled. notes_arch_armv7_rpi.txt's own "Gap 2" has the
+// full writeup of why interactive input needed all of this.
+#define PIC_UART0_PL011     57
 // eof raspi
 
 #endif

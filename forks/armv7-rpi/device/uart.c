@@ -165,15 +165,23 @@ void hexstring ( unsigned int d )
 //***********************************************************************
 
 // enable the receive (interrupt) for uart (after PIC has initialized)
+//
+// claude: switched from the Mini-UART's own AUX_MU_IER_REG/IRQ_ENABLE1
+// (bit 29, GPU0 bank) to the PL011's own UARTIMSC register and its real
+// interrupt number (57, GPU1 bank) - matching bug 10's console switch
+// (see start.c/device/uart.c's own uartputc/uartgetc). RXIM (bit 4) and
+// RTIM (bit 6, the receive-timeout interrupt - needed so a single
+// received byte sitting below the FIFO trigger level still eventually
+// generates an interrupt) are the standard PL011 receive-interrupt
+// bits. pic_enable() now correctly routes GPU1-range interrupt numbers
+// to the real ENABLE_IRQS_2 register itself (see device/gic.c's own
+// comment) - see notes_arch_armv7_rpi.txt's own "Gap 2" for the full
+// investigation this fixes.
 void uart_enable_rx ()
 {
-    //uart_base[UART_IMSC] = UART_RXI;
-    
-    // Mini UART enable_interrupts
-    write32(AUX_MU_IER_REG+KERNBASE, 0x1);
-    write32(IRQ_ENABLE1+KERNBASE, (1 << 29)); // enable the miniuart through Aux
+    write32(UART0_IMSC+KERNBASE, (1<<4)|(1<<6)); // RXIM | RTIM
 
-    pic_enable(PIC_UART0, isr_uart);
+    pic_enable(PIC_UART0_PL011, isr_uart);
 }
 
 

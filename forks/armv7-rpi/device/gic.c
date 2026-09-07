@@ -14,10 +14,26 @@ static volatile uint *vic_base;
 //#define VIC_IRQPENDING 0
 #define VIC_IRQPENDING_GPU0 1
 #define VIC_IRQPENDING_GPU1 2
+// claude: added - real BCM2835/36 word offsets from VIC_BASE (0xB200),
+// same source as the ones already above: ENABLE_IRQS_1/ENABLE_IRQS_2
+// (word 4/5, GPU-routed IRQs 0-31/32-63) and DISABLE_IRQS_1/
+// DISABLE_IRQS_2 (word 7/8) - see pic_enable()/pic_disable() below for
+// why these are now needed (they were previously always routed through
+// VIC_INTENABLE/VIC_INTCLEAR below, which are only valid for the
+// ARM-local "basic" sources like the timer, not any GPU-routed
+// interrupt - see notes_arch_armv7_rpi.txt's own "Gap 2"/pic_enable()'s
+// own comment for the full story).
+#define VIC_INTENABLE1  4
+#define VIC_INTENABLE2  5
 #define VIC_INTENABLE  6
+#define VIC_INTDISABLE1 7
+#define VIC_INTDISABLE2 8
 #define VIC_INTCLEAR   9
 
-#define NUM_INTSRC 32
+// claude: was 32 - grown to 64 so isrs[] can hold a real GPU1-range IRQ
+// number (57, the PL011's own - see PIC_UART0_PL011 in memlayout.h)
+// alongside PIC_TIMER0 (0) and the old Mini-UART's PIC_UART0 (29).
+#define NUM_INTSRC 64
 static ISR isrs[NUM_INTSRC];
 
 static void default_isr(struct trapframe *tf, int n) {
@@ -42,18 +58,43 @@ void pic_enable(int n, ISR isr) {
     if ((n<0) || (n>=NUM_INTSRC)) {
         panic("invalid interrupt source");
     }
-    
+
     cprintf ("pic_enable: %d\n", n);
-    
+
     isrs[n] = isr;
-    vic_base[VIC_INTENABLE] = (1<<n);
+
+    // claude: n==0 is PIC_TIMER0, the ARM-local timer - dispatched via a
+    // completely separate path below (checking VIC_IRQPENDING_ARM, not a
+    // GPU pending word at all), and genuinely belongs on the BASIC
+    // enable register (bit 0 there really is "ARM Timer IRQ" on real
+    // BCM2835/36 hardware). Every other n here is a real GPU-side
+    // interrupt number and needs the corresponding GPU0 (0-31) or GPU1
+    // (32-63) enable register instead - the original code wrote every n
+    // (including the old Mini-UART's own IRQ 29) through the BASIC
+    // register, which is only actually valid for n==0 - this silently
+    // never worked for any GPU-routed interrupt, masked until now by
+    // every other bug already fixed in this port's own bring-up (see
+    // notes_arch_armv7_rpi.txt's own "Gap 2").
+    if (n == 0) {
+        vic_base[VIC_INTENABLE] = (1<<n);
+    } else if (n < 32) {
+        vic_base[VIC_INTENABLE1] = (1<<n);
+    } else {
+        vic_base[VIC_INTENABLE2] = (1<<(n-32));
+    }
 }
 
 void pic_disable(int n) {
     if ((n<0) || (n>=NUM_INTSRC)) {
         panic("invalid interrupt source");
     }
-    vic_base[VIC_INTCLEAR] = (1<<n);
+    if (n == 0) {
+        vic_base[VIC_INTCLEAR] = (1<<n);
+    } else if (n < 32) {
+        vic_base[VIC_INTDISABLE1] = (1<<n);
+    } else {
+        vic_base[VIC_INTDISABLE2] = (1<<(n-32));
+    }
     isrs[n] = default_isr;
 }
 
@@ -140,9 +181,17 @@ void pic_dispatch (struct trapframe *tf) {
     
       if(vic_base[VIC_IRQPENDING_GPU0] & (1 << PIC_UART0)) {
         //cprintf ("uart %s", "\n" );
-        isrs[PIC_UART0](tf, PIC_UART0);  
+        isrs[PIC_UART0](tf, PIC_UART0);
       }
-    
+
+      // claude: added - PIC_UART0_PL011 (57) is in the GPU1 bank
+      // (IRQs 32-63), which nothing here checked at all before (see
+      // notes_arch_armv7_rpi.txt's own "Gap 2" - VIC_IRQPENDING_GPU1
+      // was defined but never actually read anywhere in this function).
+      if(vic_base[VIC_IRQPENDING_GPU1] & (1 << (PIC_UART0_PL011 - 32))) {
+        isrs[PIC_UART0_PL011](tf, PIC_UART0_PL011);
+      }
+
     //}
     
     /*
