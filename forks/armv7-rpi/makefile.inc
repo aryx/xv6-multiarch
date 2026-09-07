@@ -22,7 +22,23 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # calls this freestanding, libc-less environment has no definitions for
 # (real linker errors: "undefined reference to `__stack_chk_fail'" from
 # any function with a local array/buffer, e.g. usr/ulib.c's gets()).
-CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector
+# claude: added -marm - without it, this toolchain's default for
+# "-march=armv7-a" is Thumb(-2) code generation, and the linker then
+# auto-generates ARM<->Thumb interworking veneers ("__kmain_veneer" etc)
+# for every call crossing the boundary from entry.S's own hand-written
+# plain-ARM assembly (".code 32") into C code. One such veneer
+# ("__start_from_arm" -> "__kmain_veneer") loads kmain's address WITH
+# the Thumb bit set (0x80022e69) even though kmain's own ELF symbol
+# value is even/ARM-mode (0x80022e68) - a genuine ARM/Thumb mismatch
+# that sends the CPU into Thumb state trying to execute ARM-encoded
+# instructions, causing a real, reproduced Undefined Instruction crash
+# right at kernel entry (confirmed via "-d in_asm" plus "nm"/objdump
+# cross-referencing - see notes_arch_armv7_rpi.txt). "-marm" removes
+# the Thumb/interworking question entirely by making every C function
+# plain ARM, matching entry.S's own mode and matching what already
+# avoided this class of bug in the sibling forks/rpi2 port (whose own
+# CFLAGS happens to default to ARM for its own -mcpu=cortex-a7 choice).
+CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector -marm
 LDFLAGS = -L.
 #ASFLAGS = -march=armv7-a
 ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft

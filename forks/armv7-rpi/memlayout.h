@@ -182,6 +182,22 @@ extern rpi_irq_controller_t* RPI_GetIrqController( void  );
 //#define AUX_MU_STAT_REG (IO_BASE + 0x00215064) // Mini Uart Extra Status
 #define AUX_MU_BAUD_REG (IO_BASE + 0x00215068) // Mini Uart Baudrate
 
+// claude: were only defined inside a dead "/* ... enum { ... }; */"
+// block further up this file (see that block's own "bof raspi" marker)
+// - added as real, active #defines here, matching this file's own
+// AUX_MU_*/GPFSEL1 macro style, since start.c/device/uart.c now target
+// the PL011 instead of the Mini-UART (see those files' own comments -
+// QEMU's "-M raspi2b" doesn't wire the Mini-UART to any chardev at all).
+#define UART0_BASE      (IO_BASE + 0x00201000) // PL011 UART0
+#define UART0_DR        (UART0_BASE + 0x00)
+#define UART0_FR        (UART0_BASE + 0x18)
+#define UART0_IBRD      (UART0_BASE + 0x24)
+#define UART0_FBRD      (UART0_BASE + 0x28)
+#define UART0_LCRH      (UART0_BASE + 0x2C)
+#define UART0_CR        (UART0_BASE + 0x30)
+#define UART0_IMSC      (UART0_BASE + 0x38)
+#define UART0_ICR       (UART0_BASE + 0x44)
+
 // memory mapped i/o access macros
 #define write32(addr, v)      (*((volatile unsigned long  *)(addr)) = (unsigned long)(v))
 #define read32(addr)          (*((volatile unsigned long  *)(addr)))

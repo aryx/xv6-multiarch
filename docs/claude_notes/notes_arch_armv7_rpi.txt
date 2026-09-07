@@ -2,16 +2,25 @@ notes_arch_armv7_rpi.txt
 ========================
 
 Written: 2026-09-07, against commit 425440a (the armv6-rpi bring-up
-commit), during the armv7-rpi bring-up itself. Phase 4 of
-docs/claude_notes/build-and-test-plan.md, eighth port attempted from
-that phase's list, second of the four ARM board ports. Status: NOT fully
-working yet - seven real bugs found and fixed, boot now runs cleanly
-through the correct board's firmware handoff and this kernel's own early
-setup with no crash loop at all - but a real, more substantial gap
-remains open: this codebase has NO secondary-CPU boot-gating anywhere,
-and the real board QEMU emulates here (raspi2b) is quad-core, so all 4
-cores currently race through identical boot code simultaneously (see
-"Gap" below).
+commit), during the armv7-rpi bring-up itself; updated the same day in a
+follow-up session that reached a real, visible, booting shell prompt.
+Phase 4 of docs/claude_notes/build-and-test-plan.md, eighth port
+attempted from that phase's list, second of the four ARM board ports.
+
+STATUS (updated): boots all the way to a working shell prompt under
+QEMU - "init: starting sh" / "$ " both genuinely appear on the console,
+confirmed via a full boot transcript. This is the first of the four ARM
+board ports brought up this phase to reach a visible, interactive-
+looking prompt. Ten real bugs found and fixed in total (see bugs 1-10
+below - the original seven from the first session, plus three more:
+the missing SMP boot-gate, a genuine ARM/Thumb interworking mismatch,
+and switching the console from the Mini-UART to the PL011). One gap
+remains open: typed input does not yet reach the shell - the interrupt
+routing only handles GIC/PIC "GPU0" IRQs (0-31), but the PL011's own
+real hardware interrupt line falls in the unhandled "GPU1" bank (32-63)
+- see "Gap 2" below, left open for a following session per the user's
+own explicit sequencing ("commit the progress and then wire up
+interactive input").
 
 What this is, and how it differs structurally from armv6-rpi
 ----------------------------------------------------------------
@@ -169,43 +178,131 @@ opposite of what worked cleanest for some other boards in this repo, a
 reminder to verify empirically per board rather than assume one loading
 convention transfers.
 
-Gap (open, NOT fixed - a missing piece, not a located bug): no secondary-CPU boot-gating anywhere in this codebase
-------------------------------------------------------------------------------------------------------------------------
-With all seven bugs above fixed, boot runs CLEANLY through the full
-armstub/firmware handoff for all 4 emulated cores with zero crash loop -
-a first for this bring-up. But CPU0 alone still hits a fresh Undefined
-Instruction shortly after (traced via "-d in_asm" to a jump to a huge,
-unmapped address, ~0xfffffde4, plausibly VEC_TBL(0xFFFF0000)-adjacent
-but not conclusively root-caused). Searched entry.S/start.c/arm.h for
-any core-ID check (MPIDR read, a "cpu 0 continues, others halt/WFI"
-gate, the single most standard first step of any real multi-core ARM
-boot sequence) - there is NONE. This means all 4 of raspi2b's emulated
-Cortex-A7 cores are currently executing this kernel's identical,
-non-reentrant boot code simultaneously: concurrently zeroing/writing the
-SAME .bss, the SAME early stack region, the SAME page tables - a genuine
-race condition, not a simple flag or address fix. This is a different
-CLASS of gap than everything above (missing functionality, not a
-locatable bug to patch) and was left open per the user's own explicit
-choice, rather than writing a real SMP-boot-gate from scratch in this
-session. A reasonable next step for a future session: add an early
-MPIDR_EL1 (or its AArch32 equivalent, TPIDRPRW/a coprocessor read of the
-CPU ID register) check right at the top of entry.S, park any core whose
-ID isn't 0 in a WFI loop, and let CPU0 alone proceed through the
-existing boot path - straightforward in shape, just real new code rather
-than a fix to existing code.
+Bug 8 (real, fixed): no secondary-CPU boot-gating anywhere in this codebase
+--------------------------------------------------------------------------------
+With bugs 1-7 fixed, boot ran cleanly through the full armstub/firmware
+handoff for all 4 emulated cores with zero crash loop - but CPU0 alone
+still hit a fresh Undefined Instruction shortly after (traced via
+"-d in_asm" to a jump to a huge, unmapped address, ~0xfffffde4).
+Searched entry.S/start.c/arm.h for any core-ID check (MPIDR read, a
+"cpu 0 continues, others halt/WFI" gate, the single most standard first
+step of any real multi-core ARM boot sequence) - there was NONE. This
+meant all 4 of raspi2b's emulated Cortex-A7 cores were executing this
+kernel's identical, non-reentrant boot code simultaneously: concurrently
+zeroing/writing the SAME .bss and setting SP to the SAME shared
+"svc_stktop" - a genuine multi-core corruption bug, very plausibly the
+actual cause of that earlier crash (not conclusively proven before the
+fix, but consistent with it).
+
+Fixed by adding a real parking sequence at the very top of entry.S's
+_start (before ANY shared-state setup): read MPIDR (mrc p15,0,r0,c0,c0,5),
+mask the low 2 affinity bits, and any core where that's nonzero executes
+"wfene"/"bne park" into an eternal "park: wfe; b park" loop, letting CPU0
+alone fall through to the rest of _start. Modeled directly on the
+sibling forks/rpi2 port's own working entry.S (real Cortex-A7 hardware,
+same WFE/SEV pattern) - this codebase has no true SMP support of its own
+(xv6 in this era is single-core), so permanently parking the other 3
+cores is the correct, matching design, not a workaround.
+
+Bug 9 (real, fixed): a genuine ARM/Thumb interworking mismatch at kernel entry
+-----------------------------------------------------------------------------------
+With bug 8 fixed, CPU0 ran further but still hit an Undefined
+Instruction almost immediately. Traced via "-d in_asm" plus cross-
+referencing "nm"/objdump: execution reached "__start_from_arm" (a
+linker-generated "ldr pc, [pc,#-4]" long-jump stub, itself normal), but
+the stored jump target for a SECOND stub, "__kmain_veneer", was
+"0x80022e69" - an ODD address (Thumb-bit set) - while kmain's own real
+ELF symbol value was "0x80022e68" (EVEN - ARM mode). Jumping to an
+even-mode function's address with the Thumb bit forced on switches the
+CPU to Thumb state, which then tries to decode kmain's real ARM-encoded
+instructions as Thumb - genuine garbage, matching the observed crash.
+
+Root cause: this fork's own CFLAGS ("-march=armv7-a -mtune=cortex-a7",
+no "-marm"/"-mthumb") left the actual ARM-vs-Thumb code-generation
+choice to the toolchain's own default, which is Thumb(-2) for this
+combination - while entry.S is hand-written, explicit ARM assembly
+(".code 32"). Fixed by adding "-marm" to CFLAGS, forcing every C
+function to compile as plain ARM - this removes the interworking
+question entirely (confirmed via "nm": the remaining "__*_veneer" stubs
+afterward are ordinary long-branch veneers with correctly-even target
+addresses, not Thumb-bit mismatches).
+
+Bug 10 (real, fixed): the active console driver targets the Mini-UART, which QEMU's raspi2b doesn't wire to any chardev
+-------------------------------------------------------------------------------------------------------------------------------
+With bugs 8-9 fixed, boot ran with NO crash loop at all and QEMU's own
+"-d int,guest_errors" trace showed healthy "Taking exception 2 [SVC]"
+syscall activity (i.e. a real usermode process running) - but the
+console still produced no visible output. Root-caused: despite
+device/uart.c's own file header comment claiming "driver for ARM
+PrimeCell UART (PL011)", its actual active uartputc()/uartgetc()
+(and start.c's own separately-defined _uart_init()/_uart_putc(), called
+directly from kmain()'s own extensive debug tracing) all targeted
+AUX_MU_* registers - the Mini-UART, not PL011. device/uart.c's own
+uart_init() function (the ostensible PL011 path) was entirely dead code,
+never called from anywhere (main.c even had its own call to it
+commented out). Confirmed via the QEMU monitor's "info qtree" that
+"-M raspi2b"'s emulated "bcm2835-aux" (Mini-UART) has NO chardev backend
+at all (chardev="") while "pl011" is genuinely wired to "serial0"/stdio
+- exactly the same finding as the sibling forks/rpi1 port's own bring-up
+(notes_arch_rpi1.txt) for the real hardware family's shared Mini-UART
+design.
+
+Fixed by switching both start.c's _uart_init()/_uart_putc() (pre-MMU,
+plain physical addressing - GPIO 14/15 muxed to ALT0 for PL011, not
+ALT5 for the Mini-UART) and device/uart.c's uartputc()/uartgetc()
+(post-MMU, KERNBASE-offset addressing, matching that file's own existing
+convention) to the real PL011 registers (UART0_DR/UART0_FR/UART0_CR/
+etc) - which needed adding as real #defines to memlayout.h in the first
+place, since the only existing UART0_* definitions were themselves
+inside a large dead "/* ... enum {...}; */" block ("bof raspi" marker)
+nobody had ever activated. This fork has no real hardware of its own to
+protect (unlike rpi1/rpi2 - see those forks' own notes files), so
+switching the actual peripheral target outright, rather than treating
+it as a QEMU-only special case, was the right call.
+
+With bugs 8-10 all fixed, a plain "qemu-system-arm -M raspi2b -nographic
+-kernel xv6.img" produces a full, real boot transcript - kmain()'s own
+"enter kmain"/"gic_init kmain"/"consoleinit kmain"/etc debug trace, then
+"init: starting sh" and a genuine "$ " shell prompt.
+
+Gap 2 (open, NOT fixed): typed input does not reach the shell - PL011's real interrupt falls in an unhandled IRQ bank
+---------------------------------------------------------------------------------------------------------------------------
+The shell prompt is visible but not yet interactive: sending characters
+to the emulated console (confirmed via two independently-implemented
+test harnesses - a pty-based one and a plain stdin/stdout pipe one, to
+rule out a test-script bug before concluding this was real) produces no
+response at all. Root cause: device/uart.c's uart_enable_rx() still
+configures RX interrupts via the Mini-UART's own AUX_MU_IER_REG and
+IRQ_ENABLE1 bit 29 (PIC_UART0) - matching bug 10's discarded peripheral,
+not the PL011 this port now actually uses for output. The PL011's own
+real hardware interrupt line on BCM2835/2836 is a DIFFERENT number (57,
+in the interrupt controller's "GPU1" bank covering IRQs 32-63) - and
+device/gic.c's own pic_dispatch()/pic_enable()/isrs[] machinery only
+ever reads/enables the "GPU0" bank (IRQs 0-31, a single 32-bit pending/
+enable word) - VIC_IRQPENDING_GPU1 is defined but never actually
+checked anywhere in the live code (visible as commented-out
+scaffolding throughout pic_dispatch() - a previous author clearly
+explored this and backed it out). Extending gic.c to genuinely support
+the GPU1 bank (a second 32-entry isrs[] range or an offset scheme, a
+GPU1-aware pic_enable()/pic_dispatch(), and pointing uart_enable_rx() at
+the real PL011 interrupt number/UARTIMSC register instead of the
+Mini-UART's own) is real, moderate-scope new code, not a one-line fix -
+left open per the user's own explicit sequencing (commit this progress
+first, then return to wire up interactive input).
 
 Verification so far
 --------------------
   make CROSSCOMPILE=arm-linux-gnueabihf- kernel.elf
-    -> builds clean, all 7 bugs above fixed
+    -> builds clean, all 10 bugs above fixed
   qemu-system-arm -M raspi2b -nographic -kernel xv6.img
-    -> boots cleanly through the real BCM2836/quad-core firmware handoff
-       with zero crash-loop noise (a first for either ARM board port
-       brought up so far) - but CPU0 still faults shortly after, and the
-       remaining gap (no SMP boot-gating) is structural, not fixed.
+    -> boots all the way to "init: starting sh" / "$ " - a real, visible
+       shell prompt, confirmed via a full transcript capture. Typed
+       input does not yet produce a response (Gap 2 above).
 
 Wired up in ./configure and the top-level Makefile as build-armv7-rpi/
 run-armv7-rpi only (same scope as the sibling armv6-rpi port) - no
 test-armv7-rpi/clean-armv7-rpi/kill-armv7-rpi yet, and not folded into
-build-all/run-all/test-all, since there is no console output yet to
-build a real pass/fail signal around.
+build-all/run-all/test-all: there is now real, genuine console output to
+build a pass/fail signal around, but not yet a way to actually DRIVE the
+shell (send commands, check responses) until Gap 2 is fixed - worth
+revisiting once interactive input works.

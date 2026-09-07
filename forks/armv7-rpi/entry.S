@@ -7,6 +7,23 @@
 .global _start
 
 _start:
+    ;@ claude: park secondary cores immediately, before ANY shared-state
+    ;@ setup below - reads MPIDR, and any core whose low affinity bits
+    ;@ are nonzero sleeps in a WFE loop instead of falling through. All 4
+    ;@ emulated Cortex-A7 cores under QEMU's "-M raspi2b" (and real
+    ;@ Cortex-A7 hardware) start executing _start SIMULTANEOUSLY - this
+    ;@ codebase had no core-ID check anywhere at all before this fix
+    ;@ (confirmed via a repo-wide grep), so all 4 cores would otherwise
+    ;@ race to clear the SAME .bss and set SP to the SAME shared
+    ;@ "svc_stktop", a genuine multi-core corruption bug, not a
+    ;@ single-core one - matches the sibling forks/rpi2 port's own
+    ;@ working entry.S pattern for the same real hardware family (real
+    ;@ Cortex-A7), see notes_arch_armv7_rpi.txt's own "Gap".
+    mrc p15, 0, r0, c0, c0, 5      ;@ MPIDR
+    ands r0, r0, #0x03
+    wfene
+    bne park
+
     ;@ claude: guarded with a mode check - ELR_hyp/eret are Hyp-mode-only
     ;@ banked registers/instructions, Undefined Instruction from any
     ;@ other mode. QEMU's "-M raspi2b" (and likely real hardware's own
@@ -53,10 +70,14 @@ _start:
     cmp r4, r9
     blo 1b
 
-    // jump to start()  
+    // jump to start()
     b start
 
     B .
+
+park:
+    wfe
+    b park
 
 # during startup, kernel stack uses user address, now switch it to kernel addr
 .global jump_stack

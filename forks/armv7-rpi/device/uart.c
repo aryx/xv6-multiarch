@@ -88,12 +88,16 @@ void uart_init ( void )
 */
 
 //******************************************************************************
+// claude: switched from the Mini-UART (AUX_*) to the PL011 (UART0_*) -
+// see start.c's own "_uart_init"/"_uart_putc" for the full writeup of
+// why (QEMU's "-M raspi2b" doesn't wire the Mini-UART to any chardev at
+// all). Must match start.c's own choice of peripheral - this is the
+// same physical UART, just accessed post-MMU via its KERNBASE-offset
+// virtual alias instead of pre-MMU via its raw physical address.
 void uartputc ( int byte )
 {
-  while(1) {
-    if(read32(AUX_MU_LSR_REG+KERNBASE)&0x20) break;
-  }
-  write32(AUX_MU_IO_REG+KERNBASE, byte);
+  while(read32(UART0_FR+KERNBASE)&(1<<5)) ; // wait while TXFF
+  write32(UART0_DR+KERNBASE, byte);
 }
 
 void uart_puts(const char *s)
@@ -107,14 +111,10 @@ void uart_puts(const char *s)
 
 int uartgetc ()
 {
-  //while(1) {
-  //  if(read32(AUX_MU_LSR_REG+KERNBASE)&0x01) break;
-  //}
-  //return(read32(AUX_MU_IO_REG+KERNBASE)&0xFF);
-  if(read32(AUX_MU_LSR_REG+KERNBASE)&0x01) {
-    return(read32(AUX_MU_IO_REG+KERNBASE)&0xFF);
-  } else {
+  if(read32(UART0_FR+KERNBASE)&(1<<4)) { // RXFE (receive FIFO empty)
     return -1;
+  } else {
+    return(read32(UART0_DR+KERNBASE)&0xFF);
   }
 }
 
