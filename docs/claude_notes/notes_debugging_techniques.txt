@@ -367,3 +367,38 @@ layout instead of trap/exception history - reach for `info mtree`
 specifically when the question is "where does this address actually
 land", and item 11's trace when the question is "what trap did the CPU
 actually take".
+
+17. When "no console output" survives every kernel-code check, rule out the *host-side capture path* by reading a raw pty directly, not `-nographic`'s stdio multiplexing
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+A kernel that provably reaches `outb(port, c)` with the right port and
+the right byte (confirmed via gdb, single-stepped past the actual store
+instruction) but still produces zero visible characters has two very
+different possible explanations left: the emulated device isn't
+actually the one the byte lands on (a guest/device-model bug), or
+something about how the *host* is capturing QEMU's output is eating it
+(a test-harness bug). `-nographic`/`-serial stdio` funnels output
+through QEMU's own terminal-raw-mode handling, which behaves
+differently depending on whether the process's stdio is a real
+interactive tty versus a pipe/redirect (exactly the situation a Bash
+tool's backgrounded, piped invocations are in) - so "nothing arrived on
+stdio" is genuinely ambiguous between the two explanations as long as
+stdio is the only thing being read.
+
+Settle it by bypassing stdio entirely: `-display none -chardev
+pty,id=cm -serial chardev:cm` makes QEMU allocate a real host pty and
+print its path (`char device redirected to /dev/pts/N`) at startup;
+`cat /dev/pts/N` (or write to it, for input) talks to the guest UART
+through an ordinary tty device node, independent of whatever redirected
+QEMU's own stdout/stdin. If bytes still never show up here, the guest-
+side/device-model explanation is confirmed and stdio-capture concerns
+can be dropped entirely - during mips bring-up this is exactly what
+happened (still zero bytes on a raw pty), which redirected the ongoing
+"bug 5" investigation away from a suspected QEMU-invocation artifact
+and back toward the emulated hardware/kernel-code path itself. Also
+worth cross-checking with `info chardev` in this situation: it lists
+every chardev QEMU actually instantiated and each one's real backend
+(`filename=stdio`, `filename=null`, `filename=vc`, ...) - a `vc`
+(virtual-console) backend needs a graphical `-display` to ever be
+visible, so a device wired to one will look identical to "getting no
+output" under `-nographic` even if the guest is writing to it
+correctly.

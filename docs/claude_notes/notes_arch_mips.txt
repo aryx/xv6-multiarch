@@ -9,8 +9,9 @@ fixed (a modern-toolchain calling-convention mismatch, a removed QEMU
 machine type, a wrong I/O-space base address, and a linker/objcopy bug
 that inflated a bootstrap blob to 4.2MB), and the kernel now builds
 clean and boots without panicking or hanging - but produces zero visible
-console output, for a reason now well understood (see "Bug 5" below) but
-not yet fixed.
+console output, for a reason still NOT root-caused (see "Bug 5" below,
+including a follow-up session's UPDATE that ruled out the originally
+suspected explanation).
 
 What this is
 ------------
@@ -209,28 +210,41 @@ explanations one at a time, each directly confirmed rather than assumed:
     attaches to the "other" one) made no difference either way - still
     zero output with either port.
 
-The likely real explanation, not yet confirmed by directly fixing it:
-`info mtree`'s own *top-level* system memory map (not the ISA/PCI-IO
-sub-bus) shows a *third*, separate "serial" device registered directly
-at physical address `0x1f000900` (part of the malta-fpga region) -
-almost certainly QEMU malta board's own dedicated, board-specific
-console UART (distinct from the legacy-PC-compatible PIIX4 ISA ports
-this kernel exclusively uses), and very plausibly the device
-`-nographic`/`-serial stdio` actually wires to `serial0` by default for
-this specific board type (`info chardev` showed exactly one real
-`serial0: filename=stdio` and one `discarding-serial1: filename=null` -
-confirming QEMU genuinely instantiates two serial chardevs for this
-board, consistent with two candidate UARTs existing, but not proving
-which physical one is which). This was not fixed or even conclusively
-confirmed this session - it would require either (a) porting `uart.c`
-to target the malta-fpga UART's own register layout/stride instead of
-the classic 8250-compatible one (a real code change, register widths
-and strides for FPGA-mapped UARTs on MIPS platforms are commonly wider
-than the byte-per-register 8250 convention, so this isn't a simple
-address-constant swap the way bug 3 was), or (b) finding a QEMU option
-that reroutes `-serial`/`-nographic`'s stdio wiring to the legacy ISA
-ports instead of malta's own FPGA console (not found in `-M malta,help`
-in this session's search).
+claude: UPDATE (follow-up session, after run-mips was wired up and the
+user hit this live): the "malta-fpga console is what -nographic/stdio
+actually wires to" hypothesis directly above is most likely WRONG -
+`info chardev` in this follow-up session shows FOUR chardevs, not two:
+`serial0: filename=stdio`, `discarding-serial1: filename=null`,
+`parallel0: filename=null`, AND `fpga: filename=vc` - a *separate*
+chardev, on a `vc` (virtual-console, graphical-display-only) backend,
+distinct from `serial0`. That strongly suggests the malta-fpga UART at
+0x1f000900 is wired to its own dedicated `fpga`/`vc` chardev, and
+`serial0`/stdio genuinely is one of the two legacy ISA ports (matching
+`info qtree`'s two `isa-serial` devices at index 0/0x3f8 and index
+1/0x2f8) - i.e. the kernel's own I/O port choice was probably right all
+along, and the real bug is elsewhere.
+
+Also ruled out, in this follow-up session, as a possible test-harness
+artifact: redirected `qemu-system-mipsel -chardev pty,id=cm -serial
+chardev:cm -display none` to a raw allocated pty (`/dev/pts/N`, printed
+by QEMU itself at startup) and `cat`'d that pty file directly, entirely
+bypassing `-nographic`'s stdio-terminal-raw-mode path and any Bash-tool
+non-tty-pipe concerns. Still zero bytes, confirming this is a genuine
+emulation/kernel-code bug, not an artifact of how output was being
+captured.
+
+Net effect: bug 5 is CONFIRMED real and still NOT root-caused. The two
+candidate next steps from the original investigation ((a) port uart.c
+to the malta-fpga UART's own wider register stride, (b) find a QEMU
+flag to reroute stdio to the ISA ports) are both now less promising
+given the above - (b) looks backwards (serial0 already likely *is* an
+ISA port), and (a) would target a chardev (`fpga`) that turned out to
+need `-display` support (`vc` backend) to even be visible under
+`-nographic`, which doesn't fit this kernel's design at all. The
+actual bug is more likely in the ISA-serial byte-lane/bridge path
+itself (GT64120-mediated PCI/ISA I/O from the CPU side) or in a device
+lifecycle/reset-ordering detail this session didn't reach - left open
+for a future session with fresh eyes, rather than guessed at further.
 
 Verification so far
 ------------------------
