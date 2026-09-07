@@ -14,15 +14,17 @@
 # comment for why the directories themselves aren't renamed to match.
 #
 # Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
-# and loongarch - see docs/claude_notes/build-and-test-plan.md, Phases 1-2,
-# and Phase 4 (see docs/claude_notes/notes_arch_x86_64.txt,
+# loongarch, and arm - see docs/claude_notes/build-and-test-plan.md,
+# Phases 1-2, and Phase 4 (see docs/claude_notes/notes_arch_x86_64.txt,
 # notes_arch_amd64.txt, notes_arch_riscv32.txt - riscv32's own test-riscv32
 # now passes (bug 4, a missing user-program start() wrapper, fixed
 # 2026-09-07); notes_arch_arm64.txt - boots to a shell but its own
 # test-arm64 does not pass yet, see that file's own open bug;
 # notes_arch_mips.txt - boots silently, no test-mips at all yet, and only
 # build-mips/run-mips are wired up, not the full set; notes_arch_loongarch.txt
-# - fully working).
+# - fully working; notes_arch_armv7_rpi.txt - the ARM32 winner among four
+# candidate ports, boots to a real shell, test-arm passes with two known
+# usertests skipped).
 #
 # arm64, not aarch64: forks/aarch64 is still named for its upstream repo
 # (k-mrm/xv6-aarch64), but the Makefile target/./configure variable name
@@ -30,6 +32,12 @@
 # convention for this ISA - same bare-ISA-name-not-directory-name
 # reasoning as riscv64/i386/riscv32 above, just a different bare name
 # than the directory happens to use.
+#
+# arm, not armv7-rpi: same reasoning again, resolved once forks/armv7-rpi
+# became the clear winner among this repo's four ARM32 ports (see that
+# section's own comment below, and ./configure's matching "arm" section) -
+# build-arm/run-arm/test-arm/clean-arm/kill-arm and build-armv7-rpi/
+# run-armv7-rpi are both reachable, same underlying fork.
 
 -include Makefile.config
 
@@ -69,6 +77,7 @@ QEMU_RPI2 ?= qemu-system-arm
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
         build-armv7-rpi run-armv7-rpi check-armv7-rpi-toolchain \
+        build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
         build-rpi1 run-rpi1 check-rpi1-toolchain \
         build-rpi2 run-rpi2 check-rpi2-toolchain \
         build-all test-all clean-all kill-all build-docker
@@ -400,16 +409,13 @@ run-armv6-rpi: check-armv6-rpi-toolchain
 ###############################################################################
 # armv7-rpi (forks/armv7-rpi, inaciose/xv6-armv7-rpi)
 ###############################################################################
-# Named for the fork directory, same exception as armv6-rpi above.
-#
-# No test-armv7-rpi/clean-armv7-rpi/kill-armv7-rpi yet, and not folded
-# into build-all/run-all/test-all: seven real bugs were found and fixed
-# this bring-up (see notes_arch_armv7_rpi.txt) and boot now runs cleanly
-# through the correct board's firmware handoff with no crash loop at all
-# - but this codebase has no secondary-CPU boot-gating anywhere, and the
-# real board QEMU emulates here (raspi2b) is quad-core, so all 4 cores
-# currently race through identical boot code - a real, more substantial
-# gap than a build/wiring fix, left open per the user's own choice.
+# Named for the fork directory, same exception as armv6-rpi above - but
+# also reachable as the bare "arm" name below (build-arm/run-arm/
+# test-arm/clean-arm/kill-arm), since this port turned out to be the
+# clear winner among the four ARM32 ports here: the SMP boot-gating gap
+# noted below was fixed, along with a Thumb/ARM codegen mismatch and a
+# console/interrupt-routing swap to PL011 (see notes_arch_armv7_rpi.txt),
+# reaching a genuinely interactive shell with a passing usertests run.
 check-armv7-rpi-toolchain:
 	@if [ "$(TOOLPREFIX_ARMV7_RPI)" = NONE ] || [ "$(QEMU_ARMV7_RPI)" = NONE ]; then \
 		echo "Makefile: armv7-rpi toolchain/qemu not found - run ./configure to see what's missing" >&2; \
@@ -421,6 +427,42 @@ build-armv7-rpi: check-armv7-rpi-toolchain
 
 run-armv7-rpi: check-armv7-rpi-toolchain
 	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV7_RPI) QEMU=$(QEMU_ARMV7_RPI) qemu
+
+###############################################################################
+# arm (bare-ISA-name alias for forks/armv7-rpi)
+###############################################################################
+# Same fork as armv7-rpi above, just under the bare ISA name every other
+# arch in this Makefile uses (see ./configure's own "arm" section for
+# the full reasoning) - build-arm/run-arm/test-arm/clean-arm/kill-arm are
+# equivalent to their armv7-rpi counterparts, both reachable, sharing
+# the same forks/armv7-rpi tree and build outputs.
+#
+# usr/usertests.c has two tests commented out (preempt() hangs
+# indefinitely under QEMU's raspi2b; sbrktest() crashes the whole
+# process partway through, a pre-existing upstream-documented issue) -
+# see that file's own "claude:" comments and notes_arch_armv7_rpi.txt.
+# The rest of usertests, plus exectest()'s own "ALL TESTS PASSED" exec
+# trick, run to completion, so test-arm gets a real pass/fail signal.
+check-arm-toolchain:
+	@if [ "$(TOOLPREFIX_ARM)" = NONE ] || [ "$(QEMU_ARM)" = NONE ]; then \
+		echo "Makefile: arm toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-arm: check-arm-toolchain
+	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) kernel.elf
+
+run-arm: check-arm-toolchain
+	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) qemu
+
+test-arm: check-arm-toolchain
+	cd forks/armv7-rpi && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py
+
+clean-arm:
+	$(MAKE) -C forks/armv7-rpi clean
+
+kill-arm:
+	-pkill -f '$(QEMU_ARM)' 2>/dev/null || true
 
 ###############################################################################
 # rpi1 (forks/rpi1, zhiyihuang/xv6_rpi_port)
@@ -493,13 +535,13 @@ run-rpi2: check-rpi2-toolchain
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64 build-loongarch
+build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64 build-loongarch build-arm
 
-test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64 test-loongarch
+test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64 test-loongarch test-arm
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64 clean-loongarch
+clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64 kill-loongarch
+kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

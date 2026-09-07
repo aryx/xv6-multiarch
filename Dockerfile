@@ -8,18 +8,19 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only five
-# arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32 -
-# build-and-test-plan.md's Phases 1, 2, and Phase 4), not all thirteen
+# for the general reasoning this one reuses. Simpler here: only six
+# arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32, arm
+# - build-and-test-plan.md's Phases 1, 2, and Phase 4), not all thirteen
 # forks/ - extend the ARCH case below (both the apt-get and the
 # build/test one) as more arches get their own ./configure detection,
-# matching build.md's own Phase 4 order. loongarch/mips/arm64/the ARM
-# board ports are already wired into ./configure/the top-level Makefile
-# but not added here yet: mips/arm64 don't have a passing test-<arch>
-# to run in CI yet (see their own notes_arch_*.txt's open bugs), and
-# loongarch/the ARM board ports simply haven't had this step done yet -
-# nothing blocking it technically (loongarch's own toolchain turned out
-# to be a native arm64 apt package, no binfmt_misc emulation needed, see
+# matching build.md's own Phase 4 order. loongarch/mips/arm64/the other
+# three ARM board ports are already wired into ./configure/the top-level
+# Makefile but not added here yet: mips/arm64 don't have a passing
+# test-<arch> to run in CI yet (see their own notes_arch_*.txt's open
+# bugs), and loongarch/armv6-rpi/rpi1/rpi2 simply haven't had this step
+# done yet - nothing blocking it technically (loongarch's own toolchain
+# turned out to be a native arm64 apt package, no binfmt_misc emulation
+# needed, see
 # notes_arch_loongarch.txt).
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
@@ -88,10 +89,13 @@ RUN case "$ARCH" in \
                  gcc-x86-64-linux-gnu qemu-system-x86 ;; \
       riscv32) apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc ;; \
+      arm)     apt-get install -y --no-install-recommends \
+                 gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \
                  gcc-i686-linux-gnu libc6-dev-i386-cross \
-                 gcc-x86-64-linux-gnu qemu-system-x86 ;; \
+                 gcc-x86-64-linux-gnu qemu-system-x86 \
+                 gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       *) echo "Dockerfile: unknown ARCH=$ARCH" >&2; exit 1 ;; \
     esac
 
@@ -112,5 +116,28 @@ RUN ./configure
 # TCG - no /dev/kvm needed or used, same as this repo's own bring-up on an
 # aarch64 host emulating both riscv64 and i386) and run its own usertests
 # suite end to end - see forks/riscv/test-xv6.py and forks/x86/test-xv6.py.
-RUN if [ "$ARCH" = all ]; then make build-all; else make "build-$ARCH"; fi
-RUN if [ "$ARCH" = all ]; then make test-all; else make "test-$ARCH"; fi
+#
+# claude: ARCH=all deliberately does NOT call the top-level Makefile's own
+# build-all/test-all - those umbrella targets cover every arch wired into
+# ./configure (which by design runs ahead of this file - see build.md's
+# Phase 4 recipe step 2 vs step 6), including ones this Dockerfile's own
+# ARCH=all apt-get case above does not install a toolchain/qemu for yet
+# (arm64, loongarch, ...). Calling build-all/test-all here breaks the
+# instant a new arch is folded into that umbrella target before it's also
+# added to the apt-get case - which is exactly what happened (caught on
+# an arm64 dev machine, but arch-independent: check-loongarch-toolchain
+# fails identically on any host, since .github/workflows/docker.yml's own
+# matrix never runs ARCH=all - only single real arches - so this path had
+# never actually been exercised in CI). This explicit target list is the
+# Dockerfile's own source of truth for what ARCH=all covers - keep it in
+# lockstep with the apt-get "all" case above, not with build-all/test-all.
+RUN if [ "$ARCH" = all ]; then \
+      make build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm; \
+    else \
+      make "build-$ARCH"; \
+    fi
+RUN if [ "$ARCH" = all ]; then \
+      make test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm; \
+    else \
+      make "test-$ARCH"; \
+    fi

@@ -67,8 +67,14 @@ kernel.elf: $(addprefix build/,$(KERN_OBJS)) kernel.ld build/initcode build/fs.i
 # notes_arch_armv7_rpi.txt for the fuller investigation, including a
 # still-open, more substantial gap past this point: no secondary-CPU
 # boot-gating anywhere in this codebase, so all 4 emulated cores race).
+# claude: "-" (not just "@") on the clear line - a TTY-less caller (a
+# Docker/CI build has no TERM set at all) makes plain "clear" exit
+# non-zero ("TERM environment variable not set"), which without the "-"
+# aborts this whole recipe before qemu ever runs - confirmed via
+# "docker build --build-arg ARCH=arm" failing at exactly this line.
+# Interactive use from a real terminal is unaffected either way.
 qemu: kernel.elf
-	@clear
+	-@clear
 	@echo "Press Ctrl-A and then X to terminate QEMU session\n"
 	$(QEMU) -M raspi2b -nographic -kernel xv6.img
 

@@ -74,6 +74,8 @@ TOOLPREFIX_ARMV6_RPI=${TOOLPREFIX_ARMV6_RPI:-}
 QEMU_ARMV6_RPI=${QEMU_ARMV6_RPI:-}
 TOOLPREFIX_ARMV7_RPI=${TOOLPREFIX_ARMV7_RPI:-}
 QEMU_ARMV7_RPI=${QEMU_ARMV7_RPI:-}
+TOOLPREFIX_ARM=${TOOLPREFIX_ARM:-}
+QEMU_ARM=${QEMU_ARM:-}
 TOOLPREFIX_RPI1=${TOOLPREFIX_RPI1:-}
 QEMU_RPI1=${QEMU_RPI1:-}
 TOOLPREFIX_RPI2=${TOOLPREFIX_RPI2:-}
@@ -102,6 +104,8 @@ for arg in "$@"; do
         --qemu-armv6-rpi=*)     QEMU_ARMV6_RPI="${arg#--qemu-armv6-rpi=}" ;;
         --toolprefix-armv7-rpi=*) TOOLPREFIX_ARMV7_RPI="${arg#--toolprefix-armv7-rpi=}" ;;
         --qemu-armv7-rpi=*)     QEMU_ARMV7_RPI="${arg#--qemu-armv7-rpi=}" ;;
+        --toolprefix-arm=*)     TOOLPREFIX_ARM="${arg#--toolprefix-arm=}" ;;
+        --qemu-arm=*)           QEMU_ARM="${arg#--qemu-arm=}" ;;
         --toolprefix-rpi1=*)    TOOLPREFIX_RPI1="${arg#--toolprefix-rpi1=}" ;;
         --qemu-rpi1=*)          QEMU_RPI1="${arg#--qemu-rpi1=}" ;;
         --toolprefix-rpi2=*)    TOOLPREFIX_RPI2="${arg#--toolprefix-rpi2=}" ;;
@@ -141,6 +145,10 @@ for arg in "$@"; do
             echo "  --toolprefix-armv7-rpi=PREFIX override the armv7-rpi cross-toolchain prefix"
             echo "                               (e.g. arm-linux-gnueabihf-)"
             echo "  --qemu-armv7-rpi=CMD         override the armv7-rpi qemu-system binary"
+            echo "  --toolprefix-arm=PREFIX      override the arm cross-toolchain prefix (bare-"
+            echo "                               ISA-name alias for forks/armv7-rpi - see that"
+            echo "                               section's own comment below for why)"
+            echo "  --qemu-arm=CMD               override the arm qemu-system binary"
             echo "  --toolprefix-rpi1=PREFIX     override the rpi1 cross-toolchain prefix"
             echo "                               (e.g. arm-linux-gnueabihf-)"
             echo "  --qemu-rpi1=CMD              override the rpi1 qemu-system binary"
@@ -543,11 +551,14 @@ fi
 # Named for the fork directory, not a bare ISA name like every other arch
 # above - there's no single natural "arm32" bare name to give it (unlike
 # riscv32/riscv64 or arm64, ~/c--'s own convention only has ONE generic
-# 32-bit ARM backend, "arm", and this repo has TWO real ARMv6/ARMv7
-# 32-bit ports - forks/armv6-rpi and forks/armv7-rpi - with no clear
-# winner for a shared/disambiguated bare name). Explicit exception to the
-# naming convention documented in this script's own header comment and
-# in CLAUDE.md, not an oversight.
+# 32-bit ARM backend, "arm", and this repo has FOUR real ARMv6/ARMv7
+# 32-bit ports - forks/armv6-rpi, forks/armv7-rpi, forks/rpi1, forks/rpi2).
+# armv7-rpi has since claimed the bare "arm" name below, once it became
+# the clear winner (the only one reaching a genuinely interactive shell
+# with a passing usertests run) - armv6-rpi/rpi1/rpi2 keep their own
+# fork-directory names, unaffected. Explicit exception to the naming
+# convention documented in this script's own header comment and in
+# CLAUDE.md, not an oversight.
 
 if ! detect_toolprefix armv6-rpi TOOLPREFIX_ARMV6_RPI elf32-littlearm \
         arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
@@ -584,6 +595,34 @@ fi
 
 # forks/armv7-rpi/Makefile enforces no minimum QEMU version of its own.
 if ! detect_qemu_system armv7-rpi QEMU_ARMV7_RPI qemu-system-arm; then
+    echo "configure: warning: no qemu-system-arm on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-arm" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
+# arm (bare-ISA-name alias for forks/armv7-rpi)
+###############################################################################
+# forks/armv7-rpi is the only one of the four ARM32 ports here that
+# boots to a genuinely interactive shell and passes its own usertests
+# (see notes_arch_armv7_rpi.txt) - so it gets the bare "arm" name too,
+# matching ~/c--'s/~/goken's own generic 32-bit ARM backend convention
+# (same reasoning as the arm64 section above, just resolved later once
+# there was an actual winner among the four candidates). This is a
+# second, independent detect_toolprefix/detect_qemu_system call for the
+# exact same toolchain armv7-rpi's own section above already found -
+# same "every bare-ISA-name gets its own detection block" pattern as
+# riscv32 (which shares riscv64's own multilib toolchain the same way).
+if ! detect_toolprefix arm TOOLPREFIX_ARM elf32-littlearm \
+        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
+    echo "configure: warning: no arm toolchain on PATH (needed for forks/armv7-rpi)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
+    note_other_pkgmgr
+fi
+
+if ! detect_qemu_system arm QEMU_ARM qemu-system-arm; then
     echo "configure: warning: no qemu-system-arm on PATH" >&2
     echo "  install it, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install qemu-system-arm" >&2
@@ -701,6 +740,10 @@ fi
     echo "export TOOLPREFIX_ARMV7_RPI=$TOOLPREFIX_ARMV7_RPI"
     echo "export QEMU_ARMV7_RPI=$QEMU_ARMV7_RPI"
     echo
+    echo "# arm (bare-ISA-name alias for forks/armv7-rpi)"
+    echo "export TOOLPREFIX_ARM=$TOOLPREFIX_ARM"
+    echo "export QEMU_ARM=$QEMU_ARM"
+    echo
     echo "# rpi1 (forks/rpi1 - zhiyihuang/xv6_rpi_port)"
     echo "export TOOLPREFIX_RPI1=$TOOLPREFIX_RPI1"
     echo "export QEMU_RPI1=$QEMU_RPI1"
@@ -732,6 +775,8 @@ echo "  TOOLPREFIX_ARMV6_RPI = $TOOLPREFIX_ARMV6_RPI"
 echo "  QEMU_ARMV6_RPI       = $QEMU_ARMV6_RPI"
 echo "  TOOLPREFIX_ARMV7_RPI = $TOOLPREFIX_ARMV7_RPI"
 echo "  QEMU_ARMV7_RPI       = $QEMU_ARMV7_RPI"
+echo "  TOOLPREFIX_ARM       = $TOOLPREFIX_ARM"
+echo "  QEMU_ARM             = $QEMU_ARM"
 echo "  TOOLPREFIX_RPI1      = $TOOLPREFIX_RPI1"
 echo "  QEMU_RPI1            = $QEMU_RPI1"
 echo "  TOOLPREFIX_RPI2      = $TOOLPREFIX_RPI2"
@@ -746,7 +791,8 @@ echo "  or: make build-arm64 && make run-arm64"
 echo "  or: make build-mips && make run-mips"
 echo "  or: make build-loongarch && make run-loongarch"
 echo "  or: make build-armv6-rpi && make run-armv6-rpi (does not boot to a shell yet)"
-echo "  or: make build-armv7-rpi && make run-armv7-rpi (does not boot to a shell yet)"
+echo "  or: make build-arm && make run-arm (forks/armv7-rpi - boots to a real shell,"
+echo "      test-arm passes; also reachable as build-armv7-rpi/run-armv7-rpi)"
 echo "  or: make build-rpi1 && make run-rpi1 (does not boot to a shell yet under QEMU;"
 echo "      real-hardware kernel.img is unaffected, build via forks/rpi1's own Makefile)"
 echo "  or: make build-rpi2 && make run-rpi2 (does not boot to a shell yet under QEMU;"
