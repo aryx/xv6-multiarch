@@ -1,0 +1,227 @@
+notes_arch_rpi1.txt
+====================
+
+Written: 2026-09-07, against commit eb760b5 (the armv7-rpi bring-up
+commit), during the rpi1 bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, ninth port attempted from that
+phase's list, third of the four ARM board ports. Status: NOT fully
+working under QEMU yet - three real, universally-safe bugs fixed (safe
+for real hardware too, not QEMU-only hacks), boot now runs cleanly under
+QEMU's "-M raspi1ap" through the full firmware handoff, UART init, and
+into real kernel logic with no crash loop - but produces no visible
+output, for two SEPARATE, well-understood reasons (see "Two console
+paths, two different QEMU gaps" below), neither of which was fixed this
+session. **The real-hardware build path (kernel.img, "make all") was
+NOT modified in any way that could affect its behavior** - see "Real
+hardware safety" below.
+
+IMPORTANT CONTEXT: the user owns physical Raspberry Pi 1 and Pi 2
+boards and can test forks/rpi1/forks/rpi2 on real hardware - unlike
+forks/armv6-rpi/forks/armv7-rpi (whose only prior "boot path" was a
+broken QEMU shim, safe to freely rewrite), this fork's real-hardware
+boot path is a genuine asset. All fixes below were chosen specifically
+to be safe for both targets, or additive or (in the load-address case)
+completely separate from the real-hardware path.
+
+What this is
+------------
+forks/rpi1 is zhiyihuang/xv6_rpi_port (2014) - the root of the whole
+"ARM Raspberry Pi" lineage in this repo (forks/armv6-rpi is forked from
+its tip; forks/rpi2 extends it to ARMv7). Genuinely targets real
+Raspberry Pi 1 (BCM2835/ARM1176JZF-S) hardware: Alex Chadwick's "Baking
+Pi" tutorial-style GPU/mailbox driver code, a real vendored libcsud.a
+(Chadderz's USB driver, unlike armv6-rpi's own missing copy), a dual
+GPU-framebuffer + Mini-UART console (writes every character to BOTH),
+and a real, if outdated, mailbox-based framebuffer setup.
+
+Toolchain: arm-linux-gnueabihf-gcc/qemu-system-arm, already installed - no gaps
+--------------------------------------------------------------------------------------
+
+Real hardware safety
+---------------------
+kernel.ld (what "make all"/kernel.img - the thing you'd write to an SD
+card - actually uses) was NOT touched. All three fixes below are either:
+  - universal correctness fixes (the CC/ARMGNU bug, -fcommon, and the
+    -mcpu/-marm codegen fix) that make the SAME real-hardware kernel.img
+    build correctly and target the real CPU more precisely than before -
+    none of these change what the compiled code actually does on real
+    silicon, they just make gcc generate code that actually matches the
+    "-Wa,"-only flags' original intent instead of silently using the
+    toolchain's own unrelated default
+  - the delay()/getsystemtime() busy-wait fix (source/timer.c), which
+    changes an exact-equality spin-wait to a "target reached or passed"
+    spin-wait - real hardware's timer should never actually skip past
+    the exact target value in practice, so this is unlikely to ever
+    change behavior there, but is strictly more robust either way (see
+    that fix's own writeup below)
+  - kernel-qemu.ld / the "kernel-qemu.img"/"qemu" Makefile targets are
+    ENTIRELY NEW, additive files/targets - kernel.ld and the "all"/
+    "kernel.img" targets are completely unchanged, byte-for-byte
+    identical Makefile rules to before this session
+
+Bug 1 (real, fixed): "CC := gcc" ignored the ARMGNU cross-toolchain prefix entirely
+----------------------------------------------------------------------------------------
+The Makefile's own $(ARMGNU)-as/-ld/-objcopy/-objdump rules all
+correctly used the ARMGNU prefix - but CC was hardcoded to plain "gcc"
+(the HOST compiler), with no prefix at all. A build invoked with just
+"ARMGNU=arm-linux-gnueabihf" (no separate CC=... override) would
+silently try to compile ARM kernel code with the native x86_64/aarch64
+host compiler - never producing valid ARM code. Fixed to
+"CC := $(ARMGNU)-gcc". Purely a build-system correctness fix; the
+default ARMGNU is still unset (matching upstream), so an explicit
+ARMGNU=... is still required either way - this just makes that one
+variable now control BOTH the assembler/linker AND the C compiler,
+instead of requiring a separate, easy-to-forget CC=... override too.
+
+Bug 2 (real, fixed): -fcommon needed for include/proc.h's "struct cpu cpus[NCPU];"
+---------------------------------------------------------------------------------------
+Same class of bug documented in every other fork brought up in this
+repo by now (GCC 10 flipped the -fcommon default). Fixed by adding
+-fcommon to CFLAGS.
+
+Bug 3 (real, fixed, proactive): "-Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s" only restricts the assembler, not gcc's own codegen target
+-------------------------------------------------------------------------------------------------------------------------------------------
+Fixed proactively, before actually being hit as a build/link failure -
+this is the EXACT SAME flag pattern that caused a real, reproduced
+Thumb-switching-BLX crash in the sibling armv6-rpi port under QEMU (see
+notes_arch_armv6_rpi.txt bug 4) - "-Wa," flags only restrict what the
+ASSEMBLER stage accepts, not what gcc's own code generator targets,
+which silently falls back to this toolchain's real default
+(armv7-a+fp) without an explicit override. Replaced with real gcc-level
+"-mcpu=arm1176jzf-s -marm" (CFLAGS only - ASFLAGS isn't used by this
+Makefile at all, since it has no separate .S/.s-via-CC rule; the two
+hand-written assembly files (entry.s/exception.s/keyboard.s) go through
+$(ARMGNU)-as directly, a real, separate assembler invocation with no
+codegen-target ambiguity to begin with).
+
+Note: NO "-mfloat-abi=soft" was added here (unlike armv6-rpi's own
+otherwise-identical fix) - "-mcpu=arm1176jzf-s" alone already implies
+its real VFPv2 unit (confirmed via "readelf -A": Tag_FP_arch VFPv2,
+Tag_ABI_VFP_args "VFP registers"), and forcing soft-float would conflict
+with the vendored libcsud.a's own prebuilt hard-float ABI ("uses VFP
+register arguments, build/output.elf does not" link error) - this
+prebuilt library is genuine evidence the real hardware target has always
+assumed hard-float/VFP, so keeping it is both correct and necessary.
+
+Dual-target build setup: kernel-qemu.ld / "make qemu"
+-------------------------------------------------------
+kernel.ld links at physical 0x8000 (AT(0x8000)) - the address real
+Raspberry Pi 1 firmware always loads a kernel.img at. Confirmed via the
+QEMU monitor's "xp" command that QEMU's "-M raspi1ap" "-kernel" loader
+(for a raw binary) places content at physical 0x10000 instead - same
+finding as notes_arch_armv6_rpi.txt's own bug 5. Rather than changing
+kernel.ld itself (which would break real hardware boot), added a
+SEPARATE kernel-qemu.ld (identical SECTIONS layout, only the base
+address differs: 0x80010000/AT(0x10000)) and new, purely-additive
+Makefile targets: "kernel-qemu.img" (links the exact same $(OBJECTS)/
+$(C_OBJS) a second time against kernel-qemu.ld) and "qemu" (boots it
+under "-M raspi1ap -nographic"). "all"/"$(TARGET)"/"clean" all keep
+their original behavior; "clean" was extended (additively) to also
+remove the two new qemu-only output files.
+
+Bug 4 (real, fixed): delay()'s exact-equality busy-wait can spin forever under QEMU's timer emulation
+-------------------------------------------------------------------------------------------------------------
+Once the above got QEMU booting cleanly through the SMC/firmware
+handoff with no crash loop, "-d in_asm" showed execution stuck cycling
+between delay()/getsystemtime() during uartinit()'s own GPIO pull-up/
+down settle delay. source/timer.c's delay() used
+"while(t != getsystemtime());" - exact equality against a computed
+target tick count. Root-caused by directly recognizing the SAME pattern
+already diagnosed and fixed in the user's own Plan 9 kernel for this
+exact real hardware family: ~/principia/kernel/COMPILE/9/bcm/clock.c has
+a "claude:"-tagged comment on this precise bug ("under emulation (QEMU)
+clo can jump by more than 1 between two reads and skip tend, so != would
+spin for a full 2^32 counter wrap"), fixed there with a signed
+"has-target-been-reached-or-passed" comparison instead of exact match.
+Applied the identical pattern here: "while((long long)(getsystemtime()
+- t) < 0);". Confirmed via "-d in_asm" that boot now progresses well
+past uartinit() into real, varied kernel code (cprintf/panic/console
+drawing functions) after this fix - the hang is genuinely gone.
+
+Two console paths, two different QEMU gaps (both open, NOT fixed)
+---------------------------------------------------------------------
+This kernel writes every console character to BOTH the Mini-UART
+(uartputc) and the GPU framebuffer (gpuputc) - source/console.c's own
+consolewrite()/cprintf()/etc all call both unconditionally. Neither
+produces visible output under QEMU's "-M raspi1ap", for two entirely
+separate reasons - confirmed this is not one bug wearing two faces:
+
+  1. Mini-UART (AUX, what uart.c actually configures - GPIO 14/15 in
+     ALT5) has NO chardev backend at all under raspi1ap: "info qtree"
+     shows "dev: bcm2835-aux, id \"\" ... chardev = \"\"" - genuinely
+     empty. Only the separate PL011 UART0 gets wired to "serial0"/
+     stdio ("dev: pl011, id \"\" ... chardev = \"serial0\""). This looks
+     like a QEMU raspi1ap board-model limitation, not something fixable
+     from kernel source - nothing written to the Mini-UART's registers
+     is observable via "-serial"/stdio no matter what, though the
+     registers themselves are correctly mapped and writable (confirmed:
+     "info mtree" shows a real "bcm2835-aux" device at the expected
+     physical 0x20215000, matching this driver's own DEVSPACE-mapped
+     virtual address exactly).
+
+  2. The GPU framebuffer genuinely never displays anything: a QEMU
+     "screendump" (via the monitor, works even under "-display none"
+     since the framebuffer memory itself is still emulated) showed a
+     completely blank, single-color (pure black) 1024x768 image, even
+     after boot had clearly progressed into panic()/cprintf()/
+     drawcharacter()/gpuputc() (confirmed executing via "-d in_asm").
+     source/console.c's own initframebuf() uses the OLD, simple
+     mailbox-channel-1 struct-based framebuffer allocation API (a
+     single Msg struct written via writemailbox()/readmailbox()) - NOT
+     the modern property-tag protocol (mailbox channel 8, tag-based
+     requests like "Allocate Buffer" = 0x00040001). Strong evidence this
+     old API is the actual gap: the user's own Plan 9 kernel
+     (~/principia/kernel/COMPILE/9/bcm/vcore.c) uses the modern
+     property-tag protocol for its own framebuffer setup ("TagFballoc =
+     0x00040001") and DOES get a working framebuffer under QEMU's same
+     "-M raspi1ap" (confirmed working by the user, both on real hardware
+     and under QEMU) - strongly suggesting QEMU's own bcm2835-fb
+     mailbox emulation only implements the modern protocol, not the old
+     channel-1 struct API this xv6 port still uses. (Separately, Plan
+     9's own screen.c has a "claude:"-tagged comment about ONE specific
+     LATER mailbox call - screen blanking - tripping QEMU's MMIO
+     re-entrancy guard and needing to be skipped under emulation; that
+     is a different, narrower issue than the framebuffer-allocation gap
+     xv6 hits here, and doesn't block Plan 9's own initial framebuffer
+     setup from working.)
+
+Given both gaps are more substantial than a build-flag/address fix -
+(1) looks unfixable from kernel source at all (a QEMU board-model
+limitation), and (2) would require actually rewriting the mailbox
+protocol xv6 uses for framebuffer setup (a real, non-trivial code
+change to the primary console path, not just a QEMU-side workaround) -
+both were left open per the user's own explicit choice, rather than
+attempting the mailbox rewrite this session. The clearest concrete next
+step for a future session: port initframebuf() (and whatever else in
+mailbox.c the old channel-1 protocol touches) to the modern property-tag
+mailbox protocol, using ~/principia/kernel/COMPILE/9/bcm/vcore.c's own
+TagFballoc-based implementation as a working reference for the exact
+tag layout - this is very likely ALSO safe for real hardware (property
+tags have been supported by real Pi firmware for a decade), not just a
+QEMU-only fix, so it wouldn't need to be gated/conditional at all.
+
+Verification so far
+--------------------
+  make ARMGNU=arm-linux-gnueabihf
+    -> builds kernel.img (real hardware target) cleanly, all 3 flag/
+       Makefile bugs above fixed - NOT tested on real hardware this
+       session (no physical access from this environment), but the
+       fixes are all universal-correctness-only, chosen specifically to
+       carry the lowest possible risk to that path
+  make ARMGNU=arm-linux-gnueabihf QEMU=qemu-system-arm kernel-qemu.img
+  qemu-system-arm -M raspi1ap -nographic -kernel kernel-qemu.img
+    -> boots cleanly through the full firmware handoff and well into
+       real kernel logic (uartinit, cprintf, panic, console drawing
+       functions) with zero crash-loop noise - but produces no visible
+       output for either of the two reasons documented above, neither
+       fixed this session
+
+Wired up in ./configure and the top-level Makefile as build-rpi1/
+run-rpi1 (the QEMU target only, "kernel-qemu.img"/"qemu" - the
+real-hardware "kernel.img"/"all" targets remain directly reachable via
+the fork's own Makefile, untouched, and were deliberately NOT given a
+top-level target of their own, since this repo's top-level build system
+is specifically about QEMU-based build/boot per CLAUDE.md) - no
+test-rpi1/clean-rpi1/kill-rpi1 yet, and not folded into build-all/
+run-all/test-all, since there is no console output yet to build a real
+pass/fail signal around.

@@ -1,0 +1,16 @@
+# claude: this fork never had a .gitignore at all - build outputs were
+# neither tracked nor ignored (presumably no one had previously run a
+# real build in a git-tracked checkout of this specific fork). Covers
+# both the real-hardware build outputs (kernel.img/kernel.list/
+# kernel.map/build/) and the additive QEMU-only ones (kernel-qemu.img/
+# kernel-qemu.map - NOT kernel-qemu.ld, which is a real source file).
+# Deliberately does NOT ignore source/fs.img, source/initcode, or
+# source/font1.bin/font.bin - these are pre-built binaries .incbin'd
+# directly into the kernel image and are meant to be checked in (see
+# notes_arch_rpi1.txt).
+build/
+kernel.img
+kernel.list
+kernel.map
+kernel-qemu.img
+kernel-qemu.map

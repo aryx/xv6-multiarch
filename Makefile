@@ -54,6 +54,8 @@ TOOLPREFIX_ARMV6_RPI ?=
 QEMU_ARMV6_RPI ?= qemu-system-arm
 TOOLPREFIX_ARMV7_RPI ?=
 QEMU_ARMV7_RPI ?= qemu-system-arm
+TOOLPREFIX_RPI1 ?=
+QEMU_RPI1 ?= qemu-system-arm
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -65,6 +67,7 @@ QEMU_ARMV7_RPI ?= qemu-system-arm
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
         build-armv7-rpi run-armv7-rpi check-armv7-rpi-toolchain \
+        build-rpi1 run-rpi1 check-rpi1-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -420,6 +423,43 @@ build-armv7-rpi: check-armv7-rpi-toolchain
 
 run-armv7-rpi: check-armv7-rpi-toolchain
 	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV7_RPI) QEMU=$(QEMU_ARMV7_RPI) qemu
+
+###############################################################################
+# rpi1 (forks/rpi1, zhiyihuang/xv6_rpi_port)
+###############################################################################
+# claude: IMPORTANT - the user has physical Raspberry Pi 1/2 hardware
+# and this fork genuinely boots there (forks/rpi1/kernel.ld, "make all",
+# "kernel.img"). This section ONLY drives the separate, purely-additive
+# QEMU-only targets (kernel-qemu.ld/"kernel-qemu.img"/"qemu" - see
+# notes_arch_rpi1.txt) - never touches the real-hardware build at all.
+# Do not fold the real-hardware target into this repo's top-level
+# Makefile; it stays reachable only via forks/rpi1's own Makefile
+# directly, by design (this repo's top-level build system is
+# specifically about QEMU-based build/boot, per CLAUDE.md).
+#
+# forks/rpi1/Makefile's own cross-toolchain variable is "ARMGNU", and
+# (unlike every other fork's TOOLPREFIX/CROSSCOMPILE) it does NOT
+# include a trailing "-" - $(ARMGNU)-gcc etc. add it themselves - so the
+# trailing "-" that ./configure's own TOOLPREFIX_RPI1 always includes
+# (matching every other TOOLPREFIX_<ARCH> in this repo) needs stripping
+# here specifically.
+#
+# No test-rpi1/clean-rpi1/kill-rpi1 yet, and not folded into build-all/
+# run-all/test-all: boots cleanly under QEMU with no crash loop, but
+# produces no visible console output - two separate, unfixed QEMU/
+# mailbox-protocol gaps documented in notes_arch_rpi1.txt, not a
+# scripted pass/fail signal to build a test around yet.
+check-rpi1-toolchain:
+	@if [ "$(TOOLPREFIX_RPI1)" = NONE ] || [ "$(QEMU_RPI1)" = NONE ]; then \
+		echo "Makefile: rpi1 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-rpi1: check-rpi1-toolchain
+	$(MAKE) -C forks/rpi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_RPI1)) QEMU=$(QEMU_RPI1) kernel-qemu.img
+
+run-rpi1: check-rpi1-toolchain
+	$(MAKE) -C forks/rpi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_RPI1)) QEMU=$(QEMU_RPI1) qemu
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is

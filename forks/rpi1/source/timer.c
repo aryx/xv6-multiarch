@@ -75,7 +75,22 @@ delay(uint m)
 	if(m == 0) return;
 
 	t = getsystemtime() + m;
-	while(t != getsystemtime());
+	// claude: was "while(t != getsystemtime());" - an exact-equality
+	// busy-wait. Confirmed as a real hang under QEMU's "-M raspi1ap"
+	// (traced via "-d in_asm": stuck calling delay()/getsystemtime() in
+	// a loop during uartinit()'s own GPIO settle delay, never
+	// progressing) - the emulated timer counter can advance by more
+	// than 1 between two reads and skip straight past the exact target,
+	// so "!=" never becomes false and this spins for the remaining
+	// ~2^64 range of a 64-bit counter. Same root cause, and the same
+	// fix (a signed "has the target been reached or passed" compare
+	// instead of exact match), as ~/principia/kernel/COMPILE/9/bcm/
+	// clock.c's own "claude:"-tagged comment on this exact class of bug
+	// for the same real hardware family - a pure robustness fix, not a
+	// QEMU-only workaround: real hardware's timer normally never skips
+	// past the target at all, so this changes nothing there, but is
+	// strictly safer if it ever did.
+	while((long long)(getsystemtime() - t) < 0);
 
 	return;
 }
