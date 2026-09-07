@@ -450,3 +450,39 @@ hardware, check whether the user (or the wider ecosystem) has any other
 kernel already working on that exact board - the actual instruction
 ORDER of a working reference is often more reliable evidence than
 reasoning about ARM/MMU semantics from the architecture manual alone.
+
+20. A breakpoint that should fire but never does is itself the finding - it means the assumed code path is wrong, not that the breakpoint is broken
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/rv32's bug 4 (see notes_arch_riscv32.txt) looked, from the crash
+alone, like register corruption: a shell's memset() call received
+completely wrong arguments, and every register-preservation path that
+could plausibly explain it (the trapframe struct's field layout, the
+trampoline.S save/restore offsets, the callee-saved-register discipline
+of the intervening fprintf()/vprintf() calls) had already been checked
+by hand, field by field, and matched. Rather than keep re-deriving the
+call chain from static disassembly, a gdb-multiarch session was
+attached to QEMU's own gdbstub (`qemu-system-riscv32 ... -S -gdb
+tcp::1234`, then `target remote localhost:1234` with `set architecture
+riscv:rv32`) and a hardware breakpoint (`hbreak`, not `break` - avoids
+ever writing to guest memory, so there's no risk of corrupting a
+not-yet-mapped or read-only page, a real hazard software breakpoints
+have in a system with per-process page tables) was set at the user
+virtual address of the ONE call site that could reach the crashing
+function.
+
+It never fired - not once in a run where the console was visibly
+printing the exact prompt that call site's callee produces. The
+instinct at that point should be to suspect the breakpoint mechanism
+itself (wrong address, wrong architecture setting, gdbstub flakiness) -
+worth ruling out ONCE, cheaply, by setting a second hbreak at a kernel
+address known to execute constantly (any frequently-hit printf call
+site) and confirming it fires immediately. Once that sanity check
+passes, a breakpoint that still never fires at an address the source
+code says must be reached is strong, direct evidence that execution
+never reaches that address at all - i.e., that the real code path
+differs from what the disassembly of the file you're reading implies
+about what actually runs. Here that pointed straight at `readelf -h`/
+`nm` on the actual built binary, which showed the ELF's own entry point
+was a completely different, unexpected function - a two-command
+diagnosis that a register-corruption theory would never have reached,
+however carefully pursued.
