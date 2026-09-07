@@ -16,13 +16,13 @@
 # Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
 # and loongarch - see docs/claude_notes/build-and-test-plan.md, Phases 1-2,
 # and Phase 4 (see docs/claude_notes/notes_arch_x86_64.txt,
-# notes_arch_amd64.txt, notes_arch_riscv32.txt, notes_arch_arm64.txt -
-# riscv32 and arm64 both boot to a shell but their own test-<arch> does
-# not pass yet, see those two files' own open bugs; notes_arch_mips.txt -
-# boots silently, no test-mips at all yet, and only build-mips/run-mips
-# are wired up, not the full set; notes_arch_loongarch.txt - fully
-# working, the only arch besides riscv64/i386/x86_64/amd64 whose
-# test-<arch> actually passes).
+# notes_arch_amd64.txt, notes_arch_riscv32.txt - riscv32's own test-riscv32
+# now passes (bug 4, a missing user-program start() wrapper, fixed
+# 2026-09-07); notes_arch_arm64.txt - boots to a shell but its own
+# test-arm64 does not pass yet, see that file's own open bug;
+# notes_arch_mips.txt - boots silently, no test-mips at all yet, and only
+# build-mips/run-mips are wired up, not the full set; notes_arch_loongarch.txt
+# - fully working).
 #
 # arm64, not aarch64: forks/aarch64 is still named for its upstream repo
 # (k-mrm/xv6-aarch64), but the Makefile target/./configure variable name
@@ -240,11 +240,6 @@ check-riscv32-toolchain:
 # Same "kernel/kernel"+"fs.img", no separate whole-disk image, shape as
 # riscv64 - forks/rv32 boots via QEMU's own "-kernel" loading straight to
 # 0x80000000, no bootblock stage (see docs/claude_notes/notes_arch_riscv32.txt).
-#
-# NOTE: this port is NOT fully working yet - it boots to an interactive
-# shell prompt, but the shell itself then crashes (see
-# notes_arch_riscv32.txt's "bug 4", not yet fixed) - test-riscv32 below will
-# fail until that's resolved. build-riscv32/run-riscv32 do work.
 build-riscv32: check-riscv32-toolchain
 	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
 

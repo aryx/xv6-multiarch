@@ -8,12 +8,19 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only four
-# arches are wired up so far (riscv64, i386, x86_64, amd64 - build-and-
-# test-plan.md's Phases 1, 2, and Phase 4), not all thirteen forks/ -
-# extend the ARCH case below (both the apt-get and the build/test one)
-# as more arches get their own ./configure detection, matching
-# build.md's own Phase 4 order.
+# for the general reasoning this one reuses. Simpler here: only five
+# arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32 -
+# build-and-test-plan.md's Phases 1, 2, and Phase 4), not all thirteen
+# forks/ - extend the ARCH case below (both the apt-get and the
+# build/test one) as more arches get their own ./configure detection,
+# matching build.md's own Phase 4 order. loongarch/mips/arm64/the ARM
+# board ports are already wired into ./configure/the top-level Makefile
+# but not added here yet: mips/arm64 don't have a passing test-<arch>
+# to run in CI yet (see their own notes_arch_*.txt's open bugs), and
+# loongarch/the ARM board ports simply haven't had this step done yet -
+# nothing blocking it technically (loongarch's own toolchain turned out
+# to be a native arm64 apt package, no binfmt_misc emulation needed, see
+# notes_arch_loongarch.txt).
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own
@@ -79,6 +86,8 @@ RUN case "$ARCH" in \
                  gcc-x86-64-linux-gnu qemu-system-x86 ;; \
       amd64)   apt-get install -y --no-install-recommends \
                  gcc-x86-64-linux-gnu qemu-system-x86 ;; \
+      riscv32) apt-get install -y --no-install-recommends \
+                 gcc-riscv64-unknown-elf qemu-system-misc ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \
                  gcc-i686-linux-gnu libc6-dev-i386-cross \

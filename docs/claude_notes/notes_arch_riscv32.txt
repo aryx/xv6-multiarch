@@ -2,14 +2,14 @@ notes_arch_riscv32.txt
 ======================
 
 Written: 2026-09-06, against commit 9f43752 (the amd64 commit), during
-the rv32 bring-up itself. Phase 4 of
+the rv32 bring-up itself. Updated 2026-09-07 once bug 4 (below) was
+root-caused and fixed in a follow-up session. Phase 4 of
 docs/claude_notes/build-and-test-plan.md, third port attempted from that
-phase's list. Status: NOT fully working yet - three real bugs found and
-fixed (a missing PMP setup, a missing user-program linker script, a
-corrupt ELF32 program-header struct), and the kernel now boots all the
-way to an interactive shell prompt, but a fourth bug remains open: the
-freshly-exec'd shell crashes on its first command-prompt loop iteration
-with an unexplained register corruption. See
+phase's list. Status: FULLY WORKING - four real bugs found and fixed (a
+missing PMP setup, a missing user-program linker script, a corrupt
+ELF32 program-header struct, and a missing user-program start() wrapper
+that left every process starting at the wrong function), kernel boots
+to an interactive shell, and `usertests` reports "ALL TESTS PASSED". See
 docs/claude_notes/notes_debugging_techniques.txt items 10-13 for the
 general techniques this investigation produced.
 
@@ -195,8 +195,14 @@ Verification so far: boots to a shell prompt, one bug open
        the above bugs are genuinely fixed, this is real progress from a
        kernel that never printed anything at all
 
-Bug 4 (open, NOT fixed): sh crashes on its very first getcmd() call
-------------------------------------------------------------------------------
+Bug 4 (real, fixed 2026-09-07): every user program started at the wrong function - a missing start() wrapper
+------------------------------------------------------------------------------------------------------------------
+Follow-up session, same commit lineage. Root-caused and fixed; the port
+now boots to a real shell and `usertests` prints "ALL TESTS PASSED" -
+see the updated verification section below.
+
+Symptom recap (as it looked before this session's investigation): sh
+crashes on its very first getcmd() call
 Immediately after the "$ " prompt is printed (before any human/scripted
 input is even sent), every single spawned `sh` instance crashes
 identically:
@@ -248,27 +254,92 @@ assumed:
     process history to have left corrupted state - a scheduler/context-
     switch bug remains plausible but is unconfirmed, not ruled out.
 
-Not yet tried: single-stepping getcmd() from its own first instruction
-in user space. Raw gdb breakpoints at user virtual addresses are risky
-here before a process's own page table is confirmed active (a `break
-*0xf18` attempt with no process yet scheduled at that address appeared
-to hang/corrupt boot state harmlessly recoverable only by restarting
-QEMU) - the next session should either wait until the *second* sh
-instance is about to run (so a first pass through the same code has
-already proven the page table is live) before setting the breakpoint,
-or add another temporary kernel-side print (this time comparing
-`myproc()->trapframe` register values at consecutive scheduler
-timer-tick boundaries during getcmd()'s brief window) to catch a context
-switch in the act, if one is even occurring during this short window.
+Root cause, found via gdb-multiarch hardware breakpoints over QEMU's
+gdbstub (`-S -gdb tcp::1234`): a hardware breakpoint at user VA 0xf18 -
+main()'s own `jalr` into getcmd(), per the disassembly - was set and
+confirmed reachable (a sanity-check hbreak on a definitely-executed
+*kernel* address fired immediately, ruling out a broken gdbstub), yet
+NEVER fired even once across a 30-second run in which the shell was
+visibly printing "$ " and crashing over and over on the console. That
+ruled out "main() calls getcmd() and something corrupts the registers
+in between" (the working theory this port's Makefile comment and the
+"not yet tried" note above both assumed) - execution was never
+reaching 0xf18 at all.
 
-Still open / not investigated this session
---------------------------------------------------
-- Bug 4 above.
-- The Docker/CI wiring (Dockerfile ARCH case, docker.yml matrix entry,
-  top-level Makefile build-rv32/run-rv32/test-rv32/clean-rv32/kill-rv32
-  targets, ./configure detection block) - deliberately deferred until
-  bug 4 is resolved and a real `test-xv6.py` can pass end to end,
-  per this repo's own "fix it, don't route around it" bring-up
-  convention (docs/claude_notes/build-and-test-plan.md's own "Deliberately
-  out of scope" section is about *not fixing* being acceptable, not
-  about wiring up CI for something that doesn't boot to a shell yet).
+`readelf -h user/_sh` explained why: `Entry point address: 0x0`, and
+`nm user/_sh` showed address 0 is getcmd() (defined before main() in
+sh.c), not main(). kernel/exec.c does `p->tf->epc = elf.entry;` - so
+every freshly-exec'd sh process was starting execution *inside
+getcmd()*, not at main(), with argc/argv (exec()'s real return value
+and ustack-array address, per the calling convention comment in
+exec.c) misinterpreted as getcmd(buf, nbuf)'s own two parameters. This
+matches every observed number exactly: a0=1 at the crash (argc, since
+sh is exec'd with argv={"sh",0}) and a1/s2=~0x4fe0 (the ustack-array
+pointer - close to, but not equal to, the real stack pointer, exactly
+where argv[] was pushed) - not "buf=0x2020, nbuf=100" as the compiled
+call site's own operands would have supplied had main() ever actually
+called getcmd() as unwound. getcmd()'s first statement,
+`fprintf(2, "$ ")`, is *why* a real-looking "$ " prompt printed before
+the crash - it's genuinely getcmd() running, just as the process's
+*entry point*, not as a call from main().
+
+Why does the ELF end up with the wrong entry point at all? The
+Makefile's generic user-program link rule (`_%: %.o $(ULIB) $U/user.ld`)
+passes no `-e main`, and user.ld sets no `ENTRY()` directive either -
+both true of forks/riscv64's own identical-looking rule too. Without an
+explicit entry symbol, GNU ld falls back to a symbol literally named
+`start` if one is linked in; forks/riscv64/user/ulib.c has exactly this
+wrapper (`void start(int argc, char **argv) { exit(main(argc, argv)); }`,
+with a comment explaining it's "OK if main() does not call exit()") -
+confirmed empirically: `readelf -h forks/riscv64/user/_sh` reports its
+real entry as `start`'s own address, not 0. forks/rv32/user/ulib.c
+never had this wrapper at all - so ld's fallback goes one level further,
+to the address of the very first byte of `.text`, i.e. whichever
+function the compiler happened to place first in that program's own
+source file. For sh.c that's getcmd(); for other programs (cat, echo,
+ls, ...) it's whatever their own first-defined function is, which
+plausibly explains why init.c's own exec("sh", ...) itself "worked"
+despite the same underlying defect - if a given program's first
+function in source order happens to BE main() (as, apparently, init.c's
+is), the bug is silently harmless for that program.
+
+Fixed by adding the missing `start()` wrapper to
+forks/rv32/user/ulib.c, copied verbatim from forks/riscv64/user/ulib.c
+(no 32-vs-64-bit adjustment needed - it only shuffles argc/argv through
+a plain C call). `readelf -h user/_sh` afterward reports the entry
+point as `start`'s own address (0xfb4), and the crash is gone entirely.
+
+A technique worth keeping for docs/claude_notes/notes_debugging_techniques.txt:
+setting a hardware breakpoint (`hbreak`, not `break`) at a *reachable-if-
+the-code-does-what-you-think* address, and finding it silently never
+fires despite strong evidence the surrounding code IS running, is itself
+a strong signal that the assumed code path is wrong - not that the
+breakpoint mechanism is broken (verify that separately, once, on an
+address you're certain executes, the way this session did with a known
+kernel printf call site, before trusting a "never fires" result). This
+turned what looked like a register-corruption mystery into a two-command
+`readelf`/`nm` diagnosis.
+
+Verification after the fix
+---------------------------
+  make build-riscv32
+    -> builds clean, readelf -h user/_sh shows Entry point address 0xfb4
+       (start()), not 0x0 (getcmd())
+  qemu-system-riscv32 -machine virt -bios none -kernel kernel/kernel
+    -drive file=fs.img,... -smp 1 -m 1024M -nographic
+    -> "init: starting sh", "$ " - no crash, stays at a live prompt
+  python3 test-xv6.py
+    -> boots to shell, runs `usertests`, "ALL TESTS PASSED" - the
+       interleaved "usertrap(): unexpected scause 0xd" lines mid-suite
+       are the same benign, deliberately-provoked-fault pattern
+       documented for every other working port here (sbrkfail/
+       stacktest triggering a page fault on purpose to verify the
+       kernel handles it gracefully), not a regression
+
+Wired up in ./configure and the top-level Makefile as build-riscv32/
+run-riscv32/test-riscv32/clean-riscv32/kill-riscv32, folded into
+build-all/test-all/clean-all/kill-all now that test-riscv32 genuinely
+passes. Docker/CI wiring (Dockerfile ARCH case, docker.yml matrix entry)
+added in the same pass - see notes_debugging_techniques.txt item 6 for
+why it's verified locally with the exact `--build-arg ARCH=riscv32`
+before ever touching CI.

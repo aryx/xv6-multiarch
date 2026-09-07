@@ -3,6 +3,29 @@
 #include "kernel/fcntl.h"
 #include "user/user.h"
 
+// claude: this fork never had this wrapper at all (forks/riscv64/user/ulib.c
+// does - copied verbatim from there). It matters for more than "it's OK if
+// main() doesn't call exit()": the Makefile's user-program link rule (see
+// the "_%:" rule) passes no "-e main" and user.ld sets no ENTRY(), so GNU ld
+// falls back to its default entry symbol, "start" - without this function
+// providing that symbol, ld instead defaulted to the address of the very
+// first byte of .text, i.e. whichever function happens to be compiled first
+// in that program's own .c file. For user/sh.c that's getcmd() (defined
+// before main()), so every _sh process was starting execution *inside
+// getcmd()*, with the kernel's real argc/argv (from exec()'s trapframe
+// setup) misinterpreted as getcmd's own buf/nbuf parameters - explaining
+// the "$ " prompt (getcmd's first statement is fprintf(2, "$ ")) followed
+// immediately by a crash in memset(buf=argc, 0, nbuf=<argv's stack
+// address>). See notes_arch_riscv32.txt bug 4.
+void
+start(int argc, char **argv)
+{
+  int r;
+  extern int main(int argc, char **argv);
+  r = main(argc, argv);
+  exit(r);
+}
+
 char*
 strcpy(char *s, const char *t)
 {
