@@ -53,10 +53,24 @@ kernel.elf: $(addprefix build/,$(KERN_OBJS)) kernel.ld build/initcode build/fs.i
 	$(OBJDUMP) -t kernel.elf | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
 	rm -f initcode fs.img
 
+# claude: was "-M versatilepb -cpu arm1176 -kernel kernel.elf" - same
+# class of board mismatch as the sibling armv6-rpi port (see
+# notes_arch_armv6_rpi.txt): versatilepb is an unrelated ARM926EJ-S
+# reference board, and "-cpu arm1176" (ARMv6, no Hyp mode, no Thumb-2)
+# doesn't even match this kernel's own "-march=armv7-a -mtune=cortex-a7"
+# codegen target or its Hyp-mode-aware entry.S. "-M raspi2b" is QEMU's
+# real Raspberry Pi 2B (BCM2836/Cortex-A7, quad-core) machine, matching
+# this kernel's own hardcoded 0x3f000000-range peripheral addresses -
+# but a raw "kernel.img"-style image is needed for -kernel here (an ELF
+# skips raspi2b's own armstub/firmware handoff and starts at EL3/Monitor
+# mode instead of the expected Hyp/SVC mode - see
+# notes_arch_armv7_rpi.txt for the fuller investigation, including a
+# still-open, more substantial gap past this point: no secondary-CPU
+# boot-gating anywhere in this codebase, so all 4 emulated cores race).
 qemu: kernel.elf
 	@clear
 	@echo "Press Ctrl-A and then X to terminate QEMU session\n"
-	$(QEMU) -M versatilepb -m 128 -cpu arm1176  -nographic -kernel kernel.elf
+	$(QEMU) -M raspi2b -nographic -kernel xv6.img
 
 INITCODE_OBJ = initcode.o
 $(addprefix build/,$(INITCODE_OBJ)): initcode.S

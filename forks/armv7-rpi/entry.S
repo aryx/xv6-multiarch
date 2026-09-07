@@ -7,14 +7,28 @@
 .global _start
 
 _start:
-    ;@ return from hypervisor
+    ;@ claude: guarded with a mode check - ELR_hyp/eret are Hyp-mode-only
+    ;@ banked registers/instructions, Undefined Instruction from any
+    ;@ other mode. QEMU's "-M raspi2b" (and likely real hardware's own
+    ;@ boot firmware too) already drops the CPU to SVC mode as part of
+    ;@ its own EL3/monitor handoff before jumping here, so unconditionally
+    ;@ executing this hyp-exit sequence faulted immediately (confirmed
+    ;@ via "-d int,guest_errors": a repeating Undefined Instruction loop
+    ;@ right after the firmware handoff - see notes_arch_armv7_rpi.txt).
+    ;@ Skip straight to the SVC-mode setup below when not actually in
+    ;@ Hyp mode.
     mrs r0,cpsr
+    and r1,r0,#0x1F
+    cmp r1,#HYP_MODE
+    bne 1f
+    ;@ return from hypervisor
     bic r0,r0,#0x1F
     orr r0,r0,#0x13
     msr spsr_cxsf,r0
     add r0,pc,#4
     msr ELR_hyp,r0
     eret
+1:
 
     // Setup SVC mode stack
     mov r0, #(SVC_MODE | NO_INT)

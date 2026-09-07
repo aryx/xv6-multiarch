@@ -52,6 +52,9 @@ struct trapframe {
 #define FIQ_MODE    0x11
 #define IRQ_MODE    0x12
 #define SVC_MODE    0x13
+// claude: was missing - needed by entry.S's own conditional hyp-exit
+// check (see that file's own comment).
+#define HYP_MODE    0x1a
 #define ABT_MODE    0x17
 #define UND_MODE    0x1b
 #define SYS_MODE    0x1f

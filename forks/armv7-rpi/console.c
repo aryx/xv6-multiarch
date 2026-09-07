@@ -133,6 +133,21 @@ void panic (char *s)
         ;
 }
 
+// claude: minimal libgcc-runtime-support stub, not a real signal
+// implementation - same reason as usr/ulib.c's own raise() stub: any
+// 32-bit integer division in kernel code pulls in libgcc's shared
+// "_dvmd_lnx.o" object, which also defines the (unused-in-practice)
+// 64-bit division-by-zero trap handler __aeabi_ldiv0 - and that calls
+// raise() unconditionally. This freestanding kernel has no libc/signal
+// support at all; panicking is the correct fallback if this ever
+// actually fires.
+int
+raise(int sig)
+{
+    panic("raise: division by zero (libgcc __aeabi_ldiv0)");
+    return 0; // unreached
+}
+
 //PAGEBREAK: 50
 #define BACKSPACE 0x100
 #define CRTPORT 0x3d4

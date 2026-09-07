@@ -9,8 +9,13 @@ SECTIONS
   /* the entry point, before enabling paging. The code to enable paing
    needs to have the same virtual/physical address. entry.S and start.c
    run in this initial setting.*/
-  /* . = 0x10000; */
-  . = 0x00008000;
+  /* claude: switched to the alternate 0x10000 base this file already
+   * had commented out - confirmed via the QEMU monitor's "xp" command
+   * that "-M raspi2b"'s "-kernel" loader (for a raw binary image) places
+   * content at physical 0x10000, not 0x8000 - the exact same finding as
+   * notes_arch_armv6_rpi.txt's own bug 5 for the sibling "-M raspi1ap"
+   * port. See notes_arch_armv7_rpi.txt. */
+  . = 0x00010000;
   .start_sec : {
     build/entry.o(.text)
     build/start.o(.text .text.*)

@@ -52,6 +52,8 @@ CC_LOONGARCH ?=
 QEMU_LOONGARCH ?= qemu-system-loongarch64
 TOOLPREFIX_ARMV6_RPI ?=
 QEMU_ARMV6_RPI ?= qemu-system-arm
+TOOLPREFIX_ARMV7_RPI ?=
+QEMU_ARMV7_RPI ?= qemu-system-arm
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -62,6 +64,7 @@ QEMU_ARMV6_RPI ?= qemu-system-arm
         build-mips run-mips check-mips-toolchain \
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
+        build-armv7-rpi run-armv7-rpi check-armv7-rpi-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -392,6 +395,31 @@ build-armv6-rpi: check-armv6-rpi-toolchain
 
 run-armv6-rpi: check-armv6-rpi-toolchain
 	$(MAKE) -C forks/armv6-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV6_RPI) QEMU=$(QEMU_ARMV6_RPI) qemu
+
+###############################################################################
+# armv7-rpi (forks/armv7-rpi, inaciose/xv6-armv7-rpi)
+###############################################################################
+# Named for the fork directory, same exception as armv6-rpi above.
+#
+# No test-armv7-rpi/clean-armv7-rpi/kill-armv7-rpi yet, and not folded
+# into build-all/run-all/test-all: seven real bugs were found and fixed
+# this bring-up (see notes_arch_armv7_rpi.txt) and boot now runs cleanly
+# through the correct board's firmware handoff with no crash loop at all
+# - but this codebase has no secondary-CPU boot-gating anywhere, and the
+# real board QEMU emulates here (raspi2b) is quad-core, so all 4 cores
+# currently race through identical boot code - a real, more substantial
+# gap than a build/wiring fix, left open per the user's own choice.
+check-armv7-rpi-toolchain:
+	@if [ "$(TOOLPREFIX_ARMV7_RPI)" = NONE ] || [ "$(QEMU_ARMV7_RPI)" = NONE ]; then \
+		echo "Makefile: armv7-rpi toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-armv7-rpi: check-armv7-rpi-toolchain
+	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV7_RPI) QEMU=$(QEMU_ARMV7_RPI) kernel.elf
+
+run-armv7-rpi: check-armv7-rpi-toolchain
+	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV7_RPI) QEMU=$(QEMU_ARMV7_RPI) qemu
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is

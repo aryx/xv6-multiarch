@@ -6,8 +6,16 @@
 #include "defs.h"
 #include "memlayout.h"
 
+// claude: "static" added - plain (non-static) "inline" under modern
+// gcc's default C99-style inline semantics provides no callable
+// out-of-line definition at all unless a separate non-inline
+// declaration exists elsewhere (unlike the older GNU89 inline default
+// this code was evidently written against, where plain "inline" alone
+// behaved like "extern inline") - caused a genuine "undefined reference
+// to `xdelay'" link error whenever the compiler chose not to actually
+// inline a call. "static inline" is unambiguous under both semantics.
 // Loop <delay> times
-inline void xdelay(unsigned int count)
+static inline void xdelay(unsigned int count)
 {
   asm volatile("__delay_%=: subs %[count], %[count], #1; bne __delay_%=\n"
      : "=r"(count): [count]"0"(count) : "cc");

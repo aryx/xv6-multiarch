@@ -1,0 +1,211 @@
+notes_arch_armv7_rpi.txt
+========================
+
+Written: 2026-09-07, against commit 425440a (the armv6-rpi bring-up
+commit), during the armv7-rpi bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, eighth port attempted from
+that phase's list, second of the four ARM board ports. Status: NOT fully
+working yet - seven real bugs found and fixed, boot now runs cleanly
+through the correct board's firmware handoff and this kernel's own early
+setup with no crash loop at all - but a real, more substantial gap
+remains open: this codebase has NO secondary-CPU boot-gating anywhere,
+and the real board QEMU emulates here (raspi2b) is quad-core, so all 4
+cores currently race through identical boot code simultaneously (see
+"Gap" below).
+
+What this is, and how it differs structurally from armv6-rpi
+----------------------------------------------------------------
+forks/armv7-rpi is inaciose/xv6-armv7-rpi (2017), same author and era as
+forks/armv6-rpi, but NOT a straightforward architecture variant of it -
+`diff -rq` against armv6-rpi shows almost no shared file NAMES at all
+(entry.S vs entry.s, start.c instead of a separate mmu.c, a buddy
+allocator (buddy.c), device/ and lib/ subdirectories) - a genuinely
+different, more complex codebase, consistent with the root README's own
+provenance note that armv7-rpi's inferred fork point is forks/x86
+("identical under diff -w"), not the rpi1/armv6-rpi lineage.
+
+Despite the "-rpi" directory name and the README's own description
+("Cortex-A15/A7, Banana Pi"), this kernel's actual hardcoded peripheral
+addresses in memlayout.h (GPIO_BASE=0x3f200000, UART0_BASE=0x3f201000)
+are the REAL Raspberry Pi 2/3 (BCM2836) ones - confirmed matching QEMU's
+"-M raspi2b" machine exactly via "info mtree" (0x3f201000: pl011). A
+second header, device/versatile_pb.h, defines a COMPLETELY different
+memory map (0x1c000000-range, matching an ARM Versatile Express-style
+board) and IS #included (via arm.h) but its own macros are never
+actually referenced by any .c file that matters - looks like leftover
+scaffolding from an earlier or abandoned board target, not something
+this bring-up needed to reconcile.
+
+Toolchain: arm-linux-gnueabihf-gcc/qemu-system-arm, already installed - no gaps (same as armv6-rpi)
+---------------------------------------------------------------------------------------------------------
+
+Bug 1 (real, fixed): -mfloat-abi=hard conflicts with this kernel's own explicit "-march=armv7-a" (no +fp)
+---------------------------------------------------------------------------------------------------------------
+Same root cause as notes_arch_armv6_rpi.txt's own bug 1, different
+manifestation: this port's own CFLAGS DOES pass real gcc-level
+"-march=armv7-a -mtune=cortex-a7" (unlike armv6-rpi's original
+"-Wa,"-only mistake) - but "-march=armv7-a" alone, without an explicit
+"+fp"/"-mfpu=" extension, still doesn't imply an FPU by itself; this
+toolchain's own real default is "-march=armv7-a+fp" (note the "+fp"),
+and being MORE explicit than the default (overriding -march) drops that
+implied FPU capability back out. cc1 refused the still-active
+-mfloat-abi=hard default. Fixed by adding "-mfloat-abi=soft" to both
+CFLAGS and ASFLAGS.
+
+Bug 2 (real, fixed): "static_assert" redefinition in tools/mkfs.c
+---------------------------------------------------------------------
+Identical to notes_arch_armv6_rpi.txt's own bug on this exact file (both
+ports' mkfs.c are near-identical, likely both copied from the same
+upstream MIT xv6-public mkfs.c originally) - modern glibc's own
+<assert.h> already provides a "static_assert" macro. Fixed the same way:
+guarded this file's own definition with "#ifndef static_assert".
+
+Bug 3 (real, fixed): missing -fno-stack-protector -> undefined __stack_chk_fail/__stack_chk_guard
+---------------------------------------------------------------------------------------------------------
+This port's own CFLAGS never had -fno-stack-protector at all (unlike
+armv6-rpi's, which already did) - modern gcc defaults to
+-fstack-protector-strong, and this freestanding/libc-less environment
+has no definitions for the runtime support functions it inserts.
+Real link errors ("undefined reference to `__stack_chk_fail'") from any
+function with a local buffer (e.g. usr/ulib.c's gets()). Fixed by adding
+-fno-stack-protector to CFLAGS.
+
+Bug 4 (real, fixed): missing "raise()" - libgcc's 64-bit division-by-zero trap handler needs it, even though nothing here divides 64-bit values
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+Once bug 3 was fixed, both the kernel and userspace links failed with
+"undefined reference to `raise'" from
+"/usr/lib/gcc-cross/arm-linux-gnueabihf/13/libgcc.a(_dvmd_lnx.o): in
+function `__aeabi_ldiv0'". Root cause: ANY 32-bit integer division
+anywhere in the code (confirmed via objdump - usr/printf.c's own number
+formatting calls __aeabi_uidiv/__aeabi_uidivmod) statically pulls in
+this libgcc ARCHIVE MEMBER at whole-object-file granularity - and that
+same .o file also happens to define __aeabi_ldiv0 (the 64-bit division-
+by-zero trap, unused by this code but present in the same translation
+unit), which unconditionally calls a real libc raise(). No such libc
+exists here. Fixed by adding a minimal raise() stub in BOTH usr/ulib.c
+(calls exit()) and the kernel's own console.c (calls panic()) - not a
+real signal implementation, just a fatal-fallback matching each
+environment's own existing "something went very wrong" convention. (This
+same gap would eventually hit every other fork in this repo too if any
+of them ever needed 32-bit division AND had stack-protector already
+disabled - most avoid it by chance, either not dividing at all in
+functions that get linked, or hitting stack-protector's own undefined
+symbols first and never getting this far.)
+
+Bug 5 (real, fixed): -Winfinite-recursion false positive on sh.c's runcmd()
+---------------------------------------------------------------------------
+Same GCC false positive documented in every other fork brought up in
+this repo so far - see notes_debugging_techniques.txt item 1. Fixed with
+-Wno-infinite-recursion in usr/Makefile.
+
+Bug 6 (real, fixed): plain (non-static) "inline void xdelay(...)" provides no callable definition under modern gcc's C99 inline semantics
+-------------------------------------------------------------------------------------------------------------------------------------------------
+Kernel link failed: "undefined reference to `xdelay'" from start.c's own
+_uart_init() (which calls it twice). start.c defines xdelay as plain
+"inline void xdelay(unsigned int count)" - under GNU89 inline semantics
+(gcc's old default, likely what this code was written against), a bare
+"inline" definition also produces a real, callable out-of-line body by
+default; under standard C99 semantics (gcc's modern default), a plain
+"inline" function with external linkage provides NO out-of-line
+definition at all unless a separate non-inline declaration exists
+elsewhere - if the compiler chooses not to actually inline a particular
+call site, there's nothing left to link against. Fixed by changing to
+"static inline", which is unambiguous and always callable under both
+semantics - the correct spelling regardless of which inline convention
+the compiler defaults to.
+
+Bug 7 (real, fixed): the port's own shipped QEMU board (versatilepb) is wrong twice over, and this kernel's own Hyp-mode entry sequence needs to be conditional
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Same class of board mismatch as notes_arch_armv6_rpi.txt's own bug 5,
+but with an extra wrinkle unique to this kernel. This kernel's own
+entry.S starts with an unconditional Hyp-mode-exit sequence ("mrs
+r0,cpsr" / ... / "msr ELR_hyp,r0" / "eret") - ELR_hyp is a genuine
+Hyp-mode-only banked register, accessing it from any other mode is
+Undefined Instruction. "-M versatilepb -cpu arm1176" (ARMv6, no Hyp mode
+support in the ISA at all) would have faulted on this immediately -
+matching notes_arch_armv6_rpi.txt's own bug 4 in spirit, but this time
+the fix is switching boards rather than switching -march/-marm flags,
+since this kernel's own -march=armv7-a/-mtune=cortex-a7 codegen target
+was already correct.
+
+Switched to "-M raspi2b" (QEMU's real, quad-core Raspberry Pi 2B
+BCM2836/Cortex-A7 machine - confirmed matching this kernel's own
+0x3f000000-range addresses via "info mtree"). This exposed the SAME
+Undefined Instruction problem from a different angle: raspi2b's own
+armstub/firmware handoff (visible in "-d int,guest_errors" as "Taking
+exception 13 [Secure Monitor Call]... Exception return from AArch32 mon
+to svc") already drops the CPU to SVC mode before jumping to the kernel
+- so this kernel's own unconditional Hyp-mode-exit sequence executes
+from SVC mode, not Hyp mode, faulting the same way it would have under
+versatilepb. Fixed by adding a mode check (arm.h needed a HYP_MODE=0x1a
+constant, missing entirely - another sign this path was never actually
+exercised/tested by the original author): read CPSR, compare against
+HYP_MODE, and only execute the Hyp-exit sequence when genuinely already
+in Hyp mode; otherwise skip straight to the existing SVC-mode stack
+setup.
+
+A second, load-address bug, IDENTICAL to notes_arch_armv6_rpi.txt's own
+bug 5's second half: kernel.ld linked .start_sec at physical 0x8000
+(with an alternate "/* . = 0x10000; */" already commented out in the
+file - exactly the same telltale sign as the sibling port), but
+confirmed via the QEMU monitor's "xp" command that raspi2b's own
+"-kernel" loader (for a raw binary) places content at physical 0x10000,
+not 0x8000 - "xp/4xw 0x10000" read back this kernel's own real first
+instructions verbatim. Fixed by switching kernel.ld's base to 0x10000;
+verified no overlap with the second, independently-based .text segment
+(AT(0x00020000)) via readelf -l after rebuilding.
+
+A THIRD wrinkle specific to raspi2b, not present for raspi1ap: "-kernel"
+with an ELF file (kernel.elf) does NOT go through the normal armstub/
+firmware handoff at all - it starts the CPU directly at the ELF's own
+entry point while STILL in EL3/Monitor mode (confirmed via "-d
+int,guest_errors" showing "from EL3 to EL3" Prefetch Aborts, a
+completely different symptom than the raw-binary path's clean SMC
+handoff) - a boot environment this kernel doesn't handle at all (it only
+distinguishes Hyp vs non-Hyp, not Monitor mode specifically). The raw
+binary ("xv6.img", what the port's own kernel.elf recipe already
+produces via objcopy) must be used with "-M raspi2b", not the ELF -
+opposite of what worked cleanest for some other boards in this repo, a
+reminder to verify empirically per board rather than assume one loading
+convention transfers.
+
+Gap (open, NOT fixed - a missing piece, not a located bug): no secondary-CPU boot-gating anywhere in this codebase
+------------------------------------------------------------------------------------------------------------------------
+With all seven bugs above fixed, boot runs CLEANLY through the full
+armstub/firmware handoff for all 4 emulated cores with zero crash loop -
+a first for this bring-up. But CPU0 alone still hits a fresh Undefined
+Instruction shortly after (traced via "-d in_asm" to a jump to a huge,
+unmapped address, ~0xfffffde4, plausibly VEC_TBL(0xFFFF0000)-adjacent
+but not conclusively root-caused). Searched entry.S/start.c/arm.h for
+any core-ID check (MPIDR read, a "cpu 0 continues, others halt/WFI"
+gate, the single most standard first step of any real multi-core ARM
+boot sequence) - there is NONE. This means all 4 of raspi2b's emulated
+Cortex-A7 cores are currently executing this kernel's identical,
+non-reentrant boot code simultaneously: concurrently zeroing/writing the
+SAME .bss, the SAME early stack region, the SAME page tables - a genuine
+race condition, not a simple flag or address fix. This is a different
+CLASS of gap than everything above (missing functionality, not a
+locatable bug to patch) and was left open per the user's own explicit
+choice, rather than writing a real SMP-boot-gate from scratch in this
+session. A reasonable next step for a future session: add an early
+MPIDR_EL1 (or its AArch32 equivalent, TPIDRPRW/a coprocessor read of the
+CPU ID register) check right at the top of entry.S, park any core whose
+ID isn't 0 in a WFI loop, and let CPU0 alone proceed through the
+existing boot path - straightforward in shape, just real new code rather
+than a fix to existing code.
+
+Verification so far
+--------------------
+  make CROSSCOMPILE=arm-linux-gnueabihf- kernel.elf
+    -> builds clean, all 7 bugs above fixed
+  qemu-system-arm -M raspi2b -nographic -kernel xv6.img
+    -> boots cleanly through the real BCM2836/quad-core firmware handoff
+       with zero crash-loop noise (a first for either ARM board port
+       brought up so far) - but CPU0 still faults shortly after, and the
+       remaining gap (no SMP boot-gating) is structural, not fixed.
+
+Wired up in ./configure and the top-level Makefile as build-armv7-rpi/
+run-armv7-rpi only (same scope as the sibling armv6-rpi port) - no
+test-armv7-rpi/clean-armv7-rpi/kill-armv7-rpi yet, and not folded into
+build-all/run-all/test-all, since there is no console output yet to
+build a real pass/fail signal around.

@@ -41,8 +41,8 @@ set -eu
 # renaming them now would break the blame-preserving history that phase
 # depends on.
 #
-# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, loongarch, and
-# armv6-rpi so far - Phases 1, 2 and (the start of) 4 of
+# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, loongarch,
+# armv6-rpi, and armv7-rpi so far - Phases 1, 2 and (the start of) 4 of
 # docs/claude_notes/build-and-test-plan.md - see
 # docs/claude_notes/notes_arch_*.txt for each arch's own bring-up.
 
@@ -69,6 +69,8 @@ CC_LOONGARCH=${CC_LOONGARCH:-}
 QEMU_LOONGARCH=${QEMU_LOONGARCH:-}
 TOOLPREFIX_ARMV6_RPI=${TOOLPREFIX_ARMV6_RPI:-}
 QEMU_ARMV6_RPI=${QEMU_ARMV6_RPI:-}
+TOOLPREFIX_ARMV7_RPI=${TOOLPREFIX_ARMV7_RPI:-}
+QEMU_ARMV7_RPI=${QEMU_ARMV7_RPI:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -91,6 +93,8 @@ for arg in "$@"; do
         --qemu-loongarch=*)     QEMU_LOONGARCH="${arg#--qemu-loongarch=}" ;;
         --toolprefix-armv6-rpi=*) TOOLPREFIX_ARMV6_RPI="${arg#--toolprefix-armv6-rpi=}" ;;
         --qemu-armv6-rpi=*)     QEMU_ARMV6_RPI="${arg#--qemu-armv6-rpi=}" ;;
+        --toolprefix-armv7-rpi=*) TOOLPREFIX_ARMV7_RPI="${arg#--toolprefix-armv7-rpi=}" ;;
+        --qemu-armv7-rpi=*)     QEMU_ARMV7_RPI="${arg#--qemu-armv7-rpi=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -123,6 +127,9 @@ for arg in "$@"; do
             echo "  --toolprefix-armv6-rpi=PREFIX override the armv6-rpi cross-toolchain prefix"
             echo "                               (e.g. arm-linux-gnueabihf-)"
             echo "  --qemu-armv6-rpi=CMD         override the armv6-rpi qemu-system binary"
+            echo "  --toolprefix-armv7-rpi=PREFIX override the armv7-rpi cross-toolchain prefix"
+            echo "                               (e.g. arm-linux-gnueabihf-)"
+            echo "  --qemu-armv7-rpi=CMD         override the armv7-rpi qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -545,6 +552,28 @@ if ! detect_qemu_system armv6-rpi QEMU_ARMV6_RPI qemu-system-arm; then
 fi
 
 ###############################################################################
+# armv7-rpi (forks/armv7-rpi, inaciose/xv6-armv7-rpi)
+###############################################################################
+# Named for the fork directory, same exception as armv6-rpi above (see
+# that section's own comment).
+
+if ! detect_toolprefix armv7-rpi TOOLPREFIX_ARMV7_RPI elf32-littlearm \
+        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
+    echo "configure: warning: no arm toolchain on PATH (needed for forks/armv7-rpi)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
+    note_other_pkgmgr
+fi
+
+# forks/armv7-rpi/Makefile enforces no minimum QEMU version of its own.
+if ! detect_qemu_system armv7-rpi QEMU_ARMV7_RPI qemu-system-arm; then
+    echo "configure: warning: no qemu-system-arm on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-arm" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -591,6 +620,10 @@ fi
     echo "# armv6-rpi (forks/armv6-rpi - inaciose/xv6-armv6-rpi)"
     echo "export TOOLPREFIX_ARMV6_RPI=$TOOLPREFIX_ARMV6_RPI"
     echo "export QEMU_ARMV6_RPI=$QEMU_ARMV6_RPI"
+    echo
+    echo "# armv7-rpi (forks/armv7-rpi - inaciose/xv6-armv7-rpi)"
+    echo "export TOOLPREFIX_ARMV7_RPI=$TOOLPREFIX_ARMV7_RPI"
+    echo "export QEMU_ARMV7_RPI=$QEMU_ARMV7_RPI"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -613,6 +646,8 @@ echo "  CC_LOONGARCH         = $CC_LOONGARCH"
 echo "  QEMU_LOONGARCH       = $QEMU_LOONGARCH"
 echo "  TOOLPREFIX_ARMV6_RPI = $TOOLPREFIX_ARMV6_RPI"
 echo "  QEMU_ARMV6_RPI       = $QEMU_ARMV6_RPI"
+echo "  TOOLPREFIX_ARMV7_RPI = $TOOLPREFIX_ARMV7_RPI"
+echo "  QEMU_ARMV7_RPI       = $QEMU_ARMV7_RPI"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
@@ -623,3 +658,4 @@ echo "  or: make build-arm64 && make run-arm64"
 echo "  or: make build-mips && make run-mips"
 echo "  or: make build-loongarch && make run-loongarch"
 echo "  or: make build-armv6-rpi && make run-armv6-rpi (does not boot to a shell yet)"
+echo "  or: make build-armv7-rpi && make run-armv7-rpi (does not boot to a shell yet)"

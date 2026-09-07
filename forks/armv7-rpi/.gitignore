@@ -7,6 +7,20 @@
 *.obj
 *.elf
 
+# claude: this port's own build outputs that weren't covered by the
+# generic patterns below - same gap as the sibling armv6-rpi port (see
+# that fork's own .gitignore) - build/, disassembly dumps (*.asm/*.dis -
+# kernel.dis was actually TRACKED before this fix, a stale ~400KB
+# checked-in build artifact), the raw-binary kernel image (*.img), the
+# compiled user programs (bare "_name", xv6's own convention), and the
+# host mkfs tool.
+build/
+*.asm
+*.dis
+*.img
+usr/_*
+tools/mkfs
+
 # Linker output
 *.ilk
 *.map

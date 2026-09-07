@@ -11,7 +11,13 @@
 #include "stat.h"
 #include "param.h"
 
+// claude: guarded - see notes_arch_armv6_rpi.txt's own bug on this exact
+// same collision in the sibling port's mkfs.c (modern glibc's own
+// <assert.h> now provides "static_assert" too, aliasing C11's
+// _Static_assert).
+#ifndef static_assert
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
+#endif
 
 int nblocks = 985;
 int nlog = LOGSIZE;

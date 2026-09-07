@@ -1,6 +1,9 @@
 include ../makefile.inc
 
-CFLAGS += -iquote ../
+# claude: -Wno-infinite-recursion - same GCC false positive on sh.c's
+# own runcmd() as every other fork brought up in this repo, see
+# notes_debugging_techniques.txt item 1.
+CFLAGS += -iquote ../ -Wno-infinite-recursion
 ASFLAGS += -I ../
 ULIB = ulib.o usys.o printf.o umalloc.o
 
