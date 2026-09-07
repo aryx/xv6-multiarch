@@ -61,3 +61,10 @@ _*
 mkfs
 initcode
 usys.S
+# claude: was tracked (a generated "xxd -i fs.img" C header, up to several
+# MB, that changes on every build - see notes_arch_loongarch.txt), same
+# oversight as mkfs/initcode/usys.S above evidently were before this
+# .gitignore already listed them - the port's own fs.img is embedded
+# straight into the kernel image via this file rather than a separate
+# disk image, but it's still purely a build product, not source.
+kernel/ramdisk.h

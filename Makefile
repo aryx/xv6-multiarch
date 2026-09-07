@@ -13,12 +13,16 @@
 # riscv64 port; forks/x86 is the i386 one). See ./configure's own header
 # comment for why the directories themselves aren't renamed to match.
 #
-# Currently wired for riscv64, i386, x86_64, amd64, riscv32, and arm64 -
-# see docs/claude_notes/build-and-test-plan.md, Phases 1-2, and Phase 4
-# (see docs/claude_notes/notes_arch_x86_64.txt, notes_arch_amd64.txt,
-# notes_arch_riscv32.txt, notes_arch_arm64.txt - riscv32 and arm64 both
-# boot to a shell but their own test-<arch> does not pass yet, see those
-# last two files' own open bugs).
+# Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
+# and loongarch - see docs/claude_notes/build-and-test-plan.md, Phases 1-2,
+# and Phase 4 (see docs/claude_notes/notes_arch_x86_64.txt,
+# notes_arch_amd64.txt, notes_arch_riscv32.txt, notes_arch_arm64.txt -
+# riscv32 and arm64 both boot to a shell but their own test-<arch> does
+# not pass yet, see those two files' own open bugs; notes_arch_mips.txt -
+# boots silently, no test-mips at all yet, and only build-mips/run-mips
+# are wired up, not the full set; notes_arch_loongarch.txt - fully
+# working, the only arch besides riscv64/i386/x86_64/amd64 whose
+# test-<arch> actually passes).
 #
 # arm64, not aarch64: forks/aarch64 is still named for its upstream repo
 # (k-mrm/xv6-aarch64), but the Makefile target/./configure variable name
@@ -43,6 +47,9 @@ TOOLPREFIX_ARM64 ?=
 QEMU_ARM64 ?= qemu-system-aarch64
 TOOLPREFIX_MIPS ?=
 QEMU_MIPS ?= qemu-system-mipsel
+TOOLPREFIX_LOONGARCH ?=
+CC_LOONGARCH ?=
+QEMU_LOONGARCH ?= qemu-system-loongarch64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -51,6 +58,7 @@ QEMU_MIPS ?= qemu-system-mipsel
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
         build-mips run-mips check-mips-toolchain \
+        build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -308,17 +316,58 @@ run-mips: check-mips-toolchain
 	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) qemu-nox-memfs
 
 ###############################################################################
+# loongarch (forks/loongarch, SKT-CPUOS/xv6-loongarch-exp)
+###############################################################################
+
+check-loongarch-toolchain:
+	@if [ "$(TOOLPREFIX_LOONGARCH)" = NONE ] || [ "$(CC_LOONGARCH)" = NONE ] || [ "$(QEMU_LOONGARCH)" = NONE ]; then \
+		echo "Makefile: loongarch toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+# claude: CC is passed explicitly, not left to forks/loongarch/Makefile's
+# own "$(TOOLPREFIX)gcc" default - the installed Debian/Ubuntu cross-gcc
+# ships only a version-suffixed binary (e.g. loongarch64-linux-gnu-gcc-14,
+# no plain "...-gcc" symlink), see notes_arch_loongarch.txt and
+# ./configure's own detect_versioned_gcc. This port boots to a real shell
+# and passes usertests on the very first attempt (no kernel/user code
+# changes needed at all - only these build-plumbing fixes plus two real
+# bugs in the port's own Makefile, see notes_arch_loongarch.txt), so
+# unlike mips it gets the full build/run/test/clean/kill set right away.
+build-loongarch: check-loongarch-toolchain
+	$(MAKE) -C forks/loongarch TOOLPREFIX=$(TOOLPREFIX_LOONGARCH) CC=$(CC_LOONGARCH) all
+
+run-loongarch: check-loongarch-toolchain
+	$(MAKE) -C forks/loongarch TOOLPREFIX=$(TOOLPREFIX_LOONGARCH) CC=$(CC_LOONGARCH) QEMU=$(QEMU_LOONGARCH) qemu
+
+# TOOLPREFIX/CC/QEMU via environment, not command-line make args - same
+# shape as test-riscv32/test-arm64's own split, since forks/loongarch/
+# test-xv6.py drives plain "make ..." itself with no way to pass args
+# through. Relies on forks/loongarch/Makefile's own TOOLPREFIX/CC now
+# being "?="-guarded (see that file's own claude: comment) so the
+# environment value actually survives instead of being silently
+# overwritten by the file's default.
+test-loongarch: check-loongarch-toolchain
+	cd forks/loongarch && TOOLPREFIX=$(TOOLPREFIX_LOONGARCH) CC=$(CC_LOONGARCH) QEMU=$(QEMU_LOONGARCH) ./test-xv6.py
+
+clean-loongarch:
+	$(MAKE) -C forks/loongarch clean
+
+kill-loongarch:
+	-pkill -f '$(QEMU_LOONGARCH)' 2>/dev/null || true
+
+###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64
+build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64 build-loongarch
 
-test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64
+test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64 test-loongarch
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64
+clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64 clean-loongarch
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64
+kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64 kill-loongarch
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

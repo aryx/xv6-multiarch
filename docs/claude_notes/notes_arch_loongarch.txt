@@ -1,0 +1,185 @@
+notes_arch_loongarch.txt
+========================
+
+Written: 2026-09-07, against commit 2f67570 (the mips bug-5 follow-up
+commit), during the loongarch bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, sixth port attempted from that
+phase's list. Status: FULLY WORKING on the very first real attempt - no
+kernel or user code changes needed at all. Every fix this session was in
+build plumbing: two real bugs in the port's own Makefile (a version-
+suffixed-only gcc binary name, and an objcopy bug that inflated a small
+binary to a multi-gigabyte sparse file - the same class of bug as
+notes_arch_mips.txt's own bug 4), plus wiring a run target that never
+existed in any working form.
+
+What this is
+------------
+forks/loongarch is SKT-CPUOS/xv6-loongarch-exp (2022-2023) - a Chinese
+university course project ("龙芯-xv6操作系统实验" - "Loongson xv6 OS
+experiment", PPT/PDF materials included in the tree) porting MIT xv6 to
+LoongArch, Loongson's own RISC ISA (see README's own fork-point table:
+forked from forks/riscv). Structurally close to forks/riscv/forks/rv32 -
+same kernel/user split, same syscall/file-system code - with LoongArch-
+specific replacements: kernel/apic.c/extioi.c for interrupt controller
+(LoongArch's own APIC-like scheme, not RISC-V's CLINT/PLIC),
+kernel/tlbrefill.S/merror.S for TLB-refill and machine-error exception
+vectors (LoongArch has dedicated entry points for these, unlike a single
+unified trap vector), kernel/kernelvec.S/uservec.S for the general
+exception path.
+
+One structural oddity worth knowing before reading kernel/ramdisk.c: this
+port embeds its ENTIRE filesystem image directly inside the kernel binary
+as a compiled-in byte array, rather than a separate disk/virtio image
+like every other fork in this repo. The build runs `xxd -i fs.img >
+kernel/ramdisk.h` (mkfs writes fs.img, then this turns it into a C array
+literal), and kernel/ramdisk.c #includes that header - so "all: fs.img
+$K/kernel" (in that prerequisite order) is load-bearing: fs.img and its
+freshly regenerated ramdisk.h MUST exist before kernel/kernel is linked,
+or the kernel embeds a stale/wrong filesystem.
+
+Toolchain: loongarch64-linux-gnu-gcc-14, one apt install away; qemu-system-loongarch64 already installed
+----------------------------------------------------------------------------------------------------------
+`qemu-system-loongarch64` (QEMU 8.2.2) was already on this box, bundled in
+the qemu-system-misc apt package (same package that covers riscv64/
+riscv32/mips - see notes_arch_mips.txt). No cross-gcc was installed yet;
+the user ran `sudo apt install gcc-14-loongarch64-linux-gnu` themselves
+(Ubuntu noble-updates/universe, arm64 host architecture) before this
+session's bring-up began.
+
+Bug 1 (real, fixed): this toolchain's gcc is version-suffixed only, no plain "...-gcc"
+------------------------------------------------------------------------------------------
+Every other arch's cross-gcc package in this repo installs an unversioned
+"<prefix>gcc" (a symlink/alias to whichever gcc-N is Ubuntu's default for
+that target) - this is why every other fork's own "CC = $(TOOLPREFIX)gcc"
+Makefile line, and ./configure's own detect_toolprefix (which only probes
+"<prefix>objdump -i", never gcc directly, and prints a cosmetic "found
+${val}gcc" message that isn't actually verified), have always worked
+without needing a real gcc-existence check.
+
+Debian/Ubuntu's gcc-14-loongarch64-linux-gnu package breaks this
+assumption: it installs `loongarch64-linux-gnu-gcc-14` only - binutils
+(as/ld/objcopy/objdump/etc, pulled in as a dependency) ARE unversioned,
+just not gcc itself. forks/loongarch/Makefile's own "CC = $(TOOLPREFIX)gcc"
+therefore resolves to a binary that doesn't exist on this host.
+
+Fixed two ways:
+  - ./configure gained a new detect_versioned_gcc helper (probes the
+    plain name first, falls back to trying "-16" down to "-9" suffixes)
+    and a new CC_LOONGARCH variable, threaded through the top-level
+    Makefile's build-loongarch/run-loongarch/test-loongarch (as an
+    explicit CC=... override) alongside the existing TOOLPREFIX_LOONGARCH.
+  - forks/loongarch/Makefile's own "CC = $(TOOLPREFIX)gcc" and
+    "TOOLPREFIX = loongarch64-unknown-linux-gnu-" (the non-native-host
+    branch) were both changed from plain "=" to "?=" - unlike every
+    other fork here, they were NOT already conditional, so an external
+    CC=/TOOLPREFIX= override (whether via `make CC=... TOOLPREFIX=...`
+    command-line args, or via the environment the way test-riscv32/
+    test-arm64's own test-xv6.py invocations rely on) would have been
+    silently clobbered by the file's own plain assignment. This is a
+    real latent bug independent of the version-suffix issue - worth
+    knowing if a future arch's own Makefile has the same "=" instead of
+    "?=" pattern.
+
+Bug 2 (real, fixed): no working run target ever existed for this port
+---------------------------------------------------------------------
+forks/loongarch/Makefile has no "qemu"/"qemu-nox" target at all. The only
+traces of a run harness are qemu-loongarch-runenv/ (an empty directory -
+0 files) and test.sh (which does `cd qemu-loongarch64-runenv` - note the
+extra "64" - a typo for the actual directory name "qemu-loongarch-runenv"
+without it, so test.sh was never runnable as shipped either). This is
+apparently a course project whose author ran QEMU some other way (by
+hand, or via tooling not checked in) and never committed a working
+scripted path.
+
+Added a real "qemu" target: `qemu-system-loongarch64 -M virt -kernel
+$K/kernel -smp 1 -m 1G -nographic`. Two things worth noting about this
+invocation:
+  - "-M virt" is QEMU's Loongson-3A5000/LS7A1000 machine (the only real
+    option - `-M help` also lists "mipssim"-style "none", nothing else
+    exists for loongarch64) and needs no `-bios`: kernel/entry.S's own
+    header comment ("qemu -kernel loads the kernel at 0x00000000 and
+    causes each CPU to jump there") and kernel/memlayout.h's own comment
+    ("0x00200000 -- bios loads kernel here and jumps here") describe a
+    classic Loongson PMON-style raw-binary boot, and QEMU's own ELF
+    loader for this machine handles it directly: kernel.ld links at
+    0x9000000000200000 (LoongArch's DMW0 direct-mapped-window virtual
+    alias of physical 0x00200000 - CRMD/DMWIN CSR setup for this is
+    visible right at the top of entry.S), and QEMU's loader evidently
+    translates that back to the real physical load address itself. No
+    code changes were needed to make this work - it just boots.
+  - "-m 1G", not a smaller number: QEMU's loongarch64 "virt" machine
+    refuses less than 1G of RAM outright ("ram_size must be greater than
+    1G") even though this kernel's own memlayout.h only actually uses
+    128MB of it (RAMBASE..RAMSTOP) - a board-model floor, not something
+    this kernel needs or asked for.
+
+Bug 3 (real, fixed): objcopy inflated a small blob into a multi-gigabyte sparse file
+-----------------------------------------------------------------------------------
+The same class of bug as notes_arch_mips.txt's own bug 4. user/initcode
+(the tiny raw binary the kernel embeds directly and jumps to for the
+first user process) ballooned from 80 bytes to ~4.5GB (sparse - `du -h`
+showed only 8.0K of real disk usage, but `ls -la`/git both saw the huge
+apparent size, and `git diff --stat` reported it as a real content
+change) after a routine "make clean && make all".
+
+Root cause, found via `readelf -S`/`readelf -l` on user/initcode.out
+(the ELF the raw binary gets objcopy'd from): the LoongArch assembler's
+`la` pseudo-op (used in initcode.S: "la $a0, init" / "la $a1, argv")
+emits a GOT-based relocation sequence, leaving a `.rela.got` section in
+the object - ALLOC'd (so objcopy would include it), sitting at a huge,
+essentially arbitrary synthetic address (~0x1200000b0) completely
+unrelated to .text's real load address (0). This forms its own separate
+PT_LOAD segment (readelf -l showed two: one normal one at vaddr 0 sized
+0x50 bytes, one at 0x1200000b0 sized 0x30 bytes) - `objcopy -O binary`
+zero-fills the ENTIRE gap between the lowest and highest surviving
+section across BOTH segments, hence the multi-gigabyte result.
+
+Despite this, the kernel demonstrably boots and runs correctly (init
+starts, sh runs, ALL TESTS PASSED) both before and after the fix below -
+meaning `.rela.got`'s relocation entries are dead weight: the linker
+(this is a fully static, no-dynamic-linker, "-N -e start -Ttext 0" link
+with no real symbol resolution at runtime possible at all) already
+resolved the two real symbol references directly into .text's own
+instruction bytes at link time; nothing at runtime ever reads .got or
+.rela.got. Fixed by excluding it explicitly:
+`$(OBJCOPY) -S -R .rela.got -O binary $U/initcode.out $U/initcode` (was
+just "-S -O binary") - back to the correct 80-byte output.
+
+Also fixed while investigating this: this port's own .gitignore already
+listed "mkfs"/"initcode"/"usys.S" as patterns (evidently intended to
+ignore these exact generated files) but they were nonetheless tracked in
+git from before this repo's own history - .gitignore patterns don't
+retroactively untrack already-committed files. Untracked them via `git
+rm --cached`, and added kernel/ramdisk.h (the generated "xxd -i fs.img"
+C header - up to several MB, changes on every build, never listed in
+.gitignore at all) to the same file. Without this, a routine `make
+clean && make all` would show as spurious multi-thousand-line diffs on
+tracked files with every future build - already visible before this fix
+as "kernel/ramdisk.h | 65272 ++++++++...", "mkfs/mkfs | Bin 22272 ->
+71856 bytes" in this very session's own `git status`.
+
+Verification
+------------
+  ./configure
+    -> found loongarch64-linux-gnu-gcc-14 (loongarch), found
+       /usr/bin/qemu-system-loongarch64 (loongarch)
+  make build-loongarch
+    -> builds clean, -Wall -Werror included, zero warnings/false
+       positives from this modern toolchain at all (unlike every other
+       arch brought up so far this phase, which each needed at least one
+       -Wno-<warning> or real fix for a compiler-version mismatch)
+  make run-loongarch (interactive) / make test-loongarch (scripted)
+    -> boots straight to "init: starting sh" / "$ " on the very first
+       attempt, "ls"/"echo" respond correctly, and `usertests` prints
+       "ALL TESTS PASSED" (the "usertrap(): unexpected trapcause ..."
+       lines interleaved mid-suite are the same benign, deliberately-
+       provoked-fault pattern documented for every other working port
+       here - sbrkfail/stacktest triggering a fault on purpose to verify
+       the kernel handles it gracefully, not a regression)
+
+Wired up in ./configure and the top-level Makefile as build-loongarch/
+run-loongarch/test-loongarch/clean-loongarch/kill-loongarch, folded into
+build-all/test-all/clean-all/kill-all - unlike riscv32/arm64 (boot to a
+shell but their own test-<arch> doesn't pass yet) and mips (boots
+silently, no test-mips at all - see their own notes files), this port
+earns the FULL set immediately since test-loongarch genuinely passes.

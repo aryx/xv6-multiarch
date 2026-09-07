@@ -41,8 +41,8 @@ set -eu
 # renaming them now would break the blame-preserving history that phase
 # depends on.
 #
-# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, and mips so far -
-# Phases 1, 2 and (the start of) 4 of
+# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, and loongarch
+# so far - Phases 1, 2 and (the start of) 4 of
 # docs/claude_notes/build-and-test-plan.md - see
 # docs/claude_notes/notes_arch_*.txt for each arch's own bring-up.
 
@@ -64,6 +64,9 @@ TOOLPREFIX_ARM64=${TOOLPREFIX_ARM64:-}
 QEMU_ARM64=${QEMU_ARM64:-}
 TOOLPREFIX_MIPS=${TOOLPREFIX_MIPS:-}
 QEMU_MIPS=${QEMU_MIPS:-}
+TOOLPREFIX_LOONGARCH=${TOOLPREFIX_LOONGARCH:-}
+CC_LOONGARCH=${CC_LOONGARCH:-}
+QEMU_LOONGARCH=${QEMU_LOONGARCH:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -81,6 +84,9 @@ for arg in "$@"; do
         --qemu-arm64=*)         QEMU_ARM64="${arg#--qemu-arm64=}" ;;
         --toolprefix-mips=*)    TOOLPREFIX_MIPS="${arg#--toolprefix-mips=}" ;;
         --qemu-mips=*)          QEMU_MIPS="${arg#--qemu-mips=}" ;;
+        --toolprefix-loongarch=*) TOOLPREFIX_LOONGARCH="${arg#--toolprefix-loongarch=}" ;;
+        --cc-loongarch=*)       CC_LOONGARCH="${arg#--cc-loongarch=}" ;;
+        --qemu-loongarch=*)     QEMU_LOONGARCH="${arg#--qemu-loongarch=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -104,6 +110,12 @@ for arg in "$@"; do
             echo "  --toolprefix-mips=PREFIX     override the mips cross-toolchain prefix"
             echo "                               (e.g. mipsel-linux-gnu-)"
             echo "  --qemu-mips=CMD              override the mips qemu-system binary"
+            echo "  --toolprefix-loongarch=PREFIX override the loongarch cross-toolchain prefix"
+            echo "                               (e.g. loongarch64-linux-gnu-)"
+            echo "  --cc-loongarch=CMD           override the loongarch gcc binary (this"
+            echo "                               toolchain ships a version-suffixed gcc"
+            echo "                               only, e.g. loongarch64-linux-gnu-gcc-14)"
+            echo "  --qemu-loongarch=CMD         override the loongarch qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -154,6 +166,47 @@ detect_toolprefix() {
     fi
     if [ -n "$val" ]; then
         echo "configure: found ${val}gcc ($name)"
+        eval "$varname=\$val"
+        return 0
+    else
+        eval "$varname=NONE"
+        return 1
+    fi
+}
+
+###############################################################################
+# detect_versioned_gcc: find the actual gcc binary for a given TOOLPREFIX,
+# for toolchains where "<prefix>gcc" itself doesn't exist. Every other
+# arch's cross-gcc package in this script ships an unversioned "<prefix>gcc"
+# (a symlink/alias to whichever gcc-N is default), which is why
+# detect_toolprefix above can get away with assuming "${val}gcc" works.
+# Debian/Ubuntu's gcc-N-loongarch64-linux-gnu package does not: it installs
+# only "loongarch64-linux-gnu-gcc-14" (or whatever N is current), no plain
+# "loongarch64-linux-gnu-gcc" - see notes_arch_loongarch.txt. Try the plain
+# name first anyway (works if some future package does provide one, or if
+# this ever runs natively on loongarch64 hardware), then fall back to
+# probing versioned suffixes, newest first.
+###############################################################################
+# arg1 = display name, arg2 = variable name to set, arg3 = TOOLPREFIX value
+# to build the candidate binary names from. Sets $arg2 to the found gcc
+# binary name, or NONE; returns 1 if none found.
+detect_versioned_gcc() {
+    name=$1; varname=$2; prefix=$3
+    eval "val=\${$varname}"
+    if [ -z "$val" ]; then
+        if command -v "${prefix}gcc" >/dev/null 2>&1; then
+            val="${prefix}gcc"
+        else
+            for v in 16 15 14 13 12 11 10 9; do
+                if command -v "${prefix}gcc-$v" >/dev/null 2>&1; then
+                    val="${prefix}gcc-$v"
+                    break
+                fi
+            done
+        fi
+    fi
+    if [ -n "${val:-}" ]; then
+        echo "configure: found $val ($name)"
         eval "$varname=\$val"
         return 0
     else
@@ -417,6 +470,43 @@ if ! detect_qemu_system mips QEMU_MIPS qemu-system-mipsel; then
 fi
 
 ###############################################################################
+# loongarch (forks/loongarch, SKT-CPUOS/xv6-loongarch-exp)
+###############################################################################
+# Marker is elf64-loongarch (this port is 64-bit-only, no 32-bit variant
+# to disambiguate against the way mips's marker had to).
+
+if ! detect_toolprefix loongarch TOOLPREFIX_LOONGARCH elf64-loongarch \
+        loongarch64-linux-gnu- loongarch64-unknown-linux-gnu-; then
+    echo "configure: warning: no loongarch64 toolchain on PATH (needed for forks/loongarch)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-14-loongarch64-linux-gnu" >&2
+    note_other_pkgmgr
+fi
+
+# See detect_versioned_gcc's own header comment: this toolchain's gcc is
+# version-suffixed only, so forks/loongarch/Makefile's own plain
+# "$(TOOLPREFIX)gcc" needs a separate, explicit CC override - passed
+# through as CC_LOONGARCH (see build-loongarch in the top-level Makefile).
+if [ "$TOOLPREFIX_LOONGARCH" != NONE ]; then
+    if ! detect_versioned_gcc loongarch CC_LOONGARCH "$TOOLPREFIX_LOONGARCH"; then
+        echo "configure: warning: found $TOOLPREFIX_LOONGARCH toolchain but no matching gcc binary" >&2
+        note_other_pkgmgr
+    fi
+else
+    CC_LOONGARCH=NONE
+fi
+
+# forks/loongarch/Makefile enforces no minimum QEMU version of its own.
+# qemu-system-loongarch64 is bundled in the qemu-system-misc apt package
+# (same as riscv64/riscv32/mips) - no separate package needed.
+if ! detect_qemu_system loongarch QEMU_LOONGARCH qemu-system-loongarch64; then
+    echo "configure: warning: no qemu-system-loongarch64 on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-misc" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -454,6 +544,11 @@ fi
     echo "# mips (forks/mips - nullpo-head/xv6-mips)"
     echo "export TOOLPREFIX_MIPS=$TOOLPREFIX_MIPS"
     echo "export QEMU_MIPS=$QEMU_MIPS"
+    echo
+    echo "# loongarch (forks/loongarch - SKT-CPUOS/xv6-loongarch-exp)"
+    echo "export TOOLPREFIX_LOONGARCH=$TOOLPREFIX_LOONGARCH"
+    echo "export CC_LOONGARCH=$CC_LOONGARCH"
+    echo "export QEMU_LOONGARCH=$QEMU_LOONGARCH"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -471,6 +566,9 @@ echo "  TOOLPREFIX_ARM64    = $TOOLPREFIX_ARM64"
 echo "  QEMU_ARM64          = $QEMU_ARM64"
 echo "  TOOLPREFIX_MIPS     = $TOOLPREFIX_MIPS"
 echo "  QEMU_MIPS           = $QEMU_MIPS"
+echo "  TOOLPREFIX_LOONGARCH = $TOOLPREFIX_LOONGARCH"
+echo "  CC_LOONGARCH         = $CC_LOONGARCH"
+echo "  QEMU_LOONGARCH       = $QEMU_LOONGARCH"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
@@ -479,3 +577,4 @@ echo "  or: make build-amd64 && make run-amd64"
 echo "  or: make build-riscv32 && make run-riscv32"
 echo "  or: make build-arm64 && make run-arm64"
 echo "  or: make build-mips && make run-mips"
+echo "  or: make build-loongarch && make run-loongarch"
