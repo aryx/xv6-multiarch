@@ -17,7 +17,7 @@ What this is
 ------------
 forks/aarch64 is k-mrm/xv6-aarch64 (2021-2023) - the newest and most
 recently maintained of the remaining Phase 4 ports as of this writing.
-Same kernel/user-split MIT xv6-riscv lineage as forks/riscv and
+Same kernel/user-split MIT xv6-riscv lineage as forks/riscv64 and
 forks/rv32 (confirmed via `git log --follow` on kernel/exec.c: all three
 share the exact same tail commits, a real common ancestor, not just
 structural resemblance), adapted for AArch64/GICv3 instead of RISC-V's
@@ -48,10 +48,10 @@ sibling fork can be invisible until a later pipeline stage") - this
 fork's kernel/exec.c has the exact same `ph.vaddr % PGSIZE != 0` check
 forks/rv32's does, and its Makefile links user programs with the same
 bare `-N -e main -Ttext 0` forks/rv32 originally had. Copied
-forks/riscv/user/user.ld over (adjusted only its `OUTPUT_ARCH` from
+forks/riscv64/user/user.ld over (adjusted only its `OUTPUT_ARCH` from
 "riscv" to "aarch64" - verified this bfd target name is accepted by
 `aarch64-linux-gnu-ld -V` first) and switched the Makefile's generic
-`_%:` rule to `-T $U/user.ld`, matching forks/riscv's own rule exactly.
+`_%:` rule to `-T $U/user.ld`, matching forks/riscv64's own rule exactly.
 This worked on the first real build - no unaligned-segment failure was
 ever actually observed here, unlike rv32's own bring-up, precisely
 because the fix was applied before the bug could manifest.
@@ -134,9 +134,9 @@ What's been ruled out so far:
   - kalloc()/kfree()'s own debug poisoning as an explanation for the
     all-zero pattern - neither poison byte (0x05/0x01) matches.
   - loadseg()/uva2ka()/P2V()/either_copyout() were all read closely and,
-    on inspection, are structurally equivalent to forks/riscv's own
+    on inspection, are structurally equivalent to forks/riscv64's own
     already-working equivalents (uva2ka wraps walkaddr()+P2V() where
-    forks/riscv's own loadseg uses a raw physical address directly,
+    forks/riscv64's own loadseg uses a raw physical address directly,
     consistent with riscv64 xv6 identity-mapping kernel VA==PA and
     aarch64 not; readi()'s own either_copyout(user_dst=0, ...) path is a
     plain memmove(dst,...), the same shape as the kernel-dst path

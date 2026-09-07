@@ -91,7 +91,7 @@ ASFLAGS = $(CFLAGS)
 
 # claude: same GCC 12+ -Winfinite-recursion false positive on user/sh.c's
 # runcmd() as every other MIT-lineage xv6 fork here (see
-# forks/x86/Makefile's own fix and notes_arch_i386.txt's first writeup) -
+# forks/i386/Makefile's own fix and notes_arch_i386.txt's first writeup) -
 # it's a mutually-recursive tree walk over "struct cmd", not real infinite
 # recursion.
 CFLAGS += -Wno-infinite-recursion
@@ -129,7 +129,7 @@ tags: $(OBJS) _init
 
 ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 
-# claude: -T $U/user.ld (matching forks/riscv's own rule, ported here as
+# claude: -T $U/user.ld (matching forks/riscv64's own rule, ported here as
 # user/user.ld) instead of the original "-N -e main -Ttext 0" - the latter
 # packs .text/.data with no page-alignment between them, which
 # kernel/exec.c's own ph.vaddr%PGSIZE==0 check rejects at runtime for any

@@ -123,10 +123,10 @@ worth more than a forced pass.
 
 > claude: `forks/d1` was removed (commit c233d3b) rather than brought up -
 > no QEMU machine model exists for real Allwinner D1 hardware, and it's
-> RISC-V64 forked from the same lineage `forks/riscv` already covers.
+> RISC-V64 forked from the same lineage `forks/riscv64` already covers.
 > Its own history was checked for anything worth porting to
-> `forks/riscv` first; nothing was found - every non-hardware-specific
-> difference was an upstream MIT xv6-riscv commit `forks/riscv` already
+> `forks/riscv64` first; nothing was found - every non-hardware-specific
+> difference was an upstream MIT xv6-riscv commit `forks/riscv64` already
 > has (Sstc timers, the `user.ld`/`eh_frame` fix, `MENVCFG_ADUE`), and
 > the rest (clock/GPIO/UART bring-up, a ramdisk instead of virtio) is
 > genuinely Allwinner D1-specific with no QEMU application.

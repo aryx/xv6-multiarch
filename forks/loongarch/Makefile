@@ -37,7 +37,7 @@ ifeq ($(findstring loongarch64,$(UNAME_M)),loongarch64)
 TOOLPREFIX ?=
 else
 # claude: was a plain "=" here, which (unlike every other fork's own
-# TOOLPREFIX auto-detect - see e.g. forks/riscv/Makefile's own "ifndef
+# TOOLPREFIX auto-detect - see e.g. forks/riscv64/Makefile's own "ifndef
 # TOOLPREFIX" block) silently overrides a TOOLPREFIX already set in the
 # environment or passed on the command line before this line runs -
 # "?=" makes this fork's own default just that, a default, consistent

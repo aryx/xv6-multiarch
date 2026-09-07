@@ -68,13 +68,17 @@ go to the xv6 shell, not QEMU. Use **Ctrl-A then X** to quit QEMU, or
 
 Makefile targets and `./configure`'s own `TOOLPREFIX_<ARCH>`/`QEMU_<ARCH>`
 variables use the bare ISA name (`riscv64`, `i386`, ...), matching
-`~/goken/include/arch/` and `~/c--`'s `CC<ARCH>`/`RUN_<ARCH>` convention -
-**not** the `forks/<name>/` directory name, which instead names the
-upstream repo/port (`forks/riscv` is the riscv64 port; `forks/x86` is the
-i386 one - see the root README's port table for the full mapping). The
-`forks/<name>/` directories are deliberately **not** renamed to match:
-that would disturb the directory-content history the eventual
-factorization phase depends on, for no benefit to this phase.
+`~/goken/include/arch/` and `~/c--`'s `CC<ARCH>`/`RUN_<ARCH>` convention.
+For most ports this still differs from the `forks/<name>/` directory
+name, which instead names the upstream repo/port (`forks/rv32` is the
+riscv32 port; `forks/aarch64` is the arm64 one - see the root README's
+port table for the full mapping) - those directories are deliberately
+**not** renamed to match: that would disturb the directory-content
+history the eventual factorization phase depends on, for no benefit to
+this phase. `forks/riscv` and `forks/x86` were the exception: renamed to
+`forks/riscv64`/`forks/i386` to match the bare ISA name outright, since
+(unlike every other ISA here) each has exactly one fork - no ambiguity
+for the rename to lose, and the directory and target names now agree.
 
 ## Adding a new arch (Phase 4)
 
@@ -84,7 +88,7 @@ ARM Raspberry Pi ports, then `d1` build-only):
 
 1. Read that port's own `Makefile` - its `TOOLPREFIX`/`CROSS_COMPILE` and
    `QEMU` auto-detect logic, if any, and whether it already ships its own
-   test harness (`forks/riscv/test-xv6.py` does; most don't).
+   test harness (`forks/riscv64/test-xv6.py` does; most don't).
 2. Add a detection block to `./configure` (a `detect_toolprefix`/
    `detect_qemu_system` call pair - see the existing riscv64/i386 blocks)
    and a `build-<arch>`/`run-<arch>`/`test-<arch>`/`clean-<arch>`/
@@ -101,8 +105,8 @@ ARM Raspberry Pi ports, then `d1` build-only):
    trees together, they will not stay as-is, so don't hold back changes
    trying to preserve them unchanged.
 4. If the port has no test harness of its own, write a minimal
-   `forks/<name>/test-xv6.py` modeled on `forks/riscv/test-xv6.py`'s
-   `QEMU` class (see `forks/x86/test-xv6.py` for the pared-down shape:
+   `forks/<name>/test-xv6.py` modeled on `forks/riscv64/test-xv6.py`'s
+   `QEMU` class (see `forks/i386/test-xv6.py` for the pared-down shape:
    usertests-only, no crash/log/orphan tiers, since older forks don't
    have those test programs at all).
 5. Add a `docs/claude_notes/notes_arch_<name>.txt` recording what was

@@ -9,8 +9,8 @@
 #
 # Target names use the bare ISA (riscv64, i386, ...), matching ./configure's
 # own TOOLPREFIX_<ARCH>/QEMU_<ARCH> naming - NOT the forks/<name> directory
-# name, which instead names the upstream repo/port (forks/riscv is the
-# riscv64 port; forks/x86 is the i386 one). See ./configure's own header
+# name, which instead names the upstream repo/port (forks/riscv64 is the
+# riscv64 port; forks/i386 is the i386 one). See ./configure's own header
 # comment for why the directories themselves aren't renamed to match.
 #
 # Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
@@ -74,13 +74,13 @@ QEMU_RPI2 ?= qemu-system-arm
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
-# riscv64 (forks/riscv, RV64GC - MIT's current xv6-riscv)
+# riscv64 (forks/riscv64, RV64GC - MIT's current xv6-riscv)
 ###############################################################################
 
 # NONE is ./configure's own sentinel for "looked, found nothing" (see its
 # TOOLPREFIX_RISCV64=NONE/QEMU_RISCV64=NONE assignments) - caught here so a
 # missing toolchain fails with a clear pointer to ./configure instead of
-# forks/riscv/Makefile trying to run "NONEgcc" or a qemu binary that isn't
+# forks/riscv64/Makefile trying to run "NONEgcc" or a qemu binary that isn't
 # on PATH.
 check-riscv64-toolchain:
 	@if [ "$(TOOLPREFIX_RISCV64)" = NONE ] || [ "$(QEMU_RISCV64)" = NONE ]; then \
@@ -89,26 +89,26 @@ check-riscv64-toolchain:
 	fi
 
 build-riscv64: check-riscv64-toolchain
-	$(MAKE) -C forks/riscv TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) kernel/kernel fs.img
+	$(MAKE) -C forks/riscv64 TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) kernel/kernel fs.img
 
 run-riscv64: check-riscv64-toolchain
-	$(MAKE) -C forks/riscv TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) qemu
+	$(MAKE) -C forks/riscv64 TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) qemu
 
-# forks/riscv/test-xv6.py drives plain "make qemu" itself (see that
+# forks/riscv64/test-xv6.py drives plain "make qemu" itself (see that
 # script's own QEMU class), so there's no command line to pass TOOLPREFIX/
 # QEMU on - only the environment. TOOLPREFIX threads through correctly
 # that way (its ifndef guard honors a value from any origin, environment
-# included); QEMU does NOT (forks/riscv/Makefile's own "QEMU =
+# included); QEMU does NOT (forks/riscv64/Makefile's own "QEMU =
 # qemu-system-riscv64" is an unconditional assignment with no ifndef
 # guard, so a plain makefile assignment always wins over the environment)
 # - harmless in practice since QEMU_RISCV64 is just the bare command name
 # qemu-system-riscv64 once found on PATH, identical to that hardcoded
 # default.
 test-riscv64: check-riscv64-toolchain build-riscv64
-	cd forks/riscv && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py usertests
+	cd forks/riscv64 && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py usertests
 
 clean-riscv64:
-	$(MAKE) -C forks/riscv clean
+	$(MAKE) -C forks/riscv64 clean
 
 # "run-riscv64"/"test-riscv64" run QEMU attached to this shell (-nographic),
 # but a stuck boot (or a Ctrl-C that missed) can leave qemu-system-riscv64
@@ -119,7 +119,7 @@ kill-riscv64:
 	-pkill -f '$(QEMU_RISCV64)' 2>/dev/null || true
 
 ###############################################################################
-# i386 (forks/x86, MIT xv6-public - the original teaching OS)
+# i386 (forks/i386, MIT xv6-public - the original teaching OS)
 ###############################################################################
 
 check-i386-toolchain:
@@ -129,20 +129,20 @@ check-i386-toolchain:
 	fi
 
 build-i386: check-i386-toolchain
-	$(MAKE) -C forks/x86 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) kernel fs.img xv6.img
+	$(MAKE) -C forks/i386 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) kernel fs.img xv6.img
 
 run-i386: check-i386-toolchain
-	$(MAKE) -C forks/x86 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) qemu-nox
+	$(MAKE) -C forks/i386 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) qemu-nox
 
-# forks/x86/test-xv6.py (this repo's own, not upstream - see its own header
-# comment) drives plain "make qemu-nox" the same way forks/riscv's does -
-# same TOOLPREFIX-via-environment/QEMU-via-PATH split applies (forks/x86/
+# forks/i386/test-xv6.py (this repo's own, not upstream - see its own header
+# comment) drives plain "make qemu-nox" the same way forks/riscv64's does -
+# same TOOLPREFIX-via-environment/QEMU-via-PATH split applies (forks/i386/
 # Makefile's own "QEMU = ..." auto-detect has no ifndef guard either).
 test-i386: check-i386-toolchain build-i386
-	cd forks/x86 && TOOLPREFIX=$(TOOLPREFIX_I386) ./test-xv6.py
+	cd forks/i386 && TOOLPREFIX=$(TOOLPREFIX_I386) ./test-xv6.py
 
 clean-i386:
-	$(MAKE) -C forks/x86 clean
+	$(MAKE) -C forks/i386 clean
 
 kill-i386:
 	-pkill -f '$(QEMU_I386)' 2>/dev/null || true
@@ -165,7 +165,7 @@ check-x86_64-toolchain:
 #
 # CPUS=2: forks/x86_64/Makefile's own "ifndef CPUS" default is this
 # HOST's own core count (`grep -c ^processor /proc/cpuinfo`), unlike
-# every other fork here (forks/riscv hardcodes 3, forks/x86 hardcodes 2)
+# every other fork here (forks/riscv64 hardcodes 3, forks/i386 hardcodes 2)
 # - harmless on a native x86_64 deployment, but on this 64-core dev
 # machine it means qemu-nox boots 64 vCPUs. xv6 itself only ever starts
 # min(that count, NCPU=8) of them, so the extra vCPUs do nothing useful,
@@ -181,7 +181,7 @@ build-x86_64: check-x86_64-toolchain
 run-x86_64: check-x86_64-toolchain
 	$(MAKE) -C forks/x86_64 CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) CPUS=2 qemu-nox
 
-# Unlike forks/riscv's/forks/x86's own QEMU vars, forks/x86_64/Makefile's
+# Unlike forks/riscv64's/forks/i386's own QEMU vars, forks/x86_64/Makefile's
 # is "QEMU ?= qemu-system-x86_64" (a conditional default) - so QEMU
 # genuinely threads through the environment correctly here, not just
 # CROSS_COMPILE. CPUS is also "ifndef"-guarded (like TOOLPREFIX
@@ -216,7 +216,7 @@ run-amd64: check-amd64-toolchain
 	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) qemu-nox
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
-# forks/riscv's/forks/x86's own test-<arch> targets (forks/amd64/
+# forks/riscv64's/forks/i386's own test-<arch> targets (forks/amd64/
 # Makefile's own "QEMU = qemu-system-x86_64" has no ifndef guard either).
 test-amd64: check-amd64-toolchain build-amd64
 	cd forks/amd64 && TOOLPREFIX=$(TOOLPREFIX_AMD64) ./test-xv6.py
@@ -252,7 +252,7 @@ run-riscv32: check-riscv32-toolchain
 	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
-# forks/riscv's/forks/x86's own test-<arch> targets (forks/rv32/Makefile's
+# forks/riscv64's/forks/i386's own test-<arch> targets (forks/rv32/Makefile's
 # own "QEMU = qemu-system-riscv32 -monitor ..." has no ifndef guard either).
 test-riscv32: check-riscv32-toolchain build-riscv32
 	cd forks/rv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py
@@ -285,7 +285,7 @@ run-arm64: check-arm64-toolchain
 	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
-# forks/riscv's/forks/x86's own test-<arch> targets (forks/aarch64/
+# forks/riscv64's/forks/i386's own test-<arch> targets (forks/aarch64/
 # Makefile's own "QEMU = $(QEMUPREFIX)qemu-system-aarch64" has no ifndef
 # guard either).
 test-arm64: check-arm64-toolchain build-arm64

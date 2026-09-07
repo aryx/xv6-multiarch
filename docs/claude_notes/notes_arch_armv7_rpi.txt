@@ -32,7 +32,7 @@ forks/armv6-rpi, but NOT a straightforward architecture variant of it -
 (entry.S vs entry.s, start.c instead of a separate mmu.c, a buddy
 allocator (buddy.c), device/ and lib/ subdirectories) - a genuinely
 different, more complex codebase, consistent with the root README's own
-provenance note that armv7-rpi's inferred fork point is forks/x86
+provenance note that armv7-rpi's inferred fork point is forks/i386
 ("identical under diff -w"), not the rpi1/armv6-rpi lineage.
 
 Despite the "-rpi" directory name and the README's own description

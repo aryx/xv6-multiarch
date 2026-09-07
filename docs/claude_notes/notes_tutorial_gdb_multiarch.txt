@@ -28,7 +28,7 @@ target this repo's ports build for, riscv64 included.
 The two ways to attach: live vs. from-reset
 ------------------------------------------------
 Every fork's Makefile already knows how to pass a `-gdb` flag to QEMU (see
-e.g. forks/riscv/Makefile's own `qemu-gdb`/`QEMUGDB` machinery) - but for
+e.g. forks/riscv64/Makefile's own `qemu-gdb`/`QEMUGDB` machinery) - but for
 ad hoc investigation it's often faster to invoke qemu directly yourself,
 bypassing the Makefile's own port-forwarding/`.gdbinit` dance entirely:
 

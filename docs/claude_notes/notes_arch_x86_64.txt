@@ -23,7 +23,7 @@ What this is
 ------------
 forks/x86_64 is jserv/xv6-x86_64 (per the root README's port table) - a
 maintained x86-64 port of the classic xv6-public, structured differently
-from forks/x86: out-of-tree object directories (`.kobj/`, `.uobj/`,
+from forks/i386: out-of-tree object directories (`.kobj/`, `.uobj/`,
 `.fs/`, `out/`), a `CROSS_COMPILE`/`QEMU` variable pair (no TOOLPREFIX
 auto-detect at all, unlike every other fork examined so far), and an
 `X64`-gated Makefile that can build either 32- or 64-bit xv6 from the
@@ -45,13 +45,13 @@ qemu-system-x86`). No new package was needed.
 
 Same `-Winfinite-recursion` false positive as i386, same fix
 --------------------------------------------------------------------
-forks/x86_64/user/sh.c is a direct descendant of forks/x86/user/sh.c
+forks/x86_64/user/sh.c is a direct descendant of forks/i386/user/sh.c
 (same recursive-descent `runcmd()`) and hits the exact same GCC 12+
 `-Winfinite-recursion` false positive documented in
 notes_arch_i386.txt - confirmed by build-and-test-plan.md's own guidance
 (check siblings, see notes_debugging_techniques.txt item 7). Fixed
 identically: `CFLAGS += -Wno-infinite-recursion` in
-forks/x86_64/Makefile, with a comment pointing back at forks/x86/
+forks/x86_64/Makefile, with a comment pointing back at forks/i386/
 Makefile's own fix rather than re-explaining it.
 
 A real bug: MAXFILE*BSIZE (70656 bytes) is too small for the 64-bit usertests binary (79728 bytes)
@@ -77,7 +77,7 @@ which can not fit mkfs"`.
 instead.** Doubling `BSIZE` (512 -> 1024) multiplies `MAXFILE`'s
 `NINDIRECT` term without touching `struct dinode`'s on-disk layout, and
 mirrors what MIT's own later xv6-riscv did for the identical reason
-(`forks/riscv/kernel/fs.h`'s own `BSIZE 1024`). It looked safe against
+(`forks/riscv64/kernel/fs.h`'s own `BSIZE 1024`). It looked safe against
 this fork's IDE driver too: `idestart()` already derives `sector_per_block
 = BSIZE/SECTOR_SIZE` generically, with a `panic` guard above
 `sector_per_block > 7`. mkfs succeeded, fs.img built - but booting broke:
@@ -141,10 +141,10 @@ summary of the findings:
   WAS issued and the IDE completion interrupt WAS delivered and dispatched
   into `ideintr()` - ruling out "no interrupt ever arrives."
 
-Comparing against the WORKING i386 sibling (forks/x86/ide.c) found a real,
+Comparing against the WORKING i386 sibling (forks/i386/ide.c) found a real,
 concrete divergence: this fork's `kernel/ide.c`, `kernel/console.c`, and
 `kernel/uart.c` each call `picenable(IRQ_X)` **in addition to**
-`ioapicenable(IRQ_X, ...)`; forks/x86's equivalents call only
+`ioapicenable(IRQ_X, ...)`; forks/i386's equivalents call only
 `ioapicenable()`. `picinit()` starts by masking every PIC line; in
 genuine IOAPIC/MP mode (confirmed active here - `ioapicenable()` itself
 early-returns unless `ismp`), the legacy PIC is supposed to stay fully
@@ -153,7 +153,7 @@ unmask those same physical IRQ lines on the PIC too, which - depending on
 how a given chipset/QEMU version cross-wires the two controllers - can
 mean an interrupt doesn't reliably reach the CPU via the vector the trap
 dispatcher actually expects. Fixed by removing the three errant
-`picenable()` calls (ide.c, console.c, uart.c), matching forks/x86's own
+`picenable()` calls (ide.c, console.c, uart.c), matching forks/i386's own
 pattern exactly, each with a `claude:`-tagged comment.
 `kernel/timer.c`'s own `picenable(IRQ_TIMER)` was checked and NOT
 touched - it lives in the genuinely-uniprocessor-only PIT fallback path
@@ -181,7 +181,7 @@ creates. The `NDIRECT` increase didn't just grow `MAXFILE` (more data a
 single file can hold) - it also raised `sizeof(struct dinode)` to 256
 bytes (`IPB` dropped from 8 to 2), quadrupling the number of blocks
 needed just to store the fixed inode table (101 blocks vs. the original
-~25), eating deep into `FSSIZE=1000`'s budget. `forks/riscv/kernel/
+~25), eating deep into `FSSIZE=1000`'s budget. `forks/riscv64/kernel/
 param.h` had already solved the identical kind of shortfall (a bigger
 MAXFILE/inode layout than i386's original FSSIZE was ever sized for) by
 doubling `FSSIZE` to 2000; doing the same here (`include/param.h`)
@@ -215,7 +215,7 @@ rather than the explicit `-smp 1`/`-smp 2` used while debugging by hand)
 initially still failed - not a regression, a different, purely
 environmental issue: `forks/x86_64/Makefile`'s own `ifndef CPUS` default
 is `` `grep -c ^processor /proc/cpuinfo` `` (this HOST's own real core
-count), unlike every other fork here (forks/riscv hardcodes 3, forks/x86
+count), unlike every other fork here (forks/riscv64 hardcodes 3, forks/i386
 hardcodes 2). On this 64-core dev machine that means `qemu-nox` boots 64
 vCPUs. xv6 itself only ever starts `min(that count, NCPU=8)` of them, so
 the extra 56 vCPUs do nothing useful, but QEMU still pays real per-vCPU
@@ -243,7 +243,7 @@ Fully wired up this session
 - Top-level Makefile: `build-x86_64`/`run-x86_64`/`test-x86_64`/
   `clean-x86_64`/`kill-x86_64`, folded into `build-all`/`test-all`/
   `clean-all`/`kill-all`.
-- `forks/x86_64/test-xv6.py`, modeled on forks/x86/test-xv6.py (same
+- `forks/x86_64/test-xv6.py`, modeled on forks/i386/test-xv6.py (same
   shape: usertests-only, no crash/log/orphan tiers - this fork's own
   UPROGS list has no grind/sync/logstress/forphan/dorphan either).
 - Dockerfile `ARCH=x86_64` case and a matching

@@ -45,17 +45,17 @@ hashes** — not once per architecture. A line untouched since 2007 blames to
 the *same commit object* from every port:
 
 ```sh
-$ git blame arch/x86/sh.c       | head -1
+$ git blame forks/i386/sh.c             | head -1
 1b25f3b0 sh.c (rsc 2007-08-28 ...) // Shell.
-$ git blame arch/loongarch/user/sh.c | head -1
+$ git blame forks/loongarch/user/sh.c   | head -1
 1b25f3b0 sh.c (rsc 2007-08-28 ...) // Shell.
-$ git blame arch/rpi1/uprogs/sh.c    | head -1
+$ git blame forks/rpi1/uprogs/sh.c      | head -1
 1b25f3b0 sh.c (rsc 2007-08-28 ...) // Shell.
 ```
 
 `1b25f3b0` is Russ Cox's real commit in `mit-pdos/xv6-public`, a single node
 here shared by all thirteen lineages. Files the ports actually changed blame
-to the porters: `arch/rpi1/source/proc.c` is 226 lines of `rsc` and 67 of
+to the porters: `forks/rpi1/source/proc.c` is 226 lines of `rsc` and 67 of
 `rtm` (MIT, 2006-07) alongside 78 of Zhiyi Huang (2014).
 
 ## Fork points
@@ -134,8 +134,8 @@ Some of these need reading with care:
 ```sh
 git log --first-parent main   # the upstream story, 2006 -> today
 git log rpi1                  # one architecture's own history
-git blame arch/riscv/kernel/proc.c
-git blame -C arch/armv7-rpi/usr/sh.c   # this port reindented everything; -C needed
+git blame forks/riscv64/kernel/proc.c
+git blame -C forks/armv7-rpi/usr/sh.c   # this port reindented everything; -C needed
 git tag -l 'forkpoint/*' 'history/*'
 git shortlog -sne main        # .mailmap collapses 129 author strings to 92
 ```
@@ -167,6 +167,6 @@ separate future work, now that all thirteen copies are in history for
 
 ## Licensing
 
-Each `arch/<name>/LICENSE` carries the terms from that architecture's original
+Each `forks/<name>/LICENSE` carries the terms from that architecture's original
 repository, all descending from MIT's xv6 permission notice
-(see `arch/x86/LICENSE`). No license text was altered by this merge.
+(see `forks/i386/LICENSE`). No license text was altered by this merge.

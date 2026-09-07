@@ -5,7 +5,7 @@ Written: 2026-09-06, against commit a2bc551 (the fully-working x86_64
 commit). Phase 4 of docs/claude_notes/build-and-test-plan.md, second port
 attempted from that phase's list. Ends at "builds clean, boots, passes
 the full usertests suite" on the FIRST real boot attempt, needing only
-one of the two GCC-false-positive fixes forks/x86/forks/x86_64 both
+one of the two GCC-false-positive fixes forks/i386/forks/x86_64 both
 needed - by far the easiest bring-up so far. See
 docs/claude_notes/notes_arch_x86_64.txt for the harder sibling story this
 one contrasts with.
@@ -14,7 +14,7 @@ What this is
 ------------
 forks/amd64 is MIT's own abandoned 2018 x86-64 experiment - not a
 third-party fork at all, but a preserved point in MIT's own xv6-riscv
-history, on the same lineage as forks/riscv itself (see the root
+history, on the same lineage as forks/riscv64 itself (see the root
 README's and docs/PROVENANCE.md's own "x86, amd64 and riscv are one
 repository" section: `arch/x86`, `arch/riscv`, and `arch/amd64` are
 three tips of one shared lineage, diverging only in which commit each
@@ -22,7 +22,7 @@ one stops at). MIT deleted this experiment a year later in favor of
 RISC-V (`2ec1959fd`, 2019-05-31, starts removing `mmu.h`/`msr.h` and
 adding `riscv.h`).
 
-Structurally, forks/amd64 is much closer to forks/x86 than to
+Structurally, forks/amd64 is much closer to forks/i386 than to
 forks/x86_64: same flat, pre-2019 layout (no kernel/user split, no
 out-of-tree object directories), same classic MIT xv6-public file names.
 The one real structural departure: **it boots via QEMU's own multiboot
@@ -34,7 +34,7 @@ acknowledgment of this port's history explains why: *"qemu cannot load
 `entry.S`/`entryother.S` carry that multiboot glue directly, and
 `kernel.ld`'s own load address is one QEMU's built-in loader understands
 without a BIOS boot sector at all. This also means forks/amd64 has an
-`msr.h` (raw Model-Specific-Register access) that neither forks/x86 nor
+`msr.h` (raw Model-Specific-Register access) that neither forks/i386 nor
 forks/x86_64 needs - required for its own from-scratch 32-to-64-bit
 long-mode transition code.
 
@@ -43,7 +43,7 @@ Toolchain: same as x86_64, but the fork's own auto-detect is broken for 64-bit
 `x86_64-linux-gnu-gcc`/`qemu-system-x86_64` - already installed, already
 covered by the same apt packages `x86_64`/`i386` needed. Unlike
 forks/x86_64, this fork DOES have a TOOLPREFIX auto-detect block - but
-it's a direct copy-paste of forks/x86's own i386 probe, checking
+it's a direct copy-paste of forks/i386's own i386 probe, checking
 `elf32-i386` even though this Makefile builds a 64-bit kernel
 (`-m64 -mcmodel=large`). Left as-is (not this repo's fork to fix for a
 mismatch that never mattered to its own author - passing TOOLPREFIX
@@ -55,12 +55,12 @@ relies on.
 Same `-Winfinite-recursion` false positive as every xv6-public-descended sh.c - the ONLY fix needed
 --------------------------------------------------------------------------------------------------------------
 Building the kernel itself succeeded with **zero** changes needed - no
-`-Warray-bounds` failure on `mp.c` at all, unlike forks/x86. The only
+`-Warray-bounds` failure on `mp.c` at all, unlike forks/i386. The only
 build failure was the now-familiar GCC 12+ `-Winfinite-recursion` false
 positive on `sh.c`'s `runcmd()` (see notes_arch_i386.txt's own
 first-occurrence writeup) - fixed identically,
 `CFLAGS += -Wno-infinite-recursion`, with a comment pointing back at
-forks/x86/Makefile's own fix.
+forks/i386/Makefile's own fix.
 
 Why `mp.c`'s `-Warray-bounds` didn't fire here: this Makefile's real
 `CFLAGS` line has no `-O2`/`-Os`/any optimization flag at all (the
@@ -77,7 +77,7 @@ more than just the warning existing - the exact flags matter too.
 No filesystem-capacity fix needed either
 ------------------------------------------------
 `include/fs.h`'s own `NDIRECT` is already 12 here (not 10, unlike
-forks/x86/forks/x86_64's original value) - giving `MAXFILE*BSIZE =
+forks/i386/forks/x86_64's original value) - giving `MAXFILE*BSIZE =
 (12+128)*512 = 71680` bytes. The compiled `usertests` binary here is
 68760 bytes (smaller than forks/x86_64's 79728-byte `-Os`-optimized one,
 consistent with `-mcmodel=large`+`-O0` producing different code size
@@ -121,7 +121,7 @@ Fully wired up this session
   `clean-all`/`kill-all`. No `CPUS` override needed - this fork already
   hardcodes `CPUS := 2` in its own Makefile, unlike forks/x86_64's
   host-core-count default.
-- `forks/amd64/test-xv6.py`, modeled on forks/x86/test-xv6.py, adjusted
+- `forks/amd64/test-xv6.py`, modeled on forks/i386/test-xv6.py, adjusted
   for the multiboot boot mechanism (no `xv6.img` build step).
 - Dockerfile `ARCH=amd64` case (identical package set to `x86_64`'s -
   same toolchain, same qemu) and a matching

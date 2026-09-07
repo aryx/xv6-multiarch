@@ -17,7 +17,7 @@ is:
 
 - Read the GCC diagnostic itself for a warning name added recently
   relative to the code's age (`-Warray-bounds` strengthened in GCC 10,
-  `-Winfinite-recursion` added in GCC 12 - both hit forks/x86's and
+  `-Winfinite-recursion` added in GCC 12 - both hit forks/i386's and
   forks/x86_64's Makefiles this session, see notes_arch_i386.txt).
   A warning about pointer arithmetic on a raw physical address, or about
   a recursive-descent parser/interpreter that obviously terminates via
@@ -31,7 +31,7 @@ is:
   redirection/command lists correctly throughout a real usertests run.
   Never suppress a warning on the strength of "it's probably fine."
 - Fix by adding the single, precisely-named `-Wno-<warning>` flag, not a
-  blanket `-Wno-error` or a rewrite of the flagged code - see forks/x86/
+  blanket `-Wno-error` or a rewrite of the flagged code - see forks/i386/
   Makefile's and forks/x86_64/Makefile's own `-Wno-array-bounds`/
   `-Wno-infinite-recursion` additions, each with a `claude:`-tagged
   comment naming the exact GCC version and the confirming evidence. A
@@ -57,7 +57,7 @@ MAXFILE*BSIZE) and, just as importantly, which fix was safe: doubling
 BSIZE (multiplying the NINDIRECT term) rather than raising NDIRECT
 (which would also grow struct dinode and need re-deriving IPB/inode-block
 counts) - see notes_arch_x86_64.txt for the full reasoning and the
-cross-check against forks/riscv/kernel/fs.h's own BSIZE=1024 precedent.
+cross-check against forks/riscv64/kernel/fs.h's own BSIZE=1024 precedent.
 The general lesson: an assertion failure names a file and a line for a
 reason - compute the real values on both sides of the failing condition
 before forming a hypothesis about the fix.
@@ -156,16 +156,16 @@ on it.
 
 7. When a fork's Makefile has an unusual pattern, check whether its siblings share it
 ------------------------------------------------------------------------------------------
-forks/riscv, forks/x86, and forks/x86_64 all descend from the same MIT
+forks/riscv64, forks/i386, and forks/x86_64 all descend from the same MIT
 lineage (see the root README's fork-point table) and, unsurprisingly,
 share near-identical `TOOLPREFIX`/`QEMU` auto-detect blocks and the same
-`sh.c`/`usertests.c` heritage. A gap or bug found in one - forks/x86's
+`sh.c`/`usertests.c` heritage. A gap or bug found in one - forks/i386's
 missing `i686-linux-gnu-` candidate in its own TOOLPREFIX probe, or the
 `-Winfinite-recursion` false positive in its `sh.c` - was worth checking
 in its siblings immediately rather than waiting to rediscover it
 independently during that arch's own bring-up: forks/x86_64 turned out
 to share the exact same sh.c-derived bug (fixed the same way, see
-notes_arch_x86_64.txt), while forks/riscv's own kernel/fs.h had already
+notes_arch_x86_64.txt), while forks/riscv64's own kernel/fs.h had already
 independently solved the same class of problem forks/x86_64 hit
 (MAXFILE headroom) by using a bigger BSIZE - a precedent worth searching
 for and citing rather than re-deriving the fix from first principles.
@@ -267,12 +267,12 @@ contradicted `readelf -l`'s own report for that same binary. When a
 struct is ported from a 64-bit sibling, cross-check its *field order*
 against the real on-disk/on-wire format for the 32-bit case specifically
 (a working 32-bit sibling fork's own copy of the same struct, if one
-exists in the repo, settles it fastest - forks/x86's `elf.h` had the
+exists in the repo, settles it fastest - forks/i386's `elf.h` had the
 correct ELF32 layout all along).
 
 13. A linker script gap on one sibling fork can be invisible until a later pipeline stage
 ------------------------------------------------------------------------------------------------
-forks/riscv (rv64) links user programs with a dedicated `user/user.ld`
+forks/riscv64 (rv64) links user programs with a dedicated `user/user.ld`
 that explicitly page-aligns `.data` after `.text`
 (`. = ALIGN(0x1000);`); forks/rv32 instead used a bare `-N -e main
 -Ttext 0`, which packs sections with no such alignment. Both link

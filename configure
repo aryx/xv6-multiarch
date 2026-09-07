@@ -11,9 +11,9 @@ set -eu
 # reasoning this one reuses).
 #
 # The difference here: every forks/<name>/Makefile already has its own
-# TOOLPREFIX auto-detect built in (see forks/riscv/Makefile's own
+# TOOLPREFIX auto-detect built in (see forks/riscv64/Makefile's own
 # "Try to infer the correct TOOLPREFIX" block) - so unlike qc--'s test
-# scripts, "make -C forks/riscv qemu" does not actually NEED this script to
+# scripts, "make -C forks/riscv64 qemu" does not actually NEED this script to
 # find a working build. What it's missing, and what this script adds:
 #
 #  1. An upfront, one-place report of what's missing for a given arch,
@@ -21,8 +21,8 @@ set -eu
 #     probe (whose errors are easy to miss).
 #  2. A candidate toolchain prefix each fork's own probe doesn't know
 #     about but that's what's actually packaged for this host (e.g.
-#     i686-linux-gnu- for forks/x86 - Ubuntu ships no i386-jos-elf-
-#     package at all, and forks/x86/Makefile's own probe only tries
+#     i686-linux-gnu- for forks/i386 - Ubuntu ships no i386-jos-elf-
+#     package at all, and forks/i386/Makefile's own probe only tries
 #     i386-jos-elf- or bare/native, never i686-linux-gnu-).
 #  3. Detection of qemu-system-<arch> (the FULL-SYSTEM emulator that boots
 #     the compiled kernel image) - not the same thing as qemu-user's
@@ -32,14 +32,17 @@ set -eu
 #     not user-mode syscall translation.
 #
 # Naming: arch names here are the bare ISA (riscv64, i386, ...), matching
-# ~/goken/include/arch/ and ~/c--'s CC<ARCH>/RUN_<ARCH> convention - NOT
-# necessarily the forks/<name> directory name, which instead names the
-# upstream repo/port (forks/x86 is the i386 port; forks/riscv is the
-# riscv64 one - see the root README's own port table). Do not rename the
-# forks/<name> directories to match - that's the factorization phase's
-# job (docs/claude_notes/factorization-plan.md), not this one's, and
-# renaming them now would break the blame-preserving history that phase
-# depends on.
+# ~/goken/include/arch/ and ~/c--'s CC<ARCH>/RUN_<ARCH> convention. For
+# most ports this still differs from the forks/<name> directory name,
+# which instead names the upstream repo/port (forks/rv32 is the riscv32
+# port; forks/aarch64 is the arm64 one - see the root README's own port
+# table) - those directories are deliberately NOT renamed to match:
+# that's the factorization phase's job (docs/claude_notes/
+# factorization-plan.md), not this one's, and renaming them now would
+# break the blame-preserving history that phase depends on. forks/riscv
+# and forks/x86 were the exception: renamed to forks/riscv64/forks/i386
+# outright, since each has exactly one fork (no ambiguity for the rename
+# to lose).
 #
 # Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, loongarch,
 # armv6-rpi, armv7-rpi, rpi1, and rpi2 so far - Phases 1, 2 and (the
@@ -291,13 +294,13 @@ detect_qemu_system() {
 }
 
 ###############################################################################
-# riscv64 (forks/riscv, RV64GC - MIT's current xv6-riscv)
+# riscv64 (forks/riscv64, RV64GC - MIT's current xv6-riscv)
 ###############################################################################
 
 if ! detect_toolprefix riscv64 TOOLPREFIX_RISCV64 elf64-big \
         riscv64-unknown-elf- riscv64-elf- riscv64-none-elf- \
         riscv64-linux-gnu- riscv64-unknown-linux-gnu-; then
-    echo "configure: warning: no riscv64 toolchain on PATH (needed for forks/riscv)" >&2
+    echo "configure: warning: no riscv64 toolchain on PATH (needed for forks/riscv64)" >&2
     echo "  install one, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install gcc-riscv64-unknown-elf" >&2
     echo "  or:" >&2
@@ -305,7 +308,7 @@ if ! detect_toolprefix riscv64 TOOLPREFIX_RISCV64 elf64-big \
     note_other_pkgmgr
 fi
 
-# forks/riscv/Makefile hardcodes QEMU = qemu-system-riscv64 and separately
+# forks/riscv64/Makefile hardcodes QEMU = qemu-system-riscv64 and separately
 # enforces MIN_QEMU_VERSION = 7.2 via its own check-qemu-version target
 # (which shells out to `bc`) - reproducing that same floor here means a
 # too-old qemu is reported by ./configure, not by a cryptic failure deep
@@ -321,18 +324,18 @@ if ! detect_qemu_system riscv64 QEMU_RISCV64 qemu-system-riscv64 7 2; then
 fi
 if [ "$QEMU_RISCV64" != NONE ] && ! command -v bc >/dev/null 2>&1; then
     echo "configure: warning: 'bc' not on PATH" >&2
-    echo "  forks/riscv/Makefile's own check-qemu-version target (a" >&2
+    echo "  forks/riscv64/Makefile's own check-qemu-version target (a" >&2
     echo "  dependency of its 'qemu' target) needs it regardless of the" >&2
     echo "  check ./configure just did:" >&2
     echo "    sudo apt install bc" >&2
 fi
 
 ###############################################################################
-# i386 (forks/x86, MIT xv6-public - the original teaching OS)
+# i386 (forks/i386, MIT xv6-public - the original teaching OS)
 ###############################################################################
 # i386-jos-elf- is the classic toolchain name this port's own README
 # expects; i686-linux-gnu- is what Ubuntu/Debian actually package (there
-# is no i386-jos-elf- package) and what forks/x86/Makefile's own
+# is no i386-jos-elf- package) and what forks/i386/Makefile's own
 # auto-detect does NOT know to look for - the reason ./configure earns its
 # keep here specifically. Bare "" (native) is tried last, for a real
 # 32-bit-or-64-bit x86 Linux host where the host gcc itself emits
@@ -340,13 +343,13 @@ fi
 
 if ! detect_toolprefix i386 TOOLPREFIX_I386 elf32-i386 \
         i386-jos-elf- i686-linux-gnu- ''; then
-    echo "configure: warning: no i386 toolchain on PATH (needed for forks/x86)" >&2
+    echo "configure: warning: no i386 toolchain on PATH (needed for forks/i386)" >&2
     echo "  install one, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install gcc-i686-linux-gnu libc6-dev-i386-cross" >&2
     note_other_pkgmgr
 fi
 
-# forks/x86/Makefile enforces no minimum QEMU version of its own.
+# forks/i386/Makefile enforces no minimum QEMU version of its own.
 if ! detect_qemu_system i386 QEMU_I386 qemu-system-i386; then
     echo "configure: warning: no qemu-system-i386 on PATH" >&2
     echo "  install it, e.g. on Debian/Ubuntu:" >&2
@@ -385,7 +388,7 @@ fi
 # amd64 (forks/amd64, MIT's own abandoned 2018 x86-64 experiment)
 ###############################################################################
 # forks/amd64/Makefile DOES have a TOOLPREFIX auto-detect (copy-pasted
-# from forks/x86's own i386 one, per its identical structure), but it
+# from forks/i386's own i386 one, per its identical structure), but it
 # still probes for the 32-bit "elf32-i386" objdump marker even though
 # this fork builds a 64-bit kernel (-m64 -mcmodel=large) - an apparent
 # leftover from that copy-paste, never updated for 64-bit. Left
@@ -657,11 +660,11 @@ fi
 {
     echo "# generated by ./configure - do not edit, re-run configure instead"
     echo
-    echo "# riscv64 (forks/riscv, RV64GC - MIT xv6-riscv)"
+    echo "# riscv64 (forks/riscv64, RV64GC - MIT xv6-riscv)"
     echo "export TOOLPREFIX_RISCV64=$TOOLPREFIX_RISCV64"
     echo "export QEMU_RISCV64=$QEMU_RISCV64"
     echo
-    echo "# i386 (forks/x86 - MIT xv6-public)"
+    echo "# i386 (forks/i386 - MIT xv6-public)"
     echo "export TOOLPREFIX_I386=$TOOLPREFIX_I386"
     echo "export QEMU_I386=$QEMU_I386"
     echo
