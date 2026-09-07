@@ -121,6 +121,16 @@ worth more than a forced pass.
 | `armv7-rpi` | arm-none-eabi | Banana Pi A20 — try `cubieboard` | likely build-only |
 | `d1` | riscv64 ELF | none (Allwinner D1/Nezha) | **build-only**; boots from 0x40000000 via `xfel`, uses a ramdisk |
 
+> claude: `forks/d1` was removed (commit c233d3b) rather than brought up -
+> no QEMU machine model exists for real Allwinner D1 hardware, and it's
+> RISC-V64 forked from the same lineage `forks/riscv` already covers.
+> Its own history was checked for anything worth porting to
+> `forks/riscv` first; nothing was found - every non-hardware-specific
+> difference was an upstream MIT xv6-riscv commit `forks/riscv` already
+> has (Sstc timers, the `user.ld`/`eh_frame` fix, `MENVCFG_ADUE`), and
+> the rest (clock/GPIO/UART bring-up, a ramdisk instead of virtio) is
+> genuinely Allwinner D1-specific with no QEMU application.
+
 ## Test harness
 
 Keep it small and uniform. Per arch, a manifest declaring: toolchain prefix,
@@ -166,7 +176,9 @@ x86_64 Loongson toolchain.
 
 **Phase 4 — the remaining ten**, cheapest first: `x86_64`, `amd64`, `rv32`,
 `aarch64`, `loongarch`, `mips`, then the four ARM board ports, then `d1` as
-build-only. Record every outcome in the matrix, including failures, verbatim.
+build-only (`d1` was later dropped entirely rather than brought up - see
+the note by its own row in the matrix above). Record every outcome in
+the matrix, including failures, verbatim.
 
 **Phase 5 — CI.** A GitHub Actions workflow running `matrix.sh` and publishing
 the table. Once this exists, factorization can proceed with a safety net.
