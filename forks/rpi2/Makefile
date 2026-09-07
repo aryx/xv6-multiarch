@@ -86,12 +86,41 @@ C_OBJECTS = $(patsubst $(SOURCE)%.c,$(BUILD)%.o,$(wildcard $(SOURCE)*.c))
 
 # Rule to make everything.
 all : $(TARGET)
-	
+
 # Rule to make the elf file.
 $(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
 	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(LD_OPTIONS) -Map kernel.map -o $(BUILD)kernel.elf -T kernel.ld
 	$(TOOLCHAIN)objdump -d $(BUILD)kernel.elf > kernel.list
 	$(TOOLCHAIN)objcopy $(BUILD)kernel.elf -O binary $(TARGET)
+
+# claude: QEMU-only target, added alongside the real-hardware ones above
+# rather than replacing anything - "all"/"$(TARGET)" (what a real
+# Raspberry Pi 2/3 boots from an SD card as "kernel7.bin") are completely
+# unchanged. Relinks the exact same $(ASM_OBJECTS)/$(C_OBJECTS) - same
+# source, same CFLAGS/CC_OPTIONS, only the LOAD ADDRESS differs - against
+# the same kernel.ld (already fully parameterized via PHYSOFFSET/
+# KERNOFFSET --defsym symbols, so no separate linker script is needed
+# here unlike the sibling forks/rpi1 fork). QEMU's "-M raspi2b" needs the
+# image placed at physical 0x10000, not the real-hardware 0x8000
+# (confirmed for the same board via forks/armv7-rpi's own bring-up - see
+# notes_arch_armv7_rpi.txt bug 7 - and re-confirmed for this specific
+# kernel image below). Every other --defsym (MMIO_PA/MMIO_VA/PHYSTART/
+# PHYSIZE/KERNBASE/...) stays identical to the real-hardware rpi2
+# build - only the load offset changes.
+QEMU ?= qemu-system-arm
+QEMU_OFFSET = 0x10000
+QEMU_LD_OPTIONS = --defsym=PHYSTART=$(PHYSTART) --defsym=PHYSIZE=$(PHYSIZE) --defsym=KERNBASE=$(KERNBASE) --defsym=MMIO_PA=$(MMIO_PA) --defsym=MMIO_VA=$(MMIO_VA) --defsym=MMIO_SIZE=$(MMIO_SIZE) --defsym=PERIPHBASE=$(PERIPHBASE)
+QEMU_LD_OPTIONS += --defsym=K_PDX_BASE=$(K_PDX_BASE) --defsym=K_PTX_BASE=$(K_PTX_BASE)
+QEMU_LD_OPTIONS += --defsym=PHYSOFFSET=$(shell printf "0x%X\n" $$(( $(PHYSTART) + $(QEMU_OFFSET) )) )
+QEMU_LD_OPTIONS += --defsym=KERNOFFSET=$(shell printf "0x%X\n" $$(( $(KERNBASE) + $(QEMU_OFFSET) )) )
+
+kernel7-qemu.bin: $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
+	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(QEMU_LD_OPTIONS) -Map kernel-qemu.map -o $(BUILD)kernel-qemu.elf -T kernel.ld
+	$(TOOLCHAIN)objcopy $(BUILD)kernel-qemu.elf -O binary kernel7-qemu.bin
+
+qemu: kernel7-qemu.bin
+	@echo "Press Ctrl-A and then X to terminate QEMU session"
+	$(QEMU) -M raspi2b -nographic -kernel kernel7-qemu.bin
 
 # Build ASM files
 $(BUILD)%.o: $(SOURCE)%.S $(BUILD)
@@ -141,9 +170,10 @@ install:
 	umount /media/$(USER)/*
 	
 # Rule to clean files.
-clean : 
+clean :
 	-rm -rf $(BUILD)
 	-rm -f *.img
 	-rm -f *.bin
 	-rm -f kernel.list
 	-rm -f kernel.map
+	-rm -f kernel-qemu.map

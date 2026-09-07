@@ -42,8 +42,8 @@ set -eu
 # depends on.
 #
 # Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, loongarch,
-# armv6-rpi, armv7-rpi, and rpi1 so far - Phases 1, 2 and (the start of)
-# 4 of docs/claude_notes/build-and-test-plan.md - see
+# armv6-rpi, armv7-rpi, rpi1, and rpi2 so far - Phases 1, 2 and (the
+# start of) 4 of docs/claude_notes/build-and-test-plan.md - see
 # docs/claude_notes/notes_arch_*.txt for each arch's own bring-up.
 
 ###############################################################################
@@ -73,6 +73,8 @@ TOOLPREFIX_ARMV7_RPI=${TOOLPREFIX_ARMV7_RPI:-}
 QEMU_ARMV7_RPI=${QEMU_ARMV7_RPI:-}
 TOOLPREFIX_RPI1=${TOOLPREFIX_RPI1:-}
 QEMU_RPI1=${QEMU_RPI1:-}
+TOOLPREFIX_RPI2=${TOOLPREFIX_RPI2:-}
+QEMU_RPI2=${QEMU_RPI2:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -99,6 +101,8 @@ for arg in "$@"; do
         --qemu-armv7-rpi=*)     QEMU_ARMV7_RPI="${arg#--qemu-armv7-rpi=}" ;;
         --toolprefix-rpi1=*)    TOOLPREFIX_RPI1="${arg#--toolprefix-rpi1=}" ;;
         --qemu-rpi1=*)          QEMU_RPI1="${arg#--qemu-rpi1=}" ;;
+        --toolprefix-rpi2=*)    TOOLPREFIX_RPI2="${arg#--toolprefix-rpi2=}" ;;
+        --qemu-rpi2=*)          QEMU_RPI2="${arg#--qemu-rpi2=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -137,6 +141,9 @@ for arg in "$@"; do
             echo "  --toolprefix-rpi1=PREFIX     override the rpi1 cross-toolchain prefix"
             echo "                               (e.g. arm-linux-gnueabihf-)"
             echo "  --qemu-rpi1=CMD              override the rpi1 qemu-system binary"
+            echo "  --toolprefix-rpi2=PREFIX     override the rpi2 cross-toolchain prefix"
+            echo "                               (e.g. arm-linux-gnueabihf-)"
+            echo "  --qemu-rpi2=CMD              override the rpi2 qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -611,6 +618,35 @@ if ! detect_qemu_system rpi1 QEMU_RPI1 qemu-system-arm; then
 fi
 
 ###############################################################################
+# rpi2 (forks/rpi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2)
+###############################################################################
+# Bare fork-directory name, same reasoning as rpi1 above - only one
+# Raspberry Pi 2 port in this repo.
+#
+# claude: this fork genuinely boots on real Raspberry Pi 2 hardware (the
+# user has one) - TOOLPREFIX_RPI2/QEMU_RPI2 here only feed the ADDITIVE
+# QEMU-only "kernel7-qemu.bin"/"qemu" Makefile targets (see
+# notes_arch_rpi2.txt), never the real-hardware "kernel7.bin"/"all"
+# targets, which stay reachable only via the fork's own Makefile
+# directly - same reasoning as rpi1 above.
+
+if ! detect_toolprefix rpi2 TOOLPREFIX_RPI2 elf32-littlearm \
+        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
+    echo "configure: warning: no arm toolchain on PATH (needed for forks/rpi2)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
+    note_other_pkgmgr
+fi
+
+# forks/rpi2/Makefile enforces no minimum QEMU version of its own.
+if ! detect_qemu_system rpi2 QEMU_RPI2 qemu-system-arm; then
+    echo "configure: warning: no qemu-system-arm on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-arm" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -665,6 +701,10 @@ fi
     echo "# rpi1 (forks/rpi1 - zhiyihuang/xv6_rpi_port)"
     echo "export TOOLPREFIX_RPI1=$TOOLPREFIX_RPI1"
     echo "export QEMU_RPI1=$QEMU_RPI1"
+    echo
+    echo "# rpi2 (forks/rpi2 - zhiyihuang/xv6_rpi_port, extended to rpi2)"
+    echo "export TOOLPREFIX_RPI2=$TOOLPREFIX_RPI2"
+    echo "export QEMU_RPI2=$QEMU_RPI2"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -691,6 +731,8 @@ echo "  TOOLPREFIX_ARMV7_RPI = $TOOLPREFIX_ARMV7_RPI"
 echo "  QEMU_ARMV7_RPI       = $QEMU_ARMV7_RPI"
 echo "  TOOLPREFIX_RPI1      = $TOOLPREFIX_RPI1"
 echo "  QEMU_RPI1            = $QEMU_RPI1"
+echo "  TOOLPREFIX_RPI2      = $TOOLPREFIX_RPI2"
+echo "  QEMU_RPI2            = $QEMU_RPI2"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
@@ -704,3 +746,5 @@ echo "  or: make build-armv6-rpi && make run-armv6-rpi (does not boot to a shell
 echo "  or: make build-armv7-rpi && make run-armv7-rpi (does not boot to a shell yet)"
 echo "  or: make build-rpi1 && make run-rpi1 (does not boot to a shell yet under QEMU;"
 echo "      real-hardware kernel.img is unaffected, build via forks/rpi1's own Makefile)"
+echo "  or: make build-rpi2 && make run-rpi2 (does not boot to a shell yet under QEMU;"
+echo "      real-hardware kernel7.bin is unaffected, build via forks/rpi2's own Makefile)"

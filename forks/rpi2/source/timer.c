@@ -75,7 +75,17 @@ delay(uint m)
 	if(m == 0) return;
 
 	t = getsystemtime() + m;
-	while(t != getsystemtime());
+	// claude: same exact-equality busy-wait bug as the sibling forks/rpi1
+	// port's own source/timer.c (identical code) - see that fork's own
+	// notes_arch_rpi1.txt bug 4 and ~/principia/kernel/COMPILE/9/bcm/
+	// clock.c's own "claude:"-tagged comment on this exact issue for the
+	// same real hardware family. Same fix: a signed "target reached or
+	// passed" compare instead of exact match - QEMU's emulated timer
+	// counter can advance by more than 1 between two reads and skip the
+	// exact target, and real hardware's timer should never actually do
+	// that in practice, so this is strictly safer either way, not a
+	// QEMU-only workaround.
+	while((long long)(getsystemtime() - t) < 0);
 
 	return;
 }

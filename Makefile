@@ -56,6 +56,8 @@ TOOLPREFIX_ARMV7_RPI ?=
 QEMU_ARMV7_RPI ?= qemu-system-arm
 TOOLPREFIX_RPI1 ?=
 QEMU_RPI1 ?= qemu-system-arm
+TOOLPREFIX_RPI2 ?=
+QEMU_RPI2 ?= qemu-system-arm
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -68,6 +70,7 @@ QEMU_RPI1 ?= qemu-system-arm
         build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
         build-armv7-rpi run-armv7-rpi check-armv7-rpi-toolchain \
         build-rpi1 run-rpi1 check-rpi1-toolchain \
+        build-rpi2 run-rpi2 check-rpi2-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -460,6 +463,35 @@ build-rpi1: check-rpi1-toolchain
 
 run-rpi1: check-rpi1-toolchain
 	$(MAKE) -C forks/rpi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_RPI1)) QEMU=$(QEMU_RPI1) qemu
+
+###############################################################################
+# rpi2 (forks/rpi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2)
+###############################################################################
+# claude: same real-hardware-safety note as rpi1 above applies here -
+# the user has physical Raspberry Pi 2 hardware, this section only
+# drives the additive QEMU-only "kernel7-qemu.bin"/"qemu" targets, never
+# the real-hardware "kernel7.bin"/"all" targets (see notes_arch_rpi2.txt).
+#
+# Unlike forks/rpi1's own "ARMGNU" (no trailing "-"), forks/rpi2/
+# Makefile's own toolchain variable is "TOOLCHAIN" and DOES expect the
+# trailing "-" (matching every other TOOLPREFIX_<ARCH> in this repo) -
+# passed through as-is, no stripping needed.
+#
+# No test-rpi2/clean-rpi2/kill-rpi2 yet, not folded into build-all/
+# run-all/test-all: boots cleanly under QEMU through the full firmware
+# handoff and well into real kernel logic, but hits an unresolved crash
+# before reaching any console output - see notes_arch_rpi2.txt.
+check-rpi2-toolchain:
+	@if [ "$(TOOLPREFIX_RPI2)" = NONE ] || [ "$(QEMU_RPI2)" = NONE ]; then \
+		echo "Makefile: rpi2 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-rpi2: check-rpi2-toolchain
+	$(MAKE) -C forks/rpi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_RPI2) QEMU=$(QEMU_RPI2) kernel7-qemu.bin
+
+run-rpi2: check-rpi2-toolchain
+	$(MAKE) -C forks/rpi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_RPI2) QEMU=$(QEMU_RPI2) qemu
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is

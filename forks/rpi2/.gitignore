@@ -1,0 +1,15 @@
+# claude: this fork never had a .gitignore at all - build outputs were
+# neither tracked nor ignored (same gap as the sibling forks/rpi1 fork).
+# Covers both the real-hardware build outputs (kernel7.bin/kernel.list/
+# kernel.map/build/) and the additive QEMU-only ones (kernel7-qemu.bin/
+# kernel-qemu.map). Root-anchored (leading "/") and by exact name,
+# deliberately NOT a broad "*.bin"/"*.img" glob - source/fs.img and
+# source/font.bin/font1.bin are pre-built binaries .incbin'd directly
+# into the kernel image and are meant to be checked in (see
+# notes_arch_rpi2.txt), and a recursive glob would have caught them too.
+/build/
+/kernel7.bin
+/kernel7-qemu.bin
+/kernel.list
+/kernel.map
+/kernel-qemu.map

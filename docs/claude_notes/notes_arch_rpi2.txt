@@ -1,0 +1,155 @@
+notes_arch_rpi2.txt
+====================
+
+Written: 2026-09-07, against commit 1865287 (the rpi1 bring-up commit),
+during the rpi2 bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, tenth port attempted from that
+phase's list, fourth and last of the four ARM board ports. Status: NOT
+fully working under QEMU yet - one real bug fixed (identical to rpi1's
+own delay() busy-wait bug), a safe additive QEMU build path added
+(simpler than rpi1's - no separate linker script needed here), boot
+reaches deep into real kernel logic (well past uartinit and its GPIO
+settle delay) before hitting a genuinely unresolved crash - jumping to
+an address with no corresponding symbol at all, most likely a corrupted
+return address, not something a build-flag or link-address fix can
+resolve. Left open per the user's explicit choice - would need real
+gdb-based single-stepping to pin down, not attempted this session.
+**The real-hardware build path (kernel7.bin, "make hw=rpi2") was NOT
+modified in any way that could affect its behavior** - see "Real
+hardware safety" below.
+
+IMPORTANT CONTEXT: same as notes_arch_rpi1.txt - the user owns physical
+Raspberry Pi 1 and Pi 2 boards and can test forks/rpi1/forks/rpi2 on
+real hardware. All changes below were chosen to be safe for both
+targets, or purely additive.
+
+What this is
+------------
+forks/rpi2 extends forks/rpi1 to ARMv7/Cortex-A7 (real Raspberry Pi
+2/3, BCM2836/2837) - same zhiyihuang/xv6_rpi_port lineage, but a
+noticeably more general, more mature Makefile than rpi1's own: a single
+parameterized Makefile supports THREE hardware targets via "hw=" (fvp -
+ARM's own Fixed Virtual Platform simulator, rpi1, and rpi2, the
+default), with PHYSTART/PHYSIZE/KERNBASE/MMIO_PA/MMIO_VA/PERIPHBASE all
+passed through as both CC_OPTIONS (-D defines) and LD_OPTIONS (--defsym)
+per target - unlike rpi1's own Makefile, which hardcoded most of this.
+Ships a real xv6-guide.pdf and a genuine multi-core (WFE/SEV-based)
+secondary-CPU boot gate in entry.S - a real, working piece of SMP
+bring-up code, unlike the sibling forks/armv7-rpi port's own complete
+absence of one (see notes_arch_armv7_rpi.txt's own open "Gap").
+
+Toolchain: arm-linux-gnueabihf-gcc/qemu-system-arm, already installed - no gaps
+--------------------------------------------------------------------------------------
+Unlike every other ARM fork brought up this phase, "make hw=rpi2
+TOOLCHAIN=arm-linux-gnueabihf-" built completely CLEAN on the very first
+attempt - zero flag/codegen bugs of any kind. This Makefile's own CFLAGS
+already uses real gcc-level "-mcpu=cortex-a7 -mfloat-abi=hard" (not the
+"-Wa,"-only mistake that bit rpi1/armv6-rpi/armv7-rpi), and proc.h
+apparently doesn't hit the -fcommon issue here (not investigated further
+since it wasn't needed - may already use "extern" correctly, or this
+codebase's own header organization differs enough to avoid it).
+
+Real hardware safety
+---------------------
+kernel.ld and the Makefile's own "all"/"$(TARGET)" (kernel7.bin) rule
+were NOT touched in any way that changes their behavior. The one real
+fix (delay()'s busy-wait, source/timer.c) is universal-correctness-only
+(see rpi1's own identical writeup for why). The QEMU-only build path is
+entirely NEW, additive Makefile content (a new "kernel7-qemu.bin"/"qemu"
+target pair) - critically, THIS TIME NO SEPARATE LINKER SCRIPT WAS
+NEEDED AT ALL: kernel.ld already parameterizes its own load address via
+"PHYSOFFSET"/"KERNOFFSET" --defsym symbols (with sensible built-in
+defaults if undefined), so the QEMU-only target just relinks the exact
+same object files with a different set of --defsym values passed on the
+command line - a smaller, more surgical addition than rpi1's own
+kernel-qemu.ld copy.
+
+Bug 1 (real, fixed): delay()'s exact-equality busy-wait - identical to rpi1's own bug 4
+---------------------------------------------------------------------------------------------
+source/timer.c's delay() function is BYTE-FOR-BYTE IDENTICAL to
+forks/rpi1's own (same "while(t != getsystemtime());" exact-equality
+spin-wait) - same root cause (QEMU's emulated timer counter can advance
+by more than 1 between two reads and skip the exact target), same fix
+(a signed "target reached or passed" comparison), same justification
+for why it's safe on real hardware too. See notes_arch_rpi1.txt bug 4
+and ~/principia/kernel/COMPILE/9/bcm/clock.c's own "claude:"-tagged
+comment on this exact class of bug for the same real hardware family.
+
+QEMU load address: confirmed the same 0x10000 finding transfers from the sibling armv7-rpi port
+-------------------------------------------------------------------------------------------------------
+QEMU's "-M raspi2b" needs a raw "-kernel" image placed at physical
+0x10000, not the real-hardware firmware's own 0x8000 - already
+established for this exact board in notes_arch_armv7_rpi.txt bug 7
+(forks/armv7-rpi's own bring-up); re-confirmed working here via a clean
+boot through the full SMC/firmware handoff with the QEMU-only target's
+own PHYSOFFSET=0x10000/KERNOFFSET=0x80010000 --defsym overrides.
+
+Real multi-core boot code exists and looks correct (not investigated further)
+-----------------------------------------------------------------------------------
+source/entry.S's boot_reset has a genuine, textbook-correct ARM SMP
+parking sequence: reads MPIDR (mrc p15,0,r0,c0,c0,5), masks the low 2
+affinity bits, and any core where that's nonzero does "wfene"
+(conditional wait-for-event) then branches to mp_continue - i.e. every
+core but CPU0 parks itself waiting for a later SEV, while CPU0 alone
+proceeds to build page tables (mmu_phase1). This is real, working code
+(unlike forks/armv7-rpi's own complete absence of any core-ID check at
+all) and the QEMU trace shows only CPU0 taking the final Undefined
+Instruction exception - the other 3 emulated cores' own SMC handoffs all
+complete cleanly and there's no sign they're involved in the crash. Not
+investigated further this session since CPU0 alone is what's crashing.
+
+Bug/gap 2 (open, NOT fixed): a late crash deep in real kernel code, landing at an address with no symbol at all
+---------------------------------------------------------------------------------------------------------------------
+With the delay() fix in place, "-d in_asm" shows CPU0 executing well
+past uartinit() (including its own now-fixed GPIO-settle delay() calls)
+and several other real functions (timer3init, flush_idcache/flush_tlb/
+set_pgtbase, getsystemtime again) before jumping to physical address
+0x00000300 - which does NOT correspond to ANY symbol in the linked
+kernel.elf at all (confirmed via "nm": the closest symbols before/after
+this address are getsystemtime at 0x80010284, on a completely different
+side of the address space - 0x300 is neither in the low pre-MMU .init
+region (0x10000-0x10200) nor the high mapped .text region (0x80010200
+onward) - it corresponds to nothing this kernel linked at all). From
+there, execution reaches the kernel entry point (0x80010000/0x10000
+depending on mapping) and then the high Undefined Instruction vector
+(0xffff0004), settling into a steady repeating "Taking exception 1
+[Undefined Instruction] on CPU 0" loop - confirmed NOT a full system
+reset (only 4 total "Secure Monitor Call" events in the whole trace, one
+per CPU, all at the very start - no second round later).
+
+The jump to an address with no matching symbol at all is the most
+suspicious part - this looks like a corrupted return address or a
+stale/garbage function pointer being called, rather than a
+straightforward "wrong constant" bug like every other fix this session.
+Diagnosing this properly would need gdb-based single-stepping (checking
+the actual LR/call stack at the moment of the bad jump) rather than the
+trace-log-based methodology that sufficed for every other bug found so
+far - not attempted this session per the user's own explicit choice to
+stop here. A reasonable starting hypothesis for a future session: check
+whether this happens specifically after uartinit()'s FULL return (not
+mid-delay), i.e. whatever calls uartinit() and then makes this bad jump
+next - likely somewhere in main.c's own init sequence, given the
+function-address clustering seen in the trace (0x8000fdc8, itself also
+symbol-less, immediately precedes the jump to 0x300).
+
+Verification so far
+--------------------
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf-
+    -> builds kernel7.bin (real hardware target) cleanly, zero fixes
+       needed at all - NOT tested on real hardware this session (no
+       physical access from this environment)
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- QEMU=qemu-system-arm kernel7-qemu.bin
+  qemu-system-arm -M raspi2b -nographic -kernel kernel7-qemu.bin
+    -> boots cleanly through the full firmware handoff (all 4 emulated
+       cores) and well into real kernel logic (uartinit including its
+       own delay() calls, timer3init, several utility functions) before
+       hitting the still-open crash documented above
+
+Wired up in ./configure and the top-level Makefile as build-rpi2/
+run-rpi2 (the QEMU target only, "kernel7-qemu.bin"/"qemu" - the
+real-hardware "kernel7.bin"/"all" targets remain directly reachable via
+the fork's own Makefile, untouched, same reasoning as forks/rpi1 - see
+notes_arch_rpi1.txt) - no test-rpi2/clean-rpi2/kill-rpi2 yet, and not
+folded into build-all/run-all/test-all, since there is no console
+output yet (the crash happens before any UART/framebuffer output would
+even be reached) to build a real pass/fail signal around.
