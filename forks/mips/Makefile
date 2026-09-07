@@ -229,8 +229,11 @@ ifndef CPUS
 CPUS := 1
 endif
 # QEMUOPTS = -hdb fs.img -kernel kernel -smp $(CPUS) -m 512 $(QEMUEXTRA)
-QEMUOPTS = -hdb fs.img -kernel kernel -smp 1 -m 256 -M mips
-QEMUOPTSMEMFS = -kernel kernelmemfs -smp 1 -m 256 -M mips
+# claude: "-M mips" no longer exists in modern QEMU ("unsupported machine
+# type"; see notes_arch_mips.txt) - "-M malta" is the still-supported
+# board this port actually boots on.
+QEMUOPTS = -hdb fs.img -kernel kernel -smp 1 -m 256 -M malta
+QEMUOPTSMEMFS = -kernel kernelmemfs -smp 1 -m 256 -M malta
 
 qemu: fs.img kernel
 	@echo -e "\033[0;31m'make qemu' is not implemented at current. Run 'make qemu-memfs'!\033[0m"

@@ -41,7 +41,7 @@ set -eu
 # renaming them now would break the blame-preserving history that phase
 # depends on.
 #
-# Scope: riscv64, i386, x86_64, amd64, riscv32, and arm64 so far -
+# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, and mips so far -
 # Phases 1, 2 and (the start of) 4 of
 # docs/claude_notes/build-and-test-plan.md - see
 # docs/claude_notes/notes_arch_*.txt for each arch's own bring-up.
@@ -62,6 +62,8 @@ TOOLPREFIX_RISCV32=${TOOLPREFIX_RISCV32:-}
 QEMU_RISCV32=${QEMU_RISCV32:-}
 TOOLPREFIX_ARM64=${TOOLPREFIX_ARM64:-}
 QEMU_ARM64=${QEMU_ARM64:-}
+TOOLPREFIX_MIPS=${TOOLPREFIX_MIPS:-}
+QEMU_MIPS=${QEMU_MIPS:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -77,6 +79,8 @@ for arg in "$@"; do
         --qemu-riscv32=*)       QEMU_RISCV32="${arg#--qemu-riscv32=}" ;;
         --toolprefix-arm64=*)   TOOLPREFIX_ARM64="${arg#--toolprefix-arm64=}" ;;
         --qemu-arm64=*)         QEMU_ARM64="${arg#--qemu-arm64=}" ;;
+        --toolprefix-mips=*)    TOOLPREFIX_MIPS="${arg#--toolprefix-mips=}" ;;
+        --qemu-mips=*)          QEMU_MIPS="${arg#--qemu-mips=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -97,6 +101,9 @@ for arg in "$@"; do
             echo "  --toolprefix-arm64=PREFIX    override the arm64 cross-toolchain prefix"
             echo "                               (e.g. aarch64-linux-gnu-)"
             echo "  --qemu-arm64=CMD             override the arm64 qemu-system binary"
+            echo "  --toolprefix-mips=PREFIX     override the mips cross-toolchain prefix"
+            echo "                               (e.g. mipsel-linux-gnu-)"
+            echo "  --qemu-mips=CMD              override the mips qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -381,6 +388,35 @@ if ! detect_qemu_system arm64 QEMU_ARM64 qemu-system-aarch64; then
 fi
 
 ###############################################################################
+# mips (forks/mips, nullpo-head/xv6-mips)
+###############################################################################
+# mipsel, not mips: this fork targets little-endian MIPS (its own
+# Makefile's default TOOLPREFIX is mipsel-sde-elf-, and kernel.ld's own
+# OUTPUT_FORMAT is "elf32-tradlittlemips") - matching ~/c--'s own CCMIPS
+# ("32-bit mipsel C compiler") naming, which is "mips" as the bare
+# backend name despite being little-endian under the hood. Marker is
+# elf32-tradlittlemips specifically (not just "mips"), to confirm the
+# little-endian variant rather than a big-endian-only toolchain.
+
+if ! detect_toolprefix mips TOOLPREFIX_MIPS elf32-tradlittlemips \
+        mipsel-linux-gnu- mipsel-sde-elf- mipsel-unknown-elf-; then
+    echo "configure: warning: no mipsel toolchain on PATH (needed for forks/mips)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-mipsel-linux-gnu" >&2
+    note_other_pkgmgr
+fi
+
+# forks/mips/Makefile enforces no minimum QEMU version of its own. Note:
+# qemu-system-mips is a SEPARATE apt package from qemu-system-misc
+# (which covers riscv64/riscv32) - see notes_arch_mips.txt.
+if ! detect_qemu_system mips QEMU_MIPS qemu-system-mipsel; then
+    echo "configure: warning: no qemu-system-mipsel on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-mips" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -414,6 +450,10 @@ fi
     echo "# arm64 (forks/aarch64 - k-mrm/xv6-aarch64)"
     echo "export TOOLPREFIX_ARM64=$TOOLPREFIX_ARM64"
     echo "export QEMU_ARM64=$QEMU_ARM64"
+    echo
+    echo "# mips (forks/mips - nullpo-head/xv6-mips)"
+    echo "export TOOLPREFIX_MIPS=$TOOLPREFIX_MIPS"
+    echo "export QEMU_MIPS=$QEMU_MIPS"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -429,6 +469,8 @@ echo "  TOOLPREFIX_RISCV32  = $TOOLPREFIX_RISCV32"
 echo "  QEMU_RISCV32        = $QEMU_RISCV32"
 echo "  TOOLPREFIX_ARM64    = $TOOLPREFIX_ARM64"
 echo "  QEMU_ARM64          = $QEMU_ARM64"
+echo "  TOOLPREFIX_MIPS     = $TOOLPREFIX_MIPS"
+echo "  QEMU_MIPS           = $QEMU_MIPS"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
@@ -436,3 +478,4 @@ echo "  or: make build-x86_64 && make run-x86_64"
 echo "  or: make build-amd64 && make run-amd64"
 echo "  or: make build-riscv32 && make run-riscv32"
 echo "  or: make build-arm64 && make run-arm64"
+echo "  or: make build-mips && make run-mips"

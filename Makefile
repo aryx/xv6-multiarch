@@ -41,6 +41,8 @@ TOOLPREFIX_RISCV32 ?=
 QEMU_RISCV32 ?= qemu-system-riscv32
 TOOLPREFIX_ARM64 ?=
 QEMU_ARM64 ?= qemu-system-aarch64
+TOOLPREFIX_MIPS ?=
+QEMU_MIPS ?= qemu-system-mipsel
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -48,6 +50,7 @@ QEMU_ARM64 ?= qemu-system-aarch64
         build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
+        build-mips run-mips check-mips-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -273,6 +276,36 @@ clean-arm64:
 
 kill-arm64:
 	-pkill -f '$(QEMU_ARM64)' 2>/dev/null || true
+
+###############################################################################
+# mips (forks/mips, nullpo-head/xv6-mips)
+###############################################################################
+
+check-mips-toolchain:
+	@if [ "$(TOOLPREFIX_MIPS)" = NONE ] || [ "$(QEMU_MIPS)" = NONE ]; then \
+		echo "Makefile: mips toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+# claude: "kernelmemfs" (embeds fs.img directly in the kernel image),
+# not "kernel" (a real IDE-emulated disk boot) - the port's own Makefile
+# already admits the disk-based "qemu" target "is not implemented at
+# current", and even setting that aside has its own independent -hdb-
+# vs-master-drive bug (see notes_arch_mips.txt) - kernelmemfs is the
+# only path this repo has actually gotten booting.
+#
+# No test-mips/clean-mips/kill-mips yet, and not folded into build-all/
+# run-all: this port boots (confirmed via gdb + a QEMU trace) but
+# produces no visible console output at all yet (notes_arch_mips.txt's
+# own "bug 5", not yet root-caused) - there is currently no way to look
+# at a "make run-mips" session and tell whether it's doing the right
+# thing, so a scripted test-mips would just hang against a real
+# silence, not a useful pass/fail signal.
+build-mips: check-mips-toolchain
+	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) kernelmemfs
+
+run-mips: check-mips-toolchain
+	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) qemu-memfs
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
