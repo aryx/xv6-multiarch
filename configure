@@ -41,8 +41,8 @@ set -eu
 # renaming them now would break the blame-preserving history that phase
 # depends on.
 #
-# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, and loongarch
-# so far - Phases 1, 2 and (the start of) 4 of
+# Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, loongarch, and
+# armv6-rpi so far - Phases 1, 2 and (the start of) 4 of
 # docs/claude_notes/build-and-test-plan.md - see
 # docs/claude_notes/notes_arch_*.txt for each arch's own bring-up.
 
@@ -67,6 +67,8 @@ QEMU_MIPS=${QEMU_MIPS:-}
 TOOLPREFIX_LOONGARCH=${TOOLPREFIX_LOONGARCH:-}
 CC_LOONGARCH=${CC_LOONGARCH:-}
 QEMU_LOONGARCH=${QEMU_LOONGARCH:-}
+TOOLPREFIX_ARMV6_RPI=${TOOLPREFIX_ARMV6_RPI:-}
+QEMU_ARMV6_RPI=${QEMU_ARMV6_RPI:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -87,6 +89,8 @@ for arg in "$@"; do
         --toolprefix-loongarch=*) TOOLPREFIX_LOONGARCH="${arg#--toolprefix-loongarch=}" ;;
         --cc-loongarch=*)       CC_LOONGARCH="${arg#--cc-loongarch=}" ;;
         --qemu-loongarch=*)     QEMU_LOONGARCH="${arg#--qemu-loongarch=}" ;;
+        --toolprefix-armv6-rpi=*) TOOLPREFIX_ARMV6_RPI="${arg#--toolprefix-armv6-rpi=}" ;;
+        --qemu-armv6-rpi=*)     QEMU_ARMV6_RPI="${arg#--qemu-armv6-rpi=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -116,6 +120,9 @@ for arg in "$@"; do
             echo "                               toolchain ships a version-suffixed gcc"
             echo "                               only, e.g. loongarch64-linux-gnu-gcc-14)"
             echo "  --qemu-loongarch=CMD         override the loongarch qemu-system binary"
+            echo "  --toolprefix-armv6-rpi=PREFIX override the armv6-rpi cross-toolchain prefix"
+            echo "                               (e.g. arm-linux-gnueabihf-)"
+            echo "  --qemu-armv6-rpi=CMD         override the armv6-rpi qemu-system binary"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -507,6 +514,37 @@ if ! detect_qemu_system loongarch QEMU_LOONGARCH qemu-system-loongarch64; then
 fi
 
 ###############################################################################
+# armv6-rpi (forks/armv6-rpi, inaciose/xv6-armv6-rpi)
+###############################################################################
+# Named for the fork directory, not a bare ISA name like every other arch
+# above - there's no single natural "arm32" bare name to give it (unlike
+# riscv32/riscv64 or arm64, ~/c--'s own convention only has ONE generic
+# 32-bit ARM backend, "arm", and this repo has TWO real ARMv6/ARMv7
+# 32-bit ports - forks/armv6-rpi and forks/armv7-rpi - with no clear
+# winner for a shared/disambiguated bare name). Explicit exception to the
+# naming convention documented in this script's own header comment and
+# in CLAUDE.md, not an oversight.
+
+if ! detect_toolprefix armv6-rpi TOOLPREFIX_ARMV6_RPI elf32-littlearm \
+        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
+    echo "configure: warning: no arm toolchain on PATH (needed for forks/armv6-rpi)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
+    note_other_pkgmgr
+fi
+
+# forks/armv6-rpi/Makefile enforces no minimum QEMU version of its own.
+# qemu-system-arm is bundled in the qemu-system-arm apt package (a
+# SEPARATE package from qemu-system-misc, which covers riscv/mips/
+# loongarch above).
+if ! detect_qemu_system armv6-rpi QEMU_ARMV6_RPI qemu-system-arm; then
+    echo "configure: warning: no qemu-system-arm on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-arm" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -549,6 +587,10 @@ fi
     echo "export TOOLPREFIX_LOONGARCH=$TOOLPREFIX_LOONGARCH"
     echo "export CC_LOONGARCH=$CC_LOONGARCH"
     echo "export QEMU_LOONGARCH=$QEMU_LOONGARCH"
+    echo
+    echo "# armv6-rpi (forks/armv6-rpi - inaciose/xv6-armv6-rpi)"
+    echo "export TOOLPREFIX_ARMV6_RPI=$TOOLPREFIX_ARMV6_RPI"
+    echo "export QEMU_ARMV6_RPI=$QEMU_ARMV6_RPI"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -569,6 +611,8 @@ echo "  QEMU_MIPS           = $QEMU_MIPS"
 echo "  TOOLPREFIX_LOONGARCH = $TOOLPREFIX_LOONGARCH"
 echo "  CC_LOONGARCH         = $CC_LOONGARCH"
 echo "  QEMU_LOONGARCH       = $QEMU_LOONGARCH"
+echo "  TOOLPREFIX_ARMV6_RPI = $TOOLPREFIX_ARMV6_RPI"
+echo "  QEMU_ARMV6_RPI       = $QEMU_ARMV6_RPI"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
@@ -578,3 +622,4 @@ echo "  or: make build-riscv32 && make run-riscv32"
 echo "  or: make build-arm64 && make run-arm64"
 echo "  or: make build-mips && make run-mips"
 echo "  or: make build-loongarch && make run-loongarch"
+echo "  or: make build-armv6-rpi && make run-armv6-rpi (does not boot to a shell yet)"

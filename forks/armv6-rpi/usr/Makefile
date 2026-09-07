@@ -1,6 +1,12 @@
 include ../makefile.inc
 
-CFLAGS += -iquote ../
+# claude: -Wno-infinite-recursion - GCC false positive on sh.c's own
+# runcmd(), which is genuinely mutually-recursive across several
+# switch(cmd->type) cases (exec/redir/pipe/list/back), not actually
+# infinite - the same false positive already documented/fixed in every
+# other fork this project has brought up (see notes_debugging_techniques.txt
+# item 1).
+CFLAGS += -iquote ../ -Wno-infinite-recursion
 ASFLAGS += -I ../
 ULIB = ulib.o usys.o printf.o umalloc.o
 

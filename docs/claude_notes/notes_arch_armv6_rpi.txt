@@ -1,0 +1,254 @@
+notes_arch_armv6_rpi.txt
+========================
+
+Written: 2026-09-07, against commit ead0290 (the loongarch bring-up
+commit), during the armv6-rpi bring-up itself. Phase 4 of
+docs/claude_notes/build-and-test-plan.md, seventh port attempted from
+that phase's list, first of the four ARM board ports. Status: NOT fully
+working yet - six real bugs found and fixed, boot now progresses vastly
+further than the initial crash loop and reaches this kernel's own
+mmuinit0()/cmain() startup path on the correct board emulation, but no
+console output is reached yet - the remaining issue looks like it may be
+at the QEMU "-M raspi1ap" board/firmware-emulation level rather than
+something fixable from this kernel's own source (see "Bug 6" below).
+
+What this is, and the naming exception
+---------------------------------------
+forks/armv6-rpi is inaciose/xv6-armv6-rpi (2017), forked from rpi1's tip
+(zhiyihuang/xv6_rpi_port, 2014 - see the root README's fork-point table).
+Same MIT-xv6-descended kernel/user split as every other fork here,
+adapted for 32-bit ARMv6 (arm1176jzf-s, the real Raspberry Pi 1's CPU).
+
+Unlike every other arch wired up so far, this fork's Makefile targets
+use the FORK DIRECTORY NAME ("armv6-rpi"), not a bare ISA name - an
+explicit, discussed exception (see ./configure's own comment on this
+section): ~/c--'s own convention only has ONE generic 32-bit ARM backend
+("arm", targeting armv7ve+fp), but this repo has TWO real, different
+32-bit ARM ports to wire up (forks/armv6-rpi and forks/armv7-rpi), with
+no clear winner for a single shared/disambiguated bare name the way
+riscv32/riscv64 or arm64 had one. Revisit this if a real convention
+suggests itself once armv7-rpi is also brought up.
+
+There are also FOUR "ARM+rpi" forks total, and only two actually target
+QEMU: forks/rpi1/forks/rpi2 target REAL Raspberry Pi hardware directly
+(Alex Chadwick's "Baking Pi" tutorial-style GPU/mailbox driver code, SD-
+card kernel.img boot, no QEMU target anywhere in either Makefile) while
+forks/armv6-rpi/forks/armv7-rpi target QEMU (their own Makefiles already
+had a "qemu" target, using "-M versatilepb -cpu arm1176" - versatilepb
+being an unrelated ARM926EJ-S reference board, apparently the closest
+available QEMU CPU-model workaround back in 2017 before QEMU had real
+Raspberry Pi board emulation). This is why armv6-rpi was picked first
+for Phase 4: lowest-risk starting point among the four, since it at
+least SHIPPED with something resembling a working QEMU invocation.
+
+Toolchain: arm-linux-gnueabihf-gcc, already installed; qemu-system-arm, already installed
+---------------------------------------------------------------------------------------------
+Both were already on this box - no toolchain-detection gaps. Note
+qemu-system-arm is a SEPARATE apt package from qemu-system-misc (which
+covers riscv/riscv32/mips/loongarch above) - "sudo apt install
+qemu-system-arm" specifically.
+
+Bug 1 (real, fixed): -mfloat-abi=hard (toolchain default) conflicts with plain -march=armv6 (no FPU)
+----------------------------------------------------------------------------------------------------------
+Symptom: the very first build attempt failed compiling initcode.S:
+"cc1: error: '-mfloat-abi=hard': selected architecture lacks an FPU".
+
+Root cause: this fork's own makefile.inc only passes "-Wa,-march=armv6
+-Wa,-mcpu=arm1176jzf-s" in CFLAGS - "-Wa," flags go straight to the
+ASSEMBLER stage only, they do nothing to tell GCC'S OWN code generator
+what to target. This arm-linux-gnueabihf-gcc's real default (confirmed
+via "gcc -Q --help=target") is "-march=armv7-a+fp -mfloat-abi=hard".
+initcode.S is the one file actually compiled via ASFLAGS (see
+makefile.inc's own "build/%.o: %.S" rule) which had no -mfloat-abi
+override at all - plain "-march=armv6" alone has no guaranteed FPU, so
+gcc refused the toolchain's own hard-float default outright. Fixed
+narrowly first (added "-mfloat-abi=soft" to ASFLAGS), then superseded by
+Bug 4's broader fix below.
+
+Bug 2 (real, fixed): -fcommon needed for proc.h's "struct cpu cpus[NCPU];"
+---------------------------------------------------------------------------
+Same class of bug documented in multiple other notes_arch_*.txt files in
+this repo by now: proc.h declares "struct cpu cpus[NCPU];" with no
+"extern", #included into every .c file - worked when GCC defaulted to
+-fcommon (tentative definitions merged by the linker), broke ("multiple
+definition of `cpus`") once GCC 10 flipped that default. Fixed by adding
+-fcommon to CFLAGS rather than restructuring proc.h's own declaration.
+
+Bug 3 (real, fixed): dead libcsud.a/keyboard.o linkage
+-------------------------------------------------------
+LIBS included "libcsud.a" (Chadderz's Simple USB Driver, for real
+Raspberry Pi USB keyboard input - this port's own README even says "if
+you have troubles with the included libcsud.a, recompile csud... and
+copy libcsud.a in the project root" - an external, never-vendored
+dependency). Link failed outright ("cannot find libcsud.a"). Investigated
+whether it was genuinely needed: keyboard.s's own entry points
+(getKeyboard/saveKeys/keyLoop) are called from nowhere else in this
+tree - confirmed dead code, not reachable from main()/boot at all
+(interactive input goes through the UART console like every other fork
+here). Fixed by dropping both "libcsud.a" from LIBS and "keyboard.o"
+from OBJS - the resulting undefined-reference errors (UsbCheckForChange,
+KeyboardGetKeyDown, etc, all from keyboard.o alone) went away, confirming
+nothing else needed the missing library.
+
+Bug 4 (real, fixed): CFLAGS's "-Wa,-march=armv6" only restricted the assembler, not gcc's own codegen - real bug, not just latent risk
+--------------------------------------------------------------------------------------------------------------------------------------------
+The deeper version of Bug 1's own root cause. Every .c file compiled
+"successfully" with only "-Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s" (no
+gcc-level -march/-mcpu at all) - meaning gcc used its own real default
+(-march=armv7-a+fp) for actual code generation the whole time, and only
+the ASSEMBLER stage was restricted to armv6-legal encodings. This
+"worked" by accident until entry.s's own "bl mmuinit0" call: since
+mmu.c got compiled under gcc's real armv7-a default, the linker resolved
+that call as a Thumb-switching BLX instruction (confirmed via
+"arm-linux-gnueabihf-objdump -S kernel.elf": "80008018: fa000066 blx
+800081b8 <mmuinit0>", not a plain "bl") - QEMU's "-cpu arm1176" (a true
+ARMv6 core, no Thumb-2 support at all) then hit a genuine ARMv7/Thumb-2-
+only instruction inside the Thumb-mode code and faulted, over and over,
+with a repeating "Undefined Instruction" trap at PC 0x8004 (traced via
+"-d int,guest_errors" then confirmed via "-d in_asm" - see debugging
+technique notes).
+
+Fixed by replacing the "-Wa,..." flags with real gcc-level ones:
+"-mcpu=arm1176jzf-s -marm -mfloat-abi=soft" (in both CFLAGS and
+ASFLAGS - "-march=armv6" alongside "-mcpu=arm1176jzf-s" triggers its own
+gcc error, "switch conflicts with switch", since -mcpu already implies
+an exact architecture level - -mcpu alone is enough). "-marm" forces
+plain ARM (not Thumb) code generation outright, removing the state-
+switch question entirely - the right call for a freestanding kernel with
+no reason to ever be in Thumb state. Verified via the same objdump: the
+call site now reads "bl 80008260 <mmuinit0>", a plain, non-state-
+switching branch.
+
+Bug 5 (real, fixed): the port's own shipped QEMU board (versatilepb) shares NOTHING with this kernel's hardcoded Raspberry Pi hardware addresses
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+Once Bug 4 was fixed, boot progressed much further - but "-d
+int,guest_errors" now showed a stream of "Invalid write/read at addr
+0x20200000/0x20215xxx/0x2000Bxxx... region '(null)', reason: rejected".
+These are all in the 0x20000000+ range - the REAL Raspberry Pi 1
+(BCM2835) peripheral base address, used by this kernel's GPIO/mailbox/
+interrupt-controller code (see e.g. mmu.c's own _uart_init(), which
+writes real BCM2835 Mini-UART/GPIO register addresses). QEMU's
+"versatilepb" board (an ARM926EJ-S reference platform, unrelated to any
+real Raspberry Pi) has a COMPLETELY DIFFERENT peripheral memory map -
+none of those addresses correspond to anything real there, so every one
+of those accesses is silently rejected. The port's own "-M versatilepb
+-cpu arm1176" Makefile line was a workaround from before QEMU had real
+Raspberry Pi board emulation (2017-era) - matching CPU model, wrong
+board entirely.
+
+This host's QEMU 8.2.2 does have a real Raspberry Pi 1 A+ (BCM2835)
+machine type: "raspi1ap" ("qemu-system-arm -M help" also lists raspi0,
+raspi2b - no plain "raspi1" without the A+/model suffix). Switching to
+"-M raspi1ap" is the right fix given this kernel's own hardcoded
+addresses - confirmed via "info qtree"/"info mtree"-style reasoning
+that raspi1ap's own machine model actually instantiates the BCM2835
+GPIO/mailbox/interrupt-controller devices at those exact addresses.
+
+A second, related fix was needed alongside the board switch: "-kernel"
+under raspi1ap loads a RAW BINARY at physical 0x10000 (confirmed via
+"-d in_asm": first executed instruction was at PC 0x00010000, not
+0x00008000), not an ELF respecting its own e_entry/program headers the
+way versatilepb's loader did, and not the 0x8000 real-Pi-firmware-
+convention address this kernel.ld originally assumed either. kernel.ld
+already had an alternate base commented out ("/* . = 0x10000; */" right
+above the active "0x80008000" line) - strong evidence a previous
+maintainer already knew about this exact alternate load address, likely
+from testing under a different QEMU version/board at some point.
+Switched kernel.ld's VMA/LMA pair from 0x80008000/AT(0x8000) to
+0x80010000/AT(0x10000) - entry.S's own pre-MMU code only depends on a
+FIXED KZERO offset (+0x80000000), not on the specific low base value, so
+this is a safe, load-address-only change. Also switched "-kernel" to
+"kernel.img" (the raw binary objcopy already produces) instead of
+"kernel.elf", matching real Pi/raspi1ap firmware boot convention.
+
+Bug 6 (real, fixed): mmuinit0() prints a string literal before the MMU is enabled - the address isn't valid yet
+---------------------------------------------------------------------------------------------------------------------
+With Bug 5 fixed, boot reached a NEW, different repeating fault: a Data
+Abort (DFSR 0x8 = synchronous external abort - not a translation fault;
+the address decoded to something real-looking, just unbacked) at DFAR
+0x800103cc, immediately followed by a jump straight back to the kernel's
+own entry point (PC 0x10004) - a boot-time reset loop, not a normal
+exception being handled.
+
+Root-caused by reading the raw bytes at physical 0x103c0 onward via the
+QEMU monitor's "xp" command: they spelled out
+"..............\nBoot starting...\n" - the exact string literal argument
+to mmu.c's own "_puts("..............\nBoot starting...\n");" call,
+made from inside mmuinit0() itself, BEFORE the MMU-enable sequence later
+in that same function. _uart_init() (called on the same line, one
+statement earlier) is genuinely safe to call this early - it only
+touches raw, absolute, hardcoded MMIO physical addresses, position-
+independent by construction. A string literal is NOT position-
+independent this way: gcc has to load its LINKED (KERNBASE-relative,
+0x800xxxxx) address via a literal-pool reference, and that address isn't
+backed by anything until the MMU/KZERO switch later in entry.s actually
+runs. Confirmed the L1 page-table entry for this address was genuinely
+unset at fault time via the QEMU monitor too ("xp/1xw" on the computed
+PDX table-entry address read back 0x00000000).
+
+Cross-checked against ~/principia/kernel/COMPILE/9/bcm/startv6.s - a
+working, hardware-AND-QEMU-tested Plan 9 port for this exact real
+hardware (arm1176jzf-s/BCM2835) - whose own armstart() does no printing
+of any kind before its own "switch SB, SP, and PC into KZERO space"
+step; only after reaching _startpg does it call main(). Same pattern,
+independently confirming the fix: this xv6 port's own debug print was
+simply misplaced (and notably, EVERY OTHER _puts()/__puts() call in
+mmu.c past this one was already commented out by a previous maintainer -
+e.g. "//__puts("mmu started ...\n");" - only this first, earliest one had
+been left active, exactly the one most likely to run before the MMU is
+ready). Fixed by removing just this one _puts() call - _uart_init()
+itself is kept, since it's genuinely safe and does real hardware setup
+work.
+
+Bug 6, part 2 (open, NOT fixed): still no console output - looks like a QEMU raspi1ap firmware/armstub-level issue
+------------------------------------------------------------------------------------------------------------------------
+With the _puts() fix in place, the Data-Abort-triggered reset loop is
+gone - but a NEW steady-state loop remains: a repeating Prefetch Abort
+(IFSR 0x5 = translation fault, section) with IFAR 0x00010000 - i.e. an
+INSTRUCTION FETCH from the kernel's own low/physical entry address is
+failing translation, over and over. This trace also shows exactly ONE
+Data Abort right at the very start (DFAR 0x1c108000, before this
+kernel's own code has had any chance to run at all - still within the
+"Exception return from AArch32 mon to svc PC 0x448" window, which is
+QEMU's own internal EL3 armstub/firmware trampoline, not our code) -
+possibly the armstub itself probing something (a DTB, board config) at
+a computed high address, unrelated to anything in this kernel's own
+source.
+
+Confirmed via a raw-pty bypass (same technique as notes_arch_mips.txt's
+own bug 5 investigation - "-chardev pty,id=cm -serial chardev:cm
+-display none", then reading /dev/pts/N directly) that this is
+genuinely zero console output, not a host-capture artifact. QEMU also
+separately warns "Blocked re-entrant IO on MemoryRegion: bcm2835-fb at
+addr: 0x0" during at least one run, suggesting the raspi1ap board model's
+own internal framebuffer/mailbox emulation may be involved somewhere in
+this too.
+
+Given six real, independently-verified bugs already found and fixed
+this session (each confirmed via QEMU tracing, monitor memory
+inspection, and in one case cross-referenced against a working sibling
+port in an entirely different OS), and this remaining issue showing
+signs of being in QEMU's own raspi1ap board/firmware emulation rather
+than this kernel's own source, this was left open per the user's own
+explicit choice to stop here rather than continue chasing into QEMU-
+internal territory. Worth revisiting with fresh eyes, possibly informed
+by whatever's discovered bringing up forks/armv7-rpi or forks/rpi1/
+forks/rpi2 (rpi1's own tvinit()/trap.c already confirmes armv6-rpi's own
+exception-vector-install code is structured correctly and modeled on a
+working sibling, so that specific piece is very unlikely to be the gap).
+
+Verification so far
+--------------------
+  make CROSSCOMPILE=arm-linux-gnueabihf- kernel.elf
+    -> builds clean, all 6 bugs above fixed
+  qemu-system-arm -M raspi1ap -nographic -kernel kernel.img
+    -> boots through the real BCM2835 GPIO/mailbox path without any
+       invalid-MMIO-access noise, reaches this kernel's own mmuinit0()
+       and past it - but no console output yet, and a repeating
+       Prefetch Abort loop that looks QEMU-firmware-level, not fixed.
+
+Wired up in ./configure and the top-level Makefile as build-armv6-rpi/
+run-armv6-rpi only (per the user's own "at least connect it... even if
+it fails") - no test-armv6-rpi/clean-armv6-rpi/kill-armv6-rpi yet, and
+not folded into build-all/run-all/test-all, since there is no console
+output yet to build a real pass/fail signal around.

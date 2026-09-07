@@ -132,7 +132,20 @@ void mmuinit0(void)
   uint pa, va, *p;
   
   _uart_init();
-  _puts("..............\nBoot starting...\n");
+  // claude: dropped "_puts("..............\nBoot starting...\n");" - this
+  // ran before the MMU is enabled (see below), where only PC-relative
+  // code and raw absolute constants (like _uart_init's own hardcoded
+  // MMIO addresses) are safe. A string literal argument is neither:
+  // gcc loads its LINKED address (0x800xxxxx, KERNBASE-relative), which
+  // isn't backed by anything until the MMU/KZERO switch below actually
+  // runs - confirmed via QEMU's "-d int,guest_errors" (a repeating Data
+  // Abort, DFSR 0x8 = external abort, DFAR pointing exactly at this
+  // string's own .rodata bytes) plus gdb/monitor inspection showing the
+  // corresponding L1 page-table entry genuinely unset at fault time.
+  // ~/principia/kernel/COMPILE/9/bcm/startv6.s's own working armstart()
+  // for the same real hardware (arm1176jzf-s/BCM2835) confirms the
+  // pattern: no printing at all before the "switch SB, SP, and PC into
+  // KZERO space" step - only after. See notes_arch_armv6_rpi.txt.
 
 
 	// diable mmu

@@ -402,3 +402,51 @@ every chardev QEMU actually instantiated and each one's real backend
 visible, so a device wired to one will look identical to "getting no
 output" under `-nographic` even if the guest is writing to it
 correctly.
+
+18. When a repeating exception loop's "what got read/written" is ambiguous from a trace alone, decode the raw bytes at the fault address via the QEMU monitor's `xp`
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+`-d int,guest_errors` gives the fault type and address (DFAR/IFAR) but
+not what's actually *there* - during armv6-rpi bring-up, a repeating
+Data Abort at a suspicious-looking address (`0x800103cc`, matching the
+kernel's own KERNBASE offset) turned out to be readable directly: `echo
+"xp/8xw 0x103c0" | nc -U /path/to/monitor.sock` (a plain TCP/unix
+monitor, no `-S` needed if the loop is steady-state - any snapshot mid-
+loop shows the same state) dumped the raw words at that physical
+address, and decoding them by hand as little-endian bytes spelled out an
+exact string literal from the kernel's own source
+(`"..............\nBoot starting...\n"`, from a `_puts()` call) - proving
+in one step that the fault was a compiler-generated absolute-address
+load for that literal, not a hardware/MMIO issue. The same technique
+resolves "is this virtual address actually mapped" questions directly:
+compute the PDX/PTX table index by hand from the fault address and the
+port's own `mmu.h`-style shift/mask macros, then `xp` the physical
+address of that specific page-table slot - a zero (or unexpected) value
+there is direct proof of a missing/wrong mapping, no guessing from
+symptoms required. This is the same "ask the emulator directly" family
+as items 11/16, applied to arbitrary physical memory content instead of
+trap history or the address-space layout.
+
+19. A second, unrelated OS/kernel targeting the exact same real hardware is a strong cross-check for "is this sequence of boot steps actually correct"
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+When a from-scratch ARM/MMU boot sequence (disable MMU, zero page
+tables, build mappings, enable MMU, switch to the high/KZERO address
+space, only then call into C) is suspected of doing something in the
+wrong order, a same-repo reference in another architecture's own port
+doesn't help - but a genuinely independent, already-hardware-verified
+kernel targeting the SAME physical board is excellent ground truth, if
+one happens to be available (in this case `~/principia/kernel/COMPILE/
+9/bcm/startv6.s`, a Plan 9 port for the same arm1176jzf-s/BCM2835
+hardware this session's xv6 port targets, tested on both QEMU and real
+Raspberry Pi 1 hardware). Comparing xv6-armv6-rpi's own boot sequence
+against it immediately confirmed a real bug by omission: the working
+Plan 9 version does no printing of any kind before its own MMU-enable-
+and-KZERO-switch step; the xv6 port had one stray early debug print left
+active (with every LATER debug print in the same function already
+commented out by a previous maintainer - itself a clue the author had
+already run into some version of this same problem and partially, not
+fully, worked around it). Worth remembering as a search strategy: when
+debugging a from-scratch boot sequence for real, well-documented
+hardware, check whether the user (or the wider ecosystem) has any other
+kernel already working on that exact board - the actual instruction
+ORDER of a working reference is often more reliable evidence than
+reasoning about ARM/MMU semantics from the architecture manual alone.

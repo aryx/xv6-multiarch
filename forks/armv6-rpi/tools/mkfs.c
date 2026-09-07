@@ -11,7 +11,15 @@
 #include "stat.h"
 #include "param.h"
 
+// claude: guarded - modern glibc's own <assert.h> (already #included
+// above) now provides a "static_assert" macro too (aliasing C11's
+// _Static_assert, pulled in whenever gcc's default -std= is C11 or
+// later, which it is on this host) - this file's own hand-rolled
+// version predates that and is functionally equivalent, so skip
+// redefining it rather than erroring under -Werror.
+#ifndef static_assert
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
+#endif
 
 int nblocks = 985;
 int nlog = LOGSIZE;

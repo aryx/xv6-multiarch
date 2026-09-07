@@ -50,6 +50,8 @@ QEMU_MIPS ?= qemu-system-mipsel
 TOOLPREFIX_LOONGARCH ?=
 CC_LOONGARCH ?=
 QEMU_LOONGARCH ?= qemu-system-loongarch64
+TOOLPREFIX_ARMV6_RPI ?=
+QEMU_ARMV6_RPI ?= qemu-system-arm
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -59,6 +61,7 @@ QEMU_LOONGARCH ?= qemu-system-loongarch64
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
         build-mips run-mips check-mips-toolchain \
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
+        build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -355,6 +358,40 @@ clean-loongarch:
 
 kill-loongarch:
 	-pkill -f '$(QEMU_LOONGARCH)' 2>/dev/null || true
+
+###############################################################################
+# armv6-rpi (forks/armv6-rpi, inaciose/xv6-armv6-rpi)
+###############################################################################
+# Named for the fork directory, not a bare ISA name - see ./configure's
+# own comment on this same section for why (no single natural "arm32"
+# bare name given this repo has two real ARMv6/ARMv7 32-bit ports).
+#
+# claude: forks/armv6-rpi/makefile.inc's own toolchain variable is
+# "CROSSCOMPILE", not "TOOLPREFIX" like every other fork here - passed
+# through as-is below rather than renamed, to keep this repo's own
+# changes to that file minimal.
+#
+# No test-armv6-rpi/clean-armv6-rpi/kill-armv6-rpi yet, and not folded
+# into build-all/run-all/test-all: six real bugs were found and fixed
+# this bring-up (see notes_arch_armv6_rpi.txt) and boot now progresses
+# vastly further than before - past the point where earlier bugs caused
+# an immediate crash loop - but it does not reach a shell yet. The last
+# remaining issue looks like it may be at the QEMU "-M raspi1ap" board-
+# emulation/firmware level rather than something fixable from this
+# kernel's own source, so build-armv6-rpi/run-armv6-rpi are wired up
+# (per the user's own "at least connect it... even if it fails"), but
+# there is no reliable pass/fail console signal yet for a scripted test.
+check-armv6-rpi-toolchain:
+	@if [ "$(TOOLPREFIX_ARMV6_RPI)" = NONE ] || [ "$(QEMU_ARMV6_RPI)" = NONE ]; then \
+		echo "Makefile: armv6-rpi toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-armv6-rpi: check-armv6-rpi-toolchain
+	$(MAKE) -C forks/armv6-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV6_RPI) QEMU=$(QEMU_ARMV6_RPI) kernel.elf
+
+run-armv6-rpi: check-armv6-rpi-toolchain
+	$(MAKE) -C forks/armv6-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV6_RPI) QEMU=$(QEMU_ARMV6_RPI) qemu
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
