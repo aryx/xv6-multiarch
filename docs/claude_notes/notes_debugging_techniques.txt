@@ -152,7 +152,19 @@ same way (see notes_arch_i386.txt's TIMEOUT note) - a real, reproducible
 failure on this machine with no other load, not a CI-runner-specific
 flake, exactly the kind of thing worth catching before spending a CI
 run's wall-clock time (and, on this project, the reviewer's patience)
-on it.
+on it. A third example, `ARCH=arm` (forks/armv7-rpi): the fork's own
+"qemu" Makefile target ran a bare `clear` before starting QEMU, which
+had worked in every interactive terminal session this port was ever
+tested from - but `clear` exits non-zero with no `TERM` set, which is
+exactly the environment a Docker build runs in, and a plain `@` on a
+make recipe line silences echoing the command, not its exit-status
+handling, so the whole recipe aborted before QEMU ever started. The
+general pattern across all three: a real terminal's environment
+(TERM set, Recommends-pulled packages present, a fast unloaded machine)
+quietly supplies things a Docker/CI environment does not, and the gap
+only shows up once something actually runs without that scaffolding -
+which is precisely why running the container locally, not just reading
+the Dockerfile, is the useful step.
 
 7. When a fork's Makefile has an unusual pattern, check whether its siblings share it
 ------------------------------------------------------------------------------------------
