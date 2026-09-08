@@ -8,19 +8,17 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only seven
+# for the general reasoning this one reuses. Simpler here: only eight
 # arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32, arm,
-# arm64 - build-and-test-plan.md's Phases 1, 2, and Phase 4), not all
-# thirteen forks/ - extend the ARCH case below (both the apt-get and the
-# build/test one) as more arches get their own ./configure detection,
-# matching build.md's own Phase 4 order. loongarch/mips/the other three
-# ARM board ports are already wired into ./configure/the top-level
-# Makefile but not added here yet: mips doesn't have a passing
-# test-<arch> to run in CI yet (see notes_arch_mips.txt's open bug), and
-# loongarch/armv6-rpi/rpi1/rpi2 simply haven't had this step done yet -
-# nothing blocking it technically (loongarch's own toolchain turned out
-# to be a native arm64 apt package, no binfmt_misc emulation needed, see
-# notes_arch_loongarch.txt).
+# arm64, mips - build-and-test-plan.md's Phases 1, 2, and Phase 4), not
+# all thirteen forks/ - extend the ARCH case below (both the apt-get and
+# the build/test one) as more arches get their own ./configure
+# detection, matching build.md's own Phase 4 order. loongarch/the other
+# three ARM board ports are already wired into ./configure/the
+# top-level Makefile but not added here yet - simply haven't had this
+# step done yet, nothing blocking it technically (loongarch's own
+# toolchain turned out to be a native arm64 apt package, no binfmt_misc
+# emulation needed, see notes_arch_loongarch.txt).
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own
@@ -102,12 +100,33 @@ RUN case "$ARCH" in \
       # "docker build --build-arg ARCH=arm64" before touching CI).
       arm64)   apt-get install -y --no-install-recommends \
                  gcc-aarch64-linux-gnu qemu-system-arm ipxe-qemu ;; \
+      # claude: qemu-system-mips (NOT qemu-system-misc, which covers
+      # riscv/loongarch - see notes_arch_mips.txt's own "Toolchain"
+      # section) is what actually provides qemu-system-mipsel.
+      # libc6-dev-mipsel-cross (provides stdc-predef.h and friends) is
+      # only a Recommends of gcc-mipsel-linux-gnu, stripped by
+      # --no-install-recommends - same shape as i386's own
+      # libc6-dev-i386-cross below, just easy to miss since this port's
+      # own bring-up never needed a fresh apt install of the toolchain.
+      # ipxe-qemu (same package as arm64's own efi-virtio.rom need
+      # above) also ships efi-pcnet.rom, needed for the malta board's
+      # emulated PCNET NIC even though this kernel never touches the
+      # network - same "romfile" class of gap either way. seabios (also
+      # only a Recommends) ships vgabios-cirrus.bin, needed for malta's
+      # emulated Cirrus VGA card, same reason - this board model wires
+      # up a whole legacy PC-compatible peripheral set (see
+      # notes_arch_mips.txt's own "What this is" section) regardless of
+      # whether this kernel's own drivers ever touch most of it.
+      mips)    apt-get install -y --no-install-recommends \
+                 gcc-mipsel-linux-gnu libc6-dev-mipsel-cross \
+                 qemu-system-mips ipxe-qemu seabios ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \
                  gcc-i686-linux-gnu libc6-dev-i386-cross \
                  gcc-x86-64-linux-gnu qemu-system-x86 \
                  gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu \
-                 qemu-system-arm ipxe-qemu ;; \
+                 qemu-system-arm ipxe-qemu \
+                 gcc-mipsel-linux-gnu libc6-dev-mipsel-cross qemu-system-mips ;; \
       *) echo "Dockerfile: unknown ARCH=$ARCH" >&2; exit 1 ;; \
     esac
 
@@ -144,12 +163,12 @@ RUN ./configure
 # Dockerfile's own source of truth for what ARCH=all covers - keep it in
 # lockstep with the apt-get "all" case above, not with build-all/test-all.
 RUN if [ "$ARCH" = all ]; then \
-      make build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm; \
+      make build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm build-arm64 build-mips; \
     else \
       make "build-$ARCH"; \
     fi
 RUN if [ "$ARCH" = all ]; then \
-      make test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm; \
+      make test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm test-arm64 test-mips; \
     else \
       make "test-$ARCH"; \
     fi

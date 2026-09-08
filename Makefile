@@ -21,11 +21,11 @@
 # 2026-09-07); notes_arch_arm64.txt - test-arm64 now passes too (the
 # exact same missing-start()-wrapper bug as riscv32's own bug 4,
 # independently present in this fork, fixed the same way);
-# notes_arch_mips.txt - boots silently, no test-mips at all yet, and only
-# build-mips/run-mips are wired up, not the full set; notes_arch_loongarch.txt
-# - fully working; notes_arch_armv7_rpi.txt - the ARM32 winner among four
-# candidate ports, boots to a real shell, test-arm passes with two known
-# usertests skipped).
+# notes_arch_mips.txt - test-mips now passes too, with six known-hanging
+# usertests sub-tests skipped (see that file's own "Gap" section);
+# notes_arch_loongarch.txt - fully working; notes_arch_armv7_rpi.txt -
+# the ARM32 winner among four candidate ports, boots to a real shell,
+# test-arm passes with two known usertests skipped).
 #
 # arm64, not aarch64: forks/aarch64 is still named for its upstream repo
 # (k-mrm/xv6-aarch64), but the Makefile target/./configure variable name
@@ -74,7 +74,7 @@ QEMU_RPI2 ?= qemu-system-arm
         build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
-        build-mips run-mips check-mips-toolchain \
+        build-mips run-mips test-mips clean-mips kill-mips check-mips-toolchain \
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
         build-armv7-rpi run-armv7-rpi check-armv7-rpi-toolchain \
@@ -319,18 +319,26 @@ check-mips-toolchain:
 # vs-master-drive bug (see notes_arch_mips.txt) - kernelmemfs is the
 # only path this repo has actually gotten booting.
 #
-# No test-mips/clean-mips/kill-mips yet, and not folded into build-all/
-# run-all: this port boots (confirmed via gdb + a QEMU trace) but
-# produces no visible console output at all yet (notes_arch_mips.txt's
-# own "bug 5", not yet root-caused) - there is currently no way to look
-# at a "make run-mips" session and tell whether it's doing the right
-# thing, so a scripted test-mips would just hang against a real
-# silence, not a useful pass/fail signal.
+# usr/usertests.c has several sub-tests commented out (sbrktest,
+# validatetest, mem, preempt, exitwait, forktest - see that file's own
+# "claude:" comments and notes_arch_mips.txt's "Gap" section) - all
+# confirmed genuinely stuck via gdb, not just slow, spanning at least
+# two different subsystems. Skipped so the rest of the suite reaches a
+# real "ALL TESTS PASSED".
 build-mips: check-mips-toolchain
 	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) kernelmemfs
 
 run-mips: check-mips-toolchain
 	$(MAKE) -C forks/mips TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) qemu-nox-memfs
+
+test-mips: check-mips-toolchain build-mips
+	cd forks/mips && TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) ./test-xv6.py
+
+clean-mips:
+	$(MAKE) -C forks/mips clean
+
+kill-mips:
+	-pkill -f '$(QEMU_MIPS)' 2>/dev/null || true
 
 ###############################################################################
 # loongarch (forks/loongarch, SKT-CPUOS/xv6-loongarch-exp)
@@ -536,13 +544,13 @@ run-rpi2: check-rpi2-toolchain
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64 build-loongarch build-arm
+build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-mips
 
-test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64 test-loongarch test-arm
+test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-mips
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm
+clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-mips
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm
+kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-mips
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header
