@@ -1,11 +1,5 @@
-*~
-_*
-*.o
-*.d
-*.sym
 *.img
 /mkfs/mkfs
 /kernel/kernel
 /user/usys.S
-.gdbinit
 TAGS

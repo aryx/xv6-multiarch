@@ -1,11 +1,5 @@
-*~
-_*
 .*.swp
-*.o
-*.d
-*.sym
 *.img
-vectors.S
 mkfs
 .gdbinit*
 out

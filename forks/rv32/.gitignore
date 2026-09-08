@@ -4,14 +4,11 @@
 # these are checked-in source; unlike forks/rpi1's source/fs.img or
 # forks/loongarch's ramdisk.h, this port's Makefile builds fs.img fresh
 # from mkfs + UPROGS every time, so nothing here needs to be tracked.
-# (per-program *.asm disassembly listings are covered by the toplevel
-# .gitignore's *.asm)
+# (per-program *.asm disassembly listings, *.sym files, and the linked
+# "_name" user binaries are covered by the toplevel .gitignore.)
 kernel/kernel
-kernel/*.sym
 mkfs/mkfs
 fs.img
-user/*.sym
 user/initcode
 user/initcode.out
 user/usys.S
-user/_*

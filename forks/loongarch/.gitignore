@@ -1,12 +1,7 @@
-# Prerequisites
-*.d
-
 # Object files
-*.o
 *.ko
 *.obj
 *.elf
-*.sym
 
 # Linker output
 *.ilk
@@ -55,7 +50,6 @@ dkms.conf
 .vscode/*
 /kernel/kernel
 fs.img
-_*
 .gdb_history
 mkfs
 initcode
