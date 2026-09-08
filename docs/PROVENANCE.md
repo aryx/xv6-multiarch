@@ -34,7 +34,7 @@ each). This table is the current answer to "where did `<upstream>` end up":
 | michaelengel/xv6-rv32 | `rv32` | `forks/riscv32` |
 | michaelengel/xv6-d1 | `d1` | `forks/d1` (unchanged) |
 | SKT-CPUOS/xv6-loongarch-exp | `loongarch` | `forks/loongarch` (unchanged) |
-| patha454/xv6_pi_mp | `pi_mp` | `forks/arm64-pi3` |
+| patha454/xv6_pi_mp | `pi_mp` | `forks/arm-pi3` (32-bit ARM despite the "AArch64" description - see CLAUDE.md) |
 | k-mrm/xv6-rpi4 | `rpi4` | `forks/arm64-pi4` |
 
 Standalone branches (`git branch -a`) still use the *original* names listed

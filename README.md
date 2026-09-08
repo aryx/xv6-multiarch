@@ -39,7 +39,9 @@ arch/
   d1/           michaelengel/xv6-d1       — 64-bit RISC-V, Allwinner D1 (2021-2022)
   loongarch/    SKT-CPUOS/xv6-loongarch-exp — LoongArch (2022-2023)
   pi_mp/        patha454/xv6_pi_mp        — AArch64 MP, Raspberry Pi 3 (2019)
-                (now forks/arm64-pi3/)
+                (now forks/arm-pi3/ - despite the "AArch64" description,
+                its Makefile only builds 32-bit ARM code, real Pi 3 MP
+                hardware in AArch32 compat mode, see CLAUDE.md)
   rpi4/         k-mrm/xv6-rpi4            — AArch64, real Raspberry Pi 4 hardware (2022)
                 (now forks/arm64-pi4/)
 ```

@@ -43,7 +43,7 @@
 # A SECOND, different kind of rename, also done 2026-09-08: forks/rpi1,
 # forks/rpi2, forks/armv6-rpi, forks/pi_mp, forks/rpi4, and forks/x86_64
 # were renamed to forks/arm-pi1, forks/arm-pi2, forks/arm-pi1-bis,
-# forks/arm64-pi3, forks/arm64-pi4, and forks/amd64-jserv respectively -
+# forks/arm-pi3, forks/arm64-pi4, and forks/amd64-jserv respectively -
 # NOT single-ISA-representative promotions like arm/arm64/riscv64/i386/
 # riscv32 above (each of those five still has its own official ISA
 # representative: forks/arm for ARM32, forks/arm64 for AArch64,
@@ -53,9 +53,14 @@
 # reason about (related forks now sort together by prefix). forks/arm-pi1
 # and forks/arm-pi1-bis both target the literal same real board (ARMv6
 # Raspberry Pi 1/Model B - zhiyihuang's and inaciose's independent
-# ports); forks/arm64-pi3 and forks/arm64-pi4 target DIFFERENT real
-# boards (Pi 3 vs Pi 4) under the same 64-bit ARM ISA, so "-pi3"/"-pi4"
-# rather than a "-bis" pair; forks/amd64-jserv is jserv's independent,
+# ports). forks/pi_mp's own upstream README says "AArch64" but its
+# Makefile only ever builds 32-bit ARM code (arm-none-eabi-,
+# -mcpu=cortex-a7) - real Pi 3 MP hardware, in AArch32 compatibility
+# mode on its ARMv8 chip, not a 64-bit kernel - so it joined the "arm"
+# prefix as forks/arm-pi3 (caught and fixed 2026-09-08, same day as an
+# initial, incorrect forks/arm64-pi3 rename); forks/rpi4 (genuinely
+# AArch64, confirmed on real Pi 4 hardware) stayed under "arm64" as
+# forks/arm64-pi4. forks/amd64-jserv is jserv's independent,
 # fully-working x86-64 port, grouped under the "amd64" ISA prefix
 # alongside MIT's own forks/amd64 rather than left under its old
 # upstream-repo name. See docs/PROVENANCE.md for the upstream-repo ->

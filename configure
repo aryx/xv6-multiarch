@@ -51,16 +51,20 @@ set -eu
 # repo's own top-level Makefile header comment for the full reasoning):
 # forks/rpi1, forks/rpi2, forks/armv6-rpi, forks/pi_mp, forks/rpi4, and
 # forks/x86_64 were renamed to forks/arm-pi1, forks/arm-pi2,
-# forks/arm-pi1-bis, forks/arm64-pi3, forks/arm64-pi4, and
+# forks/arm-pi1-bis, forks/arm-pi3, forks/arm64-pi4, and
 # forks/amd64-jserv - an ISA-PREFIXED GROUPING, not a single-ISA-
 # representative promotion (each still has its own separate official
 # representative: forks/arm, forks/arm64, forks/amd64). Done ahead of
 # the factorization phase to make related forks sort together, while
 # keeping them genuinely distinct builds - forks/arm-pi1 and
 # forks/arm-pi1-bis target the literal same real board (independent
-# ports), forks/arm64-pi3/forks/arm64-pi4 target different real boards
-# under the same 64-bit ARM ISA. See docs/PROVENANCE.md for the
-# upstream-repo -> current-forks-path mapping table.
+# ports). forks/pi_mp joined "arm", not "arm64", despite its own
+# upstream README saying "AArch64" - its Makefile only ever builds
+# 32-bit ARM code (arm-none-eabi-), real Pi 3 MP hardware in AArch32
+# compatibility mode on its ARMv8 chip, not a 64-bit kernel (caught and
+# corrected 2026-09-08 from an initial, wrong forks/arm64-pi3 rename).
+# See docs/PROVENANCE.md for the upstream-repo -> current-forks-path
+# mapping table.
 #
 # Scope: riscv64, i386, amd64-jserv, amd64, riscv32, arm64, mips,
 # loongarch, arm-pi1-bis, arm, arm-pi1, and arm-pi2 so far - Phases 1, 2

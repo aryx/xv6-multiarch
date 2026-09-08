@@ -90,18 +90,24 @@ via `git log --follow`/`git blame -C` after each one):
    `forks/arm`, `forks/arm64`, `forks/amd64`): `forks/rpi1`, `forks/rpi2`,
    `forks/armv6-rpi`, `forks/pi_mp`, `forks/rpi4`, and `forks/x86_64`
    were renamed to `forks/arm-pi1`, `forks/arm-pi2`, `forks/arm-pi1-bis`,
-   `forks/arm64-pi3`, `forks/arm64-pi4`, and `forks/amd64-jserv` - real,
+   `forks/arm-pi3`, `forks/arm64-pi4`, and `forks/amd64-jserv` - real,
    distinct peer/derivative ports grouped under a shared ISA prefix
    purely to make the eventual factorization-phase merge easier to
    reason about (related forks now sort together). `forks/arm-pi1` and
    `forks/arm-pi1-bis` target the literal same real board (ARMv6
    Raspberry Pi 1/Model B - zhiyihuang's and inaciose's independent
-   ports, hence "-bis" for the second one); `forks/arm64-pi3` and
-   `forks/arm64-pi4` target DIFFERENT real boards (Pi 3 vs Pi 4) under
-   the same 64-bit ARM ISA, so no "-bis"; `forks/amd64-jserv` is jserv's
-   independent, fully-working x86-64 port grouped alongside MIT's own
-   `forks/amd64`, not a derivative of it. See `docs/PROVENANCE.md` for
-   the upstream-repo -> current-forks-path mapping table.
+   ports, hence "-bis" for the second one); `forks/pi_mp`'s upstream
+   README describes it as "AArch64" but its Makefile only ever builds
+   32-bit ARM code (`arm-none-eabi-`, `-mcpu=cortex-a7`) - real
+   multiprocessing on Pi 3 hardware, in AArch32 compatibility mode on
+   its ARMv8 chip, not a 64-bit kernel - so it joined the `arm` prefix
+   as `forks/arm-pi3`, not `arm64-pi3` as first (incorrectly) renamed
+   2026-09-08 (caught and fixed the same day); `forks/arm64-pi4` (real
+   Pi 4, genuinely AArch64) stayed under `arm64`; `forks/amd64-jserv` is
+   jserv's independent, fully-working x86-64 port grouped alongside
+   MIT's own `forks/amd64`, not a derivative of it. See
+   `docs/PROVENANCE.md` for the upstream-repo -> current-forks-path
+   mapping table.
 
 ## Adding a new arch (Phase 4)
 
