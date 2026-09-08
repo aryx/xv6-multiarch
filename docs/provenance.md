@@ -13,23 +13,22 @@ fresh `git init` with nothing recoverable — but its `kernel/i386`,
 
 ## Ports and where they came from
 
-```
-forks/
-  i386           mit-pdos/xv6-public          the original teaching OS (2006-2020)
-  amd64          MIT xv6-riscv, pre-riscv     MIT's abandoned x86-64 port (2018)
-  amd64-jserv    jserv/xv6-x86_64             a maintained x86-64 port (2013-2023)
-  riscv64        mit-pdos/xv6-riscv           CURRENT MIT teaching OS (2019-present)
-  riscv32        michaelengel/xv6-rv32        32-bit RISC-V, qemu (2020-2021)
-  mips           nullpo-head/xv6-mips         MIPS (2014-2016)
-  loongarch      SKT-CPUOS/xv6-loongarch-exp  LoongArch (2022-2023)
-  arm-pi1        zhiyihuang/xv6_rpi_port      ARMv6, Raspberry Pi 1 (2014)
-  arm-pi2        zhiyihuang/xv6_rpi2_port     ARMv7, Raspberry Pi 2/3 (2017-2022)
-  arm-pi1-bis    inaciose/xv6-armv6-rpi       ARMv6, Raspberry Pi B (2017)
-  arm            inaciose/xv6-armv7-rpi       ARMv7 Cortex-A15/A7, Banana Pi (2017)
-  arm-pi3        patha454/xv6_pi_mp           AArch32 MP, Raspberry Pi 3 (2019)
-  arm64          k-mrm/xv6-aarch64            64-bit ARM (2021-2023)
-  arm64-pi4      k-mrm/xv6-rpi4               AArch64, real Raspberry Pi 4 hardware (2022)
-```
+| `forks/` | Upstream source | Description |
+|---|---|---|
+| `i386` | [mit-pdos/xv6-public](https://github.com/mit-pdos/xv6-public) | the original teaching OS (2006-2020) |
+| `amd64` | [mit-pdos/xv6-riscv](https://github.com/mit-pdos/xv6-riscv), pre-riscv | MIT's abandoned x86-64 port (2018) |
+| `amd64-jserv` | [jserv/xv6-x86_64](https://github.com/jserv/xv6-x86_64) | a maintained x86-64 port (2013-2023) |
+| `riscv64` | [mit-pdos/xv6-riscv](https://github.com/mit-pdos/xv6-riscv) | CURRENT MIT teaching OS (2019-present) |
+| `riscv32` | [michaelengel/xv6-rv32](https://github.com/michaelengel/xv6-rv32) | 32-bit RISC-V, qemu (2020-2021) |
+| `mips` | [nullpo-head/xv6-mips](https://github.com/nullpo-head/xv6-mips) | MIPS (2014-2016) |
+| `loongarch` | [SKT-CPUOS/xv6-loongarch-exp](https://github.com/SKT-CPUOS/xv6-loongarch-exp) | LoongArch (2022-2023) |
+| `arm-pi1` | [zhiyihuang/xv6_rpi_port](https://github.com/zhiyihuang/xv6_rpi_port) | ARMv6, Raspberry Pi 1 (2014) |
+| `arm-pi2` | [zhiyihuang/xv6_rpi2_port](https://github.com/zhiyihuang/xv6_rpi2_port) | ARMv7, Raspberry Pi 2/3 (2017-2022) |
+| `arm-pi1-bis` | [inaciose/xv6-armv6-rpi](https://github.com/inaciose/xv6-armv6-rpi) | ARMv6, Raspberry Pi B (2017) |
+| `arm` | [inaciose/xv6-armv7-rpi](https://github.com/inaciose/xv6-armv7-rpi) | ARMv7 Cortex-A15/A7, Banana Pi (2017) |
+| `arm-pi3` | [patha454/xv6_pi_mp](https://github.com/patha454/xv6_pi_mp) | AArch32 MP, Raspberry Pi 3 (2019) |
+| `arm64` | [k-mrm/xv6-aarch64](https://github.com/k-mrm/xv6-aarch64) | 64-bit ARM (2021-2023) |
+| `arm64-pi4` | [k-mrm/xv6-rpi4](https://github.com/k-mrm/xv6-rpi4) | AArch64, real Raspberry Pi 4 hardware (2022) |
 
 14 ports covering 8 instruction sets (x86, x86-64, ARM32, AArch64, RV64,
 RV32, MIPS, LoongArch), assembled from 13 distinct upstream repositories —
