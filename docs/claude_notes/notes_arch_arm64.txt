@@ -30,6 +30,19 @@ directly - "in qemu-system-aarch64, default EL is 1" per its own
 comment, so unlike RISC-V's M-mode-to-S-mode `mret` dance, there is no
 privilege-level transition at boot to get wrong here at all).
 
+Family relationships, for the record: forks/rpi4 (k-mrm/xv6-rpi4, 2022,
+confirmed on real Raspberry Pi 4B hardware per its own README) is a
+*verified* real git fork partway down THIS port's own history (root
+README's fork-point table: `git merge-base` against k-mrm's own
+xv6-aarch64 confirms it) - same author, real Pi 4 follow-up to this
+QEMU-targeted aarch64 port. Genealogically rpi4 has nothing to do with
+the separate rpi1/rpi2/armv6-rpi/armv7-rpi ARM32 "Pi" family (see
+notes_arch_rpi1.txt/notes_arch_rpi2.txt) despite the shared "Pi"
+branding - it descends from this 64-bit port instead. rpi4 has not been
+brought up in this repo's Phase 4 QEMU work yet (its own README says
+QEMU support needs a hand-patched fork of QEMU, not mainline) - no
+notes_arch_rpi4.txt exists yet.
+
 Toolchain: aarch64-linux-gnu-gcc, already installed - no gaps
 ------------------------------------------------------------------
 Unlike every prior arch in this repo, aarch64 needed no toolchain

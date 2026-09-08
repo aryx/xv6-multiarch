@@ -38,6 +38,15 @@ secondary-CPU boot gate in entry.S - a real, working piece of SMP
 bring-up code, unlike the sibling forks/armv7-rpi port's own complete
 absence of one (see notes_arch_armv7_rpi.txt's own open "Gap").
 
+Family relationships, for the record: forks/pi_mp (patha454/xv6_pi_mp,
+2019, real Raspberry Pi 3 MP hardware) is a *verified* real git fork
+partway down THIS port's own history (root README's fork-point table:
+`git merge-base` against zhiyihuang/xv6_rpi2_port confirms it), not off
+MIT directly and not off rpi1. pi_mp has not been brought up in this
+repo's Phase 4 QEMU work yet - no notes_arch_pi_mp.txt exists - so
+nothing here has been verified to transfer to it; noted only so a future
+rpi2-adjacent bring-up session knows the relationship exists.
+
 Toolchain: arm-linux-gnueabihf-gcc/qemu-system-arm, already installed - no gaps
 --------------------------------------------------------------------------------------
 Unlike every other ARM fork brought up this phase, "make hw=rpi2

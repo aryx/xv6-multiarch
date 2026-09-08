@@ -26,6 +26,14 @@ bug found in this third session - see "Bug 12" below - and a workaround,
 not a fix, of two known-broken usertests sub-tests, see "Gap 3
 resolution").
 
+Confirmed 2026-09-08: the bare "arm" name for this fork is a settled
+decision, not just this port's own claim to it - explicitly discussed
+and signed off on with the user in a follow-up session, on the same
+reasoning recorded above (only ARM32 candidate that's fully working and
+interactive under QEMU with a real "ALL TESTS PASSED"). No Makefile/
+configure change needed - build-arm/run-arm/test-arm/clean-arm/kill-arm
+were already wired up exactly this way (see above).
+
 What this is, and how it differs structurally from armv6-rpi
 ----------------------------------------------------------------
 forks/armv7-rpi is inaciose/xv6-armv7-rpi (2017), same author and era as
