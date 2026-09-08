@@ -10,7 +10,7 @@ They read the twelve upstream clones from `~/work/xv6/` and each does
 `rm -rf` on its output directory. Do not repoint one at `~/xv6`.
 
 The reasoning behind every fork point and technique below is in
-`docs/PROVENANCE.md`; this file only says which script is which.
+`docs/provenance.md`; this file only says which script is which.
 
 ## The one that built this repo
 
@@ -21,7 +21,7 @@ The reasoning behind every fork point and technique below is in
 ## Superseded attempts, kept for the lessons
 
 Each failed in a way that shaped the final approach, and each lesson is
-written up in `docs/PROVENANCE.md` under "Four pitfalls".
+written up in `docs/provenance.md` under "Four pitfalls".
 
 | file | why it was abandoned |
 |---|---|

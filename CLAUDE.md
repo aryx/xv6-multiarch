@@ -5,26 +5,30 @@ repository.
 
 ## What this is
 
-`xv6-multiarch` unifies thirteen independent xv6 ports - covering eight
+`xv6-multiarch` unifies 14 independent xv6 ports - covering eight
 instruction sets - into one repository, with git history stitched together
 so `git blame -C -C` traces every unchanged line back to its real original
 commit (even across ports that started life as a fresh `git init` with no
-shared history). See the root `README.md` for the full provenance story,
-the fork-point table, and `docs/PROVENANCE.md` for the evidence behind
-each "inferred" fork point. Don't duplicate that material here - read it
-there.
+shared history). See the root `README.md` for the short pitch and current
+build/boot status, and `docs/provenance.md` for the full fork-point table
+and the evidence behind each "inferred" fork point. Don't duplicate that
+material here - read it there.
 
 ## Current status and goal
 
 Two sequential efforts, in order:
 
 1. **`docs/claude_notes/build-and-test-plan.md`** - get each of the
-   thirteen `forks/<name>/` ports actually building and booting under
+   14 `forks/<name>/` ports actually building and booting under
    QEMU on this machine, with the result pinned reproducibly. **Phases 1
-   (riscv64), 2 (i386), 3 (Docker), and 5 (CI) are done.** Phase 4 (the
-   remaining ten ports) is in progress - see "Adding a new arch" below
-   for the recipe, and `docs/claude_notes/notes_arch_*.txt` for what's
-   been verified about each arch so far.
+   (riscv64), 2 (i386), 3 (Docker), and 5 (CI) are done, and Phase 4's
+   original ten-port list is done too** (`forks/d1`, the eleventh item on
+   that list, was evaluated and then removed - build-only, no QEMU
+   target, no logic `forks/riscv64` didn't already have). Two more ports
+   surfaced after Phase 4 was scoped - `arm-pi3` and `arm64-pi4` - and
+   are still being wired up; see "Adding a new arch" below for the
+   recipe, and `docs/claude_notes/notes_arch_*.txt` for what's been
+   verified about each arch so far.
 2. **`docs/claude_notes/factorization-plan.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).
@@ -106,7 +110,7 @@ via `git log --follow`/`git blame -C` after each one):
    Pi 4, genuinely AArch64) stayed under `arm64`; `forks/amd64-jserv` is
    jserv's independent, fully-working x86-64 port grouped alongside
    MIT's own `forks/amd64`, not a derivative of it. See
-   `docs/PROVENANCE.md` for the upstream-repo -> current-forks-path
+   `docs/provenance.md` for the upstream-repo -> current-forks-path
    mapping table.
 
 ## Adding a new arch (Phase 4)
@@ -166,8 +170,8 @@ kernel handles it) is not a regression - check the relevant
 
 ## Other docs in the tree
 
-- `README.md` - provenance, fork-point table, what each port is
-- `docs/PROVENANCE.md` - the evidence behind each fork point
+- `README.md` - short pitch, current build/boot status, build commands
+- `docs/provenance.md` - the evidence behind each fork point
 - `docs/claude_notes/build-and-test-plan.md` - the build/boot/CI plan (this file's own "Current status" section tracks progress against it)
 - `docs/claude_notes/factorization-plan.md` - the later Linux-style-unification plan, blocked on the above
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch

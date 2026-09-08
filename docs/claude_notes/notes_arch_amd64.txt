@@ -15,7 +15,7 @@ What this is
 forks/amd64 is MIT's own abandoned 2018 x86-64 experiment - not a
 third-party fork at all, but a preserved point in MIT's own xv6-riscv
 history, on the same lineage as forks/riscv64 itself (see the root
-README's and docs/PROVENANCE.md's own "x86, amd64 and riscv are one
+README's and docs/provenance.md's own "x86, amd64 and riscv are one
 repository" section: `arch/x86`, `arch/riscv`, and `arch/amd64` are
 three tips of one shared lineage, diverging only in which commit each
 one stops at). MIT deleted this experiment a year later in favor of
