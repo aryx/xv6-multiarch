@@ -25,6 +25,8 @@ arch/
   rpi2/         zhiyihuang/xv6_rpi2_port  — ARMv7, Raspberry Pi 2/3 (2017-2022)
   armv6-rpi/    inaciose/xv6-armv6-rpi    — ARMv6, Raspberry Pi B (2017)
   armv7-rpi/    inaciose/xv6-armv7-rpi    — ARMv7 Cortex-A15/A7, Banana Pi (2017)
+                (now forks/arm/ - the clear winner among the four ARM32
+                ports, promoted to the bare ISA name, see CLAUDE.md)
   rv32/         michaelengel/xv6-rv32     — 32-bit RISC-V, qemu (2020-2021)
   d1/           michaelengel/xv6-d1       — 64-bit RISC-V, Allwinner D1 (2021-2022)
   loongarch/    SKT-CPUOS/xv6-loongarch-exp — LoongArch (2022-2023)
@@ -148,7 +150,7 @@ Some of these need reading with care:
 git log --first-parent main   # the upstream story, 2006 -> today
 git log rpi1                  # one architecture's own history
 git blame forks/riscv64/kernel/proc.c
-git blame -C forks/armv7-rpi/usr/sh.c   # this port reindented everything; -C needed
+git blame -C forks/arm/usr/sh.c         # this port reindented everything; -C needed
 git tag -l 'forkpoint/*' 'history/*'
 git shortlog -sne main        # .mailmap collapses 129 author strings to 92
 ```

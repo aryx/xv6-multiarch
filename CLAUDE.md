@@ -70,19 +70,21 @@ Makefile targets and `./configure`'s own `TOOLPREFIX_<ARCH>`/`QEMU_<ARCH>`
 variables use the bare ISA name (`riscv64`, `i386`, ...), matching
 `~/goken/include/arch/` and `~/c--`'s `CC<ARCH>`/`RUN_<ARCH>` convention.
 For most ports this still differs from the `forks/<name>/` directory
-name, which instead names the upstream repo/port (`forks/armv7-rpi` is
-the upstream repo name, but this port is ALSO reachable as the bare
-`arm` target - see the root README's port table for the full mapping,
-and this file's own "Adding a new arch" section on why armv7-rpi
-specifically earned that bare name) - those directories are deliberately
-**not** renamed to match: that would disturb the directory-content
-history the eventual factorization phase depends on, for no benefit to
-this phase. `forks/riscv`, `forks/x86`, `forks/rv32`, and `forks/aarch64`
-were the exception: renamed to `forks/riscv64`/`forks/i386`/
-`forks/riscv32`/`forks/arm64` to match the bare ISA name outright, since
-(unlike the ARM32 boards) each has exactly one fork per ISA - no
-ambiguity for the rename to lose, and the directory and target names now
-agree.
+name, which instead names the upstream repo/port (`forks/armv6-rpi` is
+the upstream repo name, `inaciose/xv6-armv6-rpi`) - those directories
+are deliberately **not** renamed to match: that would disturb the
+directory-content history the eventual factorization phase depends on,
+for no benefit to this phase. `forks/riscv`, `forks/x86`, `forks/rv32`,
+`forks/aarch64`, and `forks/armv7-rpi` were the exception: renamed to
+`forks/riscv64`/`forks/i386`/`forks/riscv32`/`forks/arm64`/`forks/arm`
+outright, each because it's the single, unambiguous fork for that
+ISA/name - true from the start for the first four; true for `forks/arm`
+only once it beat the other three ARM32 candidates (`armv6-rpi`,
+`rpi1`, `rpi2`, which keep their fork-directory names since the
+ambiguity between them is real and worth preserving - see the root
+README's port table and this file's own "Adding a new arch" section on
+why `armv7-rpi` specifically earned that promotion) and was renamed
+2026-09-08, once the directory and target names could agree.
 
 ## Adding a new arch (Phase 4)
 

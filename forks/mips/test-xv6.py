@@ -27,10 +27,10 @@
 # Makefile (not "?="), so an inherited environment variable of the same
 # name is silently overridden by the file's own default
 # ("mipsel-sde-elf-", a toolchain that doesn't exist on this host) -
-# same class of gap as forks/armv7-rpi's own test-xv6.py hit. Passed
-# explicitly on make's command line instead, from the TOOLPREFIX/QEMU
-# environment variables the top-level Makefile's own test-mips target
-# sets before invoking this script.
+# same class of gap as forks/arm's own test-xv6.py hit (forks/armv7-rpi
+# at the time). Passed explicitly on make's command line instead, from
+# the TOOLPREFIX/QEMU environment variables the top-level Makefile's own
+# test-mips target sets before invoking this script.
 import fcntl
 import os
 import re

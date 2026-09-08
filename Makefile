@@ -23,7 +23,7 @@
 # independently present in this fork, fixed the same way);
 # notes_arch_mips.txt - test-mips now passes too, with six known-hanging
 # usertests sub-tests skipped (see that file's own "Gap" section);
-# notes_arch_loongarch.txt - fully working; notes_arch_armv7_rpi.txt -
+# notes_arch_loongarch.txt - fully working; notes_arch_arm.txt -
 # the ARM32 winner among four candidate ports, boots to a real shell,
 # test-arm passes with two known usertests skipped).
 #
@@ -34,11 +34,15 @@
 # single-fork-per-ISA exception as riscv64/i386/riscv32 above (see
 # ./configure's own header comment).
 #
-# arm, not armv7-rpi: same reasoning again, resolved once forks/armv7-rpi
-# became the clear winner among this repo's four ARM32 ports (see that
-# section's own comment below, and ./configure's matching "arm" section) -
-# build-arm/run-arm/test-arm/clean-arm/kill-arm and build-armv7-rpi/
-# run-armv7-rpi are both reachable, same underlying fork.
+# arm, not armv7-rpi: forks/armv7-rpi became the clear winner among this
+# repo's four ARM32 ports (see that section's own comment below, and
+# ./configure's matching "arm" section) and was promoted to the same
+# single-fork-per-ISA exception as riscv64/i386/riscv32/arm64 above -
+# renamed to forks/arm outright (2026-09-08). Unlike those four, this
+# is a curated exception: forks/rpi1, forks/rpi2, and forks/armv6-rpi
+# stay under their fork-directory names on purpose, since there are
+# still three OTHER ARM32 ports in this repo and renaming all of them
+# to "arm" would destroy that disambiguation - only the winner moved.
 
 -include Makefile.config
 
@@ -61,8 +65,6 @@ CC_LOONGARCH ?=
 QEMU_LOONGARCH ?= qemu-system-loongarch64
 TOOLPREFIX_ARMV6_RPI ?=
 QEMU_ARMV6_RPI ?= qemu-system-arm
-TOOLPREFIX_ARMV7_RPI ?=
-QEMU_ARMV7_RPI ?= qemu-system-arm
 TOOLPREFIX_RPI1 ?=
 QEMU_RPI1 ?= qemu-system-arm
 TOOLPREFIX_RPI2 ?=
@@ -77,7 +79,6 @@ QEMU_RPI2 ?= qemu-system-arm
         build-mips run-mips test-mips clean-mips kill-mips check-mips-toolchain \
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
-        build-armv7-rpi run-armv7-rpi check-armv7-rpi-toolchain \
         build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
         build-rpi1 run-rpi1 check-rpi1-toolchain \
         build-rpi2 run-rpi2 check-rpi2-toolchain \
@@ -416,41 +417,24 @@ run-armv6-rpi: check-armv6-rpi-toolchain
 	$(MAKE) -C forks/armv6-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV6_RPI) QEMU=$(QEMU_ARMV6_RPI) qemu
 
 ###############################################################################
-# armv7-rpi (forks/armv7-rpi, inaciose/xv6-armv7-rpi)
+# arm (forks/arm, inaciose/xv6-armv7-rpi - renamed from forks/armv7-rpi)
 ###############################################################################
-# Named for the fork directory, same exception as armv6-rpi above - but
-# also reachable as the bare "arm" name below (build-arm/run-arm/
-# test-arm/clean-arm/kill-arm), since this port turned out to be the
-# clear winner among the four ARM32 ports here: the SMP boot-gating gap
-# noted below was fixed, along with a Thumb/ARM codegen mismatch and a
-# console/interrupt-routing swap to PL011 (see notes_arch_armv7_rpi.txt),
-# reaching a genuinely interactive shell with a passing usertests run.
-check-armv7-rpi-toolchain:
-	@if [ "$(TOOLPREFIX_ARMV7_RPI)" = NONE ] || [ "$(QEMU_ARMV7_RPI)" = NONE ]; then \
-		echo "Makefile: armv7-rpi toolchain/qemu not found - run ./configure to see what's missing" >&2; \
-		exit 1; \
-	fi
-
-build-armv7-rpi: check-armv7-rpi-toolchain
-	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV7_RPI) QEMU=$(QEMU_ARMV7_RPI) kernel.elf
-
-run-armv7-rpi: check-armv7-rpi-toolchain
-	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV7_RPI) QEMU=$(QEMU_ARMV7_RPI) qemu
-
-###############################################################################
-# arm (bare-ISA-name alias for forks/armv7-rpi)
-###############################################################################
-# Same fork as armv7-rpi above, just under the bare ISA name every other
-# arch in this Makefile uses (see ./configure's own "arm" section for
-# the full reasoning) - build-arm/run-arm/test-arm/clean-arm/kill-arm are
-# equivalent to their armv7-rpi counterparts, both reachable, sharing
-# the same forks/armv7-rpi tree and build outputs.
+# This port turned out to be the clear winner among the four ARM32 ports
+# here: the SMP boot-gating gap noted below was fixed, along with a
+# Thumb/ARM codegen mismatch and a console/interrupt-routing swap to
+# PL011 (see notes_arch_arm.txt), reaching a genuinely interactive shell
+# with a passing usertests run - so unlike forks/armv6-rpi/forks/rpi1/
+# forks/rpi2, which keep their fork-directory names (see this Makefile's
+# own header comment on why), this fork was promoted to the bare ISA
+# name outright and its directory renamed forks/armv7-rpi -> forks/arm
+# to match (2026-09-08), same single-fork-per-ISA treatment as
+# riscv64/i386/riscv32/arm64.
 #
 # usr/usertests.c has two tests commented out (preempt() hangs
 # indefinitely under QEMU's raspi2b; sbrktest() crashes the whole
 # process partway through, a pre-existing upstream-documented issue) -
-# see that file's own "claude:" comments and notes_arch_armv7_rpi.txt.
-# The rest of usertests, plus exectest()'s own "ALL TESTS PASSED" exec
+# see that file's own "claude:" comments and notes_arch_arm.txt. The
+# rest of usertests, plus exectest()'s own "ALL TESTS PASSED" exec
 # trick, run to completion, so test-arm gets a real pass/fail signal.
 check-arm-toolchain:
 	@if [ "$(TOOLPREFIX_ARM)" = NONE ] || [ "$(QEMU_ARM)" = NONE ]; then \
@@ -459,16 +443,16 @@ check-arm-toolchain:
 	fi
 
 build-arm: check-arm-toolchain
-	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) kernel.elf
+	$(MAKE) -C forks/arm CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) kernel.elf
 
 run-arm: check-arm-toolchain
-	$(MAKE) -C forks/armv7-rpi CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) qemu
+	$(MAKE) -C forks/arm CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) qemu
 
 test-arm: check-arm-toolchain
-	cd forks/armv7-rpi && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py
+	cd forks/arm && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py
 
 clean-arm:
-	$(MAKE) -C forks/armv7-rpi clean
+	$(MAKE) -C forks/arm clean
 
 kill-arm:
 	-pkill -f '$(QEMU_ARM)' 2>/dev/null || true
