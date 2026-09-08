@@ -2,16 +2,17 @@ notes_arch_arm64.txt
 ====================
 
 Written: 2026-09-06, against commit 03b3f9f (the riscv32 wiring commit),
-during the aarch64 bring-up itself. Phase 4 of
-docs/claude_notes/build-and-test-plan.md, fourth port attempted from
-that phase's list. Status: NOT fully working yet - one real bug fixed
-proactively before it was even hit (missing user/user.ld, the same class
-rv32 needed), one GCC false positive fixed, and the kernel boots to an
-interactive shell prompt on the very first real attempt - but a second
-bug remains open: sh crashes shortly after printing its prompt, in a way
-that structurally resembles rv32's own still-open "bug 4" (see
-notes_arch_riscv32.txt) closely enough to be worth treating as a pattern,
-not a coincidence.
+during the aarch64 bring-up itself. Updated 2026-09-08 once the "sh
+crashes shortly after printing its prompt" bug below was root-caused
+and fixed in a follow-up session - it WAS the exact same bug as rv32's
+own bug 4, not merely a structurally similar pattern; see "Bug 3" below.
+Phase 4 of docs/claude_notes/build-and-test-plan.md, fourth port
+attempted from that phase's list. Status: FULLY WORKING - one real bug
+fixed proactively before it was even hit (missing user/user.ld, the
+same class rv32 needed), one GCC false positive fixed, and now the
+missing-start()-wrapper bug fixed too - kernel boots to a genuinely
+interactive shell and `usertests` reports "ALL TESTS PASSED", both
+locally and via `docker build --build-arg ARCH=arm64`.
 
 What this is
 ------------
@@ -70,7 +71,44 @@ Verification so far: boots to a shell prompt on the first real attempt
     -> "xv6 kernel is booting", "init: starting sh", "$ " - first real
        attempt, no iteration needed to get this far
 
-Bug 1 (open, NOT fixed): sh crashes shortly after printing its prompt
+Bug 1 (real, fixed - root-caused in a follow-up session): sh crashes shortly after printing its prompt
+------------------------------------------------------------------------------------------------------------
+Root cause, found directly by `readelf -h`/`nm` on a built `_sh`
+(2026-09-08 follow-up session, prompted by rv32's own near-identical
+"bug 4" - see notes_arch_riscv32.txt): `Entry point address: 0x0`,
+matching `getcmd()`'s own address exactly, not `main()`'s (0xa98) -
+this fork's `user/ulib.c` never had the `start(argc, argv) {
+exit(main(argc, argv)); }` wrapper forks/riscv64's own ulib.c has.
+Without a symbol literally named `start` for `ld`'s default-entry
+fallback to find (no `-e main` on the link line, no `ENTRY()` in
+user.ld), it defaults to the address of the first byte of `.text` -
+whichever function happens to be compiled first in a given program's
+own source file. For `sh.c` that's `getcmd()` (defined before
+`main()`), so every freshly-exec'd shell was starting execution
+*inside getcmd()* the whole time, with `argc`/`argv` misread as its own
+`buf`/`nbuf` parameters. This retroactively explains why the crash sits
+right in/around a `memset()` call reached from `getcmd()`'s own body,
+on the very first invocation, every time - it's genuinely `getcmd()`
+running as the process entry point, not a call from `main()`. Fixed by
+porting the missing `start()` wrapper verbatim from
+forks/riscv64/user/ulib.c - `readelf -h` afterward shows the entry
+point at `start`'s own address (0xb68), and `usertests` now reports
+"ALL TESTS PASSED", both locally and via
+`docker build --build-arg ARCH=arm64`.
+
+The deep byte-level investigation below (from the original bring-up
+session) was working from a build that had this same defect the whole
+time - its own specific findings (an apparent single-byte partial ELF
+segment load at address 0, an "Undefined Instruction" trap at elr=0x34)
+aren't individually re-derived or reconciled against the real root
+cause here; they're superseded by it, kept below only as the original
+investigation record, not as an open question needing further
+resolution. The technique that broke this open - `readelf -h`/`nm` on
+the actual built binary, prompted by treating a "structurally similar
+crash in an unrelated port" as a real lead rather than a coincidence -
+is the one worth remembering, not the specific bytes chased below.
+
+Original investigation (superseded above, kept for the record)
 ------------------------------------------------------------------------------
 Immediately after "$ " prints, every spawned `sh` crashes identically -
 reproduces from the very first instance (pid=2) through at least pid=16,
@@ -166,28 +204,40 @@ Not yet tried:
     site across two otherwise-unrelated ports is suspicious enough to be
     worth checking whether it's coincidence or a shared upstream gap).
 
-A cross-arch pattern worth flagging explicitly: two unrelated ports (rv32,
-aarch64), forked by different authors in different years, both crash
-inside or immediately around a `memset()` call from sh.c's `getcmd()`,
-on the very first real invocation, in ways that have resisted a full
-root-cause after substantial gdb-multiarch + QEMU-trace investigation on
-each. This might be coincidence (getcmd() genuinely is the first
-non-trivial code path any freshly-exec'd shell hits), or might point at
-something more systemic - worth keeping in mind when the next kernel/
-user-split-lineage port (loongarch, per build-and-test-plan.md's own
-order) is attempted: if IT also crashes around the same call site, that
-would be strong evidence for a shared, not-yet-understood root cause
-rather than three independent unlucky ports.
+claude: UPDATE - this WAS a shared, systemic root cause, not
+coincidence: both rv32 and aarch64 were independently missing the same
+`start()` wrapper (see bug 1 above), each landing on `getcmd()` as its
+process entry point for the identical structural reason (it's whichever
+function `sh.c` happens to define first). loongarch, attempted between
+this port and rv32/aarch64's own fixes, never hit this - but not
+because its own ulib.c has the wrapper (checked: it doesn't either) -
+its Makefile's own "_%:" rule still passes `-e main` explicitly on the
+link line (`$(LD) $(LDFLAGS) -N -e main -Ttext 0 ...`), which rv32/
+aarch64's own rules had dropped when they moved to a custom `-T
+user.ld` (needed for a different, unrelated page-alignment fix - see
+notes_arch_riscv32.txt's own bug 2). So this is two independent, only
+superficially-related gaps across these three ports: whether `-e main`
+survived onto the link command line at all, not whether `start()`
+exists - loongarch happens to be fine via the first path, rv32/aarch64
+needed the second.
 
-Fully wired up this session (build/run work; test does not)
+Fully wired up
 ------------------------------------------------------------------------------
-- `./configure`: TOOLPREFIX_AARCH64/QEMU_AARCH64 detection.
-- Top-level Makefile: build-aarch64/run-aarch64/test-aarch64/
-  clean-aarch64/kill-aarch64, folded into the -all targets.
+- `./configure`: TOOLPREFIX_ARM64/QEMU_ARM64 detection (renamed from
+  TOOLPREFIX_AARCH64 in a later session - see CLAUDE.md's own naming-
+  convention note: forks/aarch64 keeps its upstream-repo directory name,
+  but the bare-ISA Makefile target/./configure variable is "arm64",
+  matching ~/c--'s/~/goken's own convention).
+- Top-level Makefile: build-arm64/run-arm64/test-arm64/clean-arm64/
+  kill-arm64, folded into the -all targets.
 - forks/aarch64/test-xv6.py, modeled on forks/rv32's own (same
   usertests-only shape - this fork's own UPROGS list has no crash/log/
   orphan-recovery programs beyond the extra `grind` stress test, which
   usertests.c's own suite already exercises via the existing harness).
-- build-aarch64/run-aarch64 work; test-aarch64 currently fails on the
-  open bug above, same as riscv32's own test-riscv32 - verified this is
-  the known failure mode, not a wiring problem, before committing.
+- test-arm64 now genuinely passes (bug 1 above, fixed 2026-09-08) -
+  Docker/CI wired up too: an "arm64" case in the Dockerfile's ARCH
+  build-arg (needs `ipxe-qemu` in addition to the toolchain/qemu
+  packages - see notes_debugging_techniques.txt item 6's own arm64
+  example for why) and a matching entry in
+  .github/workflows/docker.yml's matrix, verified locally with
+  `docker build --build-arg ARCH=arm64` before touching CI.

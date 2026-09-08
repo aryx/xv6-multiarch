@@ -8,19 +8,18 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only six
-# arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32, arm
-# - build-and-test-plan.md's Phases 1, 2, and Phase 4), not all thirteen
-# forks/ - extend the ARCH case below (both the apt-get and the
+# for the general reasoning this one reuses. Simpler here: only seven
+# arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32, arm,
+# arm64 - build-and-test-plan.md's Phases 1, 2, and Phase 4), not all
+# thirteen forks/ - extend the ARCH case below (both the apt-get and the
 # build/test one) as more arches get their own ./configure detection,
-# matching build.md's own Phase 4 order. loongarch/mips/arm64/the other
-# three ARM board ports are already wired into ./configure/the top-level
-# Makefile but not added here yet: mips/arm64 don't have a passing
-# test-<arch> to run in CI yet (see their own notes_arch_*.txt's open
-# bugs), and loongarch/armv6-rpi/rpi1/rpi2 simply haven't had this step
-# done yet - nothing blocking it technically (loongarch's own toolchain
-# turned out to be a native arm64 apt package, no binfmt_misc emulation
-# needed, see
+# matching build.md's own Phase 4 order. loongarch/mips/the other three
+# ARM board ports are already wired into ./configure/the top-level
+# Makefile but not added here yet: mips doesn't have a passing
+# test-<arch> to run in CI yet (see notes_arch_mips.txt's open bug), and
+# loongarch/armv6-rpi/rpi1/rpi2 simply haven't had this step done yet -
+# nothing blocking it technically (loongarch's own toolchain turned out
+# to be a native arm64 apt package, no binfmt_misc emulation needed, see
 # notes_arch_loongarch.txt).
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
@@ -91,11 +90,24 @@ RUN case "$ARCH" in \
                  gcc-riscv64-unknown-elf qemu-system-misc ;; \
       arm)     apt-get install -y --no-install-recommends \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
+      # claude: ipxe-qemu (provides efi-virtio.rom) is only a Recommends
+      # of qemu-system-arm, stripped by --no-install-recommends above -
+      # forks/aarch64's own Makefile passes "-device virtio-blk-device"
+      # for its disk, and qemu-system-aarch64 needs that ROM to boot a
+      # virtio device at all ("failed to find romfile efi-virtio.rom"),
+      # even though it's never actually executed (this kernel never runs
+      # any firmware/EFI code) - same class of gap as the python3/
+      # qemu-system-gui one documented in notes_debugging_techniques.txt
+      # item 6, caught the same way (a local
+      # "docker build --build-arg ARCH=arm64" before touching CI).
+      arm64)   apt-get install -y --no-install-recommends \
+                 gcc-aarch64-linux-gnu qemu-system-arm ipxe-qemu ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \
                  gcc-i686-linux-gnu libc6-dev-i386-cross \
                  gcc-x86-64-linux-gnu qemu-system-x86 \
-                 gcc-arm-linux-gnueabihf qemu-system-arm ;; \
+                 gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu \
+                 qemu-system-arm ipxe-qemu ;; \
       *) echo "Dockerfile: unknown ARCH=$ARCH" >&2; exit 1 ;; \
     esac
 

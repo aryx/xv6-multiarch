@@ -18,8 +18,9 @@
 # Phases 1-2, and Phase 4 (see docs/claude_notes/notes_arch_x86_64.txt,
 # notes_arch_amd64.txt, notes_arch_riscv32.txt - riscv32's own test-riscv32
 # now passes (bug 4, a missing user-program start() wrapper, fixed
-# 2026-09-07); notes_arch_arm64.txt - boots to a shell but its own
-# test-arm64 does not pass yet, see that file's own open bug;
+# 2026-09-07); notes_arch_arm64.txt - test-arm64 now passes too (the
+# exact same missing-start()-wrapper bug as riscv32's own bug 4,
+# independently present in this fork, fixed the same way);
 # notes_arch_mips.txt - boots silently, no test-mips at all yet, and only
 # build-mips/run-mips are wired up, not the full set; notes_arch_loongarch.txt
 # - fully working; notes_arch_armv7_rpi.txt - the ARM32 winner among four

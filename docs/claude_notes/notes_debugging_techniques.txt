@@ -158,13 +158,25 @@ had worked in every interactive terminal session this port was ever
 tested from - but `clear` exits non-zero with no `TERM` set, which is
 exactly the environment a Docker build runs in, and a plain `@` on a
 make recipe line silences echoing the command, not its exit-status
-handling, so the whole recipe aborted before QEMU ever started. The
-general pattern across all three: a real terminal's environment
-(TERM set, Recommends-pulled packages present, a fast unloaded machine)
+handling, so the whole recipe aborted before QEMU ever started. A
+fourth, `ARCH=arm64` (forks/aarch64): `qemu-system-aarch64` refused to
+boot at all - "failed to find romfile efi-virtio.rom" - because
+`ipxe-qemu` (which ships that ROM, needed for the `virtio-blk-device`
+this fork's own Makefile passes, even though no firmware/EFI code ever
+actually runs) is only a Recommends of `qemu-system-arm`, stripped by
+the same `--no-install-recommends` this Dockerfile uses for image-size
+reasons - identical shape to the very first python3 example, just a
+different package pulled in by a different Recommends chain. The
+general pattern across all four: a real terminal's environment (TERM
+set, Recommends-pulled packages present, a fast unloaded machine)
 quietly supplies things a Docker/CI environment does not, and the gap
 only shows up once something actually runs without that scaffolding -
 which is precisely why running the container locally, not just reading
-the Dockerfile, is the useful step.
+the Dockerfile, is the useful step. Worth checking, specifically,
+whenever `--no-install-recommends` (or an equivalent minimal-install
+flag) is in play: grep `apt-cache depends <package>` for `Recommends:`
+entries before assuming the Depends line alone tells you what a package
+actually needs at runtime.
 
 7. When a fork's Makefile has an unusual pattern, check whether its siblings share it
 ------------------------------------------------------------------------------------------
