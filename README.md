@@ -16,14 +16,15 @@ a year later when RISC-V replaced it.
 ```
 arch/
   x86/          MIT xv6-public            — the original teaching OS (2006-2020)
-  riscv/        MIT xv6-riscv             — current MIT teaching OS (2019-present)
   amd64/        MIT xv6-riscv, pre-riscv  — MIT's abandoned x86-64 port (2018)
   x86_64/       jserv/xv6-x86_64          — a maintained x86-64 port (2013-2023)
                 (now forks/amd64-jserv/ - grouped under the "amd64" ISA
                 prefix alongside MIT's own forks/amd64, see CLAUDE.md)
+  riscv/        MIT xv6-riscv             — CURRENT MIT teaching OS (2019-present)
+  rv32/         michaelengel/xv6-rv32     — 32-bit RISC-V, qemu (2020-2021)
+                (now forks/riscv32/ - the RV32 ISA representative)
   mips/         nullpo-head/xv6-mips      — MIPS (2014-2016)
-  aarch64/      k-mrm/xv6-aarch64         — 64-bit ARM (2021-2023)
-                (now forks/arm64/ - the AArch64 ISA representative)
+  loongarch/    SKT-CPUOS/xv6-loongarch-exp — LoongArch (2022-2023)
   rpi1/         zhiyihuang/xv6_rpi_port   — ARMv6, Raspberry Pi 1 (2014)
                 (now forks/arm-pi1/)
   rpi2/         zhiyihuang/xv6_rpi2_port  — ARMv7, Raspberry Pi 2/3 (2017-2022)
@@ -34,16 +35,15 @@ arch/
   armv7-rpi/    inaciose/xv6-armv7-rpi    — ARMv7 Cortex-A15/A7, Banana Pi (2017)
                 (now forks/arm/ - the clear winner among the four ARM32
                 ports, promoted to the bare ISA name, see CLAUDE.md)
-  rv32/         michaelengel/xv6-rv32     — 32-bit RISC-V, qemu (2020-2021)
-                (now forks/riscv32/ - the RV32 ISA representative)
-  d1/           michaelengel/xv6-d1       — 64-bit RISC-V, Allwinner D1 (2021-2022)
-  loongarch/    SKT-CPUOS/xv6-loongarch-exp — LoongArch (2022-2023)
   pi_mp/        patha454/xv6_pi_mp        — AArch64 MP, Raspberry Pi 3 (2019)
                 (now forks/arm-pi3/ - despite the "AArch64" description,
                 its Makefile only builds 32-bit ARM code, real Pi 3 MP
                 hardware in AArch32 compat mode, see CLAUDE.md)
+  aarch64/      k-mrm/xv6-aarch64         — 64-bit ARM (2021-2023)
+                (now forks/arm64/ - the AArch64 ISA representative)
   rpi4/         k-mrm/xv6-rpi4            — AArch64, real Raspberry Pi 4 hardware (2022)
                 (now forks/arm64-pi4/)
+  d1/           michaelengel/xv6-d1       — 64-bit RISC-V, Allwinner D1 (2021-2022)
 ```
 
 `amd64` and `x86_64` are both x86-64 but unrelated efforts: `amd64` is MIT's
