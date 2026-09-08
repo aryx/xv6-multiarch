@@ -16,7 +16,7 @@ The single most useful thing to establish about any port is whether it is a
 
 | | real fork | fresh init |
 |---|---|---|
-| ports | `x86_64`, `mips`, `aarch64` (and `x86`/`riscv`/`amd64`, one lineage) | `rpi1`, `rpi2`, `armv6-rpi`, `armv7-rpi`, `rv32`, `d1`, `loongarch` |
+| ports | `x86_64`, `mips`, `aarch64`, `rpi4` (and `x86`/`riscv`/`amd64`, one lineage) | `rpi1`, `rpi2`, `armv6-rpi`, `armv7-rpi`, `rv32`, `d1`, `loongarch` |
 | fork point | computed: `git merge-base` | reconstructed from file content |
 | certainty | fact | best-supported inference |
 | work needed | none — just a staging commit | graft as a two-parent merge |
@@ -29,6 +29,17 @@ git -C <clone> cat-file -e 55e95b16db458b7f9abeca96e541acbdf8d7f85b && echo "rea
 
 Three of the four architectures added in the second pass (`x86_64`, `mips`,
 `aarch64`) turned out to be real forks, so they needed no grafting at all.
+`rpi4` (added later still) is also a real fork — of `aarch64` itself, not of
+MIT directly.
+
+**A third case, found with `pi_mp`:** a real fork (genuine `git merge-base`,
+not content inference) of a port that was itself a *fresh init* relative to
+MIT. `pi_mp`'s fork point checks out exactly against `rpi2` — but `rpi2`'s own
+upstream commits were already re-parented once (its graft onto `rpi1`), so
+their hashes changed. `pi_mp`'s own commits needed the same re-parenting
+treatment as `rpi2`'s own commits, single-parent (no two-parent merge needed,
+since the ancestry is real, not inferred) — just onto the recreated hash
+rather than the vanished original upstream one. See its row below.
 
 ## x86, amd64 and riscv are one repository
 
@@ -141,6 +152,8 @@ failed with `fatal: bad source`, because the name came back escaped. Use
 | `rv32` | michaelengel/xv6-rv32 | `2c829c08` | `riscv @ 050a6961` | README links mit-pdos/xv6-riscv; 45 lines / 6 files |
 | `d1` | michaelengel/xv6-d1 | `ecb94ece` | `riscv @ a1da53a5` | README_D1.txt: "Changes to MIT's xv6 RISC-V version"; 4 lines / 6 files |
 | `loongarch` | SKT-CPUOS/xv6-loongarch-exp | `356286f0` (root) | `riscv @ cd00a823` | README links mit-pdos/xv6-riscv, uses riscv `kernel/`+`user/` layout; last riscv commit before the port began |
+| `pi_mp` | patha454/xv6_pi_mp | `243c0e5b` (this repo's re-parented copy of upstream `b90b42b9`) | `rpi2` mid-lineage, "Tidy up framebuffer code in console.c" (2018-03-07) | **verified** — real `git merge-base` against zhiyihuang/xv6_rpi2_port; own history includes a real two-parent merge (`7ff48ab`), preserved topologically rather than flattened |
+| `rpi4` | k-mrm/xv6-rpi4 | — | `aarch64 @ 2c8131bd`, "init" (2022-02-19) | **verified** — real fork; `2c8131bd` is a byte-identical commit object already present in this repo under `arch/aarch64`, so no re-parenting at all was needed, only a staging commit |
 
 `inaciose/xv6-armv7-a15`, the immediate parent of `armv7-rpi`, returns 404.
 `inaciose/xv6-armv7-a7` was cloned as corroboration but is itself a fresh
@@ -153,12 +166,13 @@ git rev-list --count main                      # 2049
 git branch --contains 55e95b16db458b7f9abeca96e541acbdf8d7f85b   # all 13 + main
 git cat-file commit fc1a5da2 | grep gpgsig     # signature intact
 git blame arch/<any>/…/sh.c | head -1          # -> 1b25f3b0 rsc 2007
-git tag -l 'forkpoint/*' 'history/*'           # 14 evidence-bearing tags
+git tag -l 'forkpoint/*' 'history/*'           # 16 evidence-bearing tags
 ```
 
 Each architecture contributes only its own commits: riscv 1708 (incl.
 staging), then x86 +5, amd64 +1, x86_64 +125, mips +23, aarch64 +85, rpi1 +15,
-rpi2 +45, armv6-rpi +3, armv7-rpi +3, rv32 +4, d1 +10, loongarch +21.
+rpi2 +45, armv6-rpi +3, armv7-rpi +3, rv32 +4, d1 +10, loongarch +21, pi_mp
++41, rpi4 +30.
 
 ## Known gaps
 
