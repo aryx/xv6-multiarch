@@ -339,7 +339,7 @@ right, and there was a second, deeper reason too.
 
 Part 1 - MAXFILE: building `_usertests` standalone gave an 84,172-byte
 binary; `MAXFILE*BSIZE` was 71,680 bytes (`NDIRECT=12`) - the same
-class of bug forks/x86_64 hit (see notes_arch_x86_64.txt) and fixed the
+class of bug forks/x86_64 hit (see notes_arch_amd64_jserv.txt) and fixed the
 same way: raise `NDIRECT`, keep `BSIZE=512`. `struct dinode`'s own size
 (`12 + 4*(NDIRECT+1)` bytes) must stay a power of two, per mkfs.c's own
 `assert((512 % sizeof(struct dinode)) == 0)` - `NDIRECT=60` gives a

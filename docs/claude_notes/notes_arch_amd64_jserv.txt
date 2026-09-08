@@ -1,5 +1,5 @@
-notes_arch_x86_64.txt
-======================
+notes_arch_amd64_jserv.txt
+==========================
 
 Written: 2026-09-06, against commit a8da481 (the first x86_64 commit,
 which itself ended at "builds, boots partially, one mystery open" -

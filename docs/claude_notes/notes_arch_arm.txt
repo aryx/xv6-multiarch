@@ -1,5 +1,5 @@
-notes_arch_armv7_rpi.txt
-========================
+notes_arch_arm.txt
+==================
 
 Written: 2026-09-07, against commit 425440a (the armv6-rpi bring-up
 commit), during the armv7-rpi bring-up itself; updated three times the
@@ -62,7 +62,7 @@ Toolchain: arm-linux-gnueabihf-gcc/qemu-system-arm, already installed - no gaps 
 
 Bug 1 (real, fixed): -mfloat-abi=hard conflicts with this kernel's own explicit "-march=armv7-a" (no +fp)
 ---------------------------------------------------------------------------------------------------------------
-Same root cause as notes_arch_armv6_rpi.txt's own bug 1, different
+Same root cause as notes_arch_arm_pi1_bis.txt's own bug 1, different
 manifestation: this port's own CFLAGS DOES pass real gcc-level
 "-march=armv7-a -mtune=cortex-a7" (unlike armv6-rpi's original
 "-Wa,"-only mistake) - but "-march=armv7-a" alone, without an explicit
@@ -75,7 +75,7 @@ CFLAGS and ASFLAGS.
 
 Bug 2 (real, fixed): "static_assert" redefinition in tools/mkfs.c
 ---------------------------------------------------------------------
-Identical to notes_arch_armv6_rpi.txt's own bug on this exact file (both
+Identical to notes_arch_arm_pi1_bis.txt's own bug on this exact file (both
 ports' mkfs.c are near-identical, likely both copied from the same
 upstream MIT xv6-public mkfs.c originally) - modern glibc's own
 <assert.h> already provides a "static_assert" macro. Fixed the same way:
@@ -137,14 +137,14 @@ the compiler defaults to.
 
 Bug 7 (real, fixed): the port's own shipped QEMU board (versatilepb) is wrong twice over, and this kernel's own Hyp-mode entry sequence needs to be conditional
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-Same class of board mismatch as notes_arch_armv6_rpi.txt's own bug 5,
+Same class of board mismatch as notes_arch_arm_pi1_bis.txt's own bug 5,
 but with an extra wrinkle unique to this kernel. This kernel's own
 entry.S starts with an unconditional Hyp-mode-exit sequence ("mrs
 r0,cpsr" / ... / "msr ELR_hyp,r0" / "eret") - ELR_hyp is a genuine
 Hyp-mode-only banked register, accessing it from any other mode is
 Undefined Instruction. "-M versatilepb -cpu arm1176" (ARMv6, no Hyp mode
 support in the ISA at all) would have faulted on this immediately -
-matching notes_arch_armv6_rpi.txt's own bug 4 in spirit, but this time
+matching notes_arch_arm_pi1_bis.txt's own bug 4 in spirit, but this time
 the fix is switching boards rather than switching -march/-marm flags,
 since this kernel's own -march=armv7-a/-mtune=cortex-a7 codegen target
 was already correct.
@@ -165,7 +165,7 @@ HYP_MODE, and only execute the Hyp-exit sequence when genuinely already
 in Hyp mode; otherwise skip straight to the existing SVC-mode stack
 setup.
 
-A second, load-address bug, IDENTICAL to notes_arch_armv6_rpi.txt's own
+A second, load-address bug, IDENTICAL to notes_arch_arm_pi1_bis.txt's own
 bug 5's second half: kernel.ld linked .start_sec at physical 0x8000
 (with an alternate "/* . = 0x10000; */" already commented out in the
 file - exactly the same telltale sign as the sibling port), but
@@ -256,7 +256,7 @@ commented out). Confirmed via the QEMU monitor's "info qtree" that
 "-M raspi2b"'s emulated "bcm2835-aux" (Mini-UART) has NO chardev backend
 at all (chardev="") while "pl011" is genuinely wired to "serial0"/stdio
 - exactly the same finding as the sibling forks/rpi1 port's own bring-up
-(notes_arch_rpi1.txt) for the real hardware family's shared Mini-UART
+(notes_arch_arm_pi1.txt) for the real hardware family's shared Mini-UART
 design.
 
 Fixed by switching both start.c's _uart_init()/_uart_putc() (pre-MMU,

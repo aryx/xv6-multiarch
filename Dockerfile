@@ -9,7 +9,7 @@
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
 # for the general reasoning this one reuses. Simpler here: only eight
-# arches are wired up so far (riscv64, i386, x86_64, amd64, riscv32, arm,
+# arches are wired up so far (riscv64, i386, amd64-jserv, amd64, riscv32, arm,
 # arm64, mips - build-and-test-plan.md's Phases 1, 2, and Phase 4), not
 # all thirteen forks/ - extend the ARCH case below (both the apt-get and
 # the build/test one) as more arches get their own ./configure
@@ -80,7 +80,7 @@ RUN case "$ARCH" in \
                  gcc-riscv64-unknown-elf qemu-system-misc bc ;; \
       i386)    apt-get install -y --no-install-recommends \
                  gcc-i686-linux-gnu libc6-dev-i386-cross qemu-system-x86 ;; \
-      x86_64)  apt-get install -y --no-install-recommends \
+      amd64-jserv) apt-get install -y --no-install-recommends \
                  gcc-x86-64-linux-gnu qemu-system-x86 ;; \
       amd64)   apt-get install -y --no-install-recommends \
                  gcc-x86-64-linux-gnu qemu-system-x86 ;; \
@@ -163,12 +163,12 @@ RUN ./configure
 # Dockerfile's own source of truth for what ARCH=all covers - keep it in
 # lockstep with the apt-get "all" case above, not with build-all/test-all.
 RUN if [ "$ARCH" = all ]; then \
-      make build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm build-arm64 build-mips; \
+      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm64 build-mips; \
     else \
       make "build-$ARCH"; \
     fi
 RUN if [ "$ARCH" = all ]; then \
-      make test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm test-arm64 test-mips; \
+      make test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm test-arm64 test-mips; \
     else \
       make "test-$ARCH"; \
     fi

@@ -15,7 +15,7 @@
 #
 # Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
 # loongarch, and arm - see docs/claude_notes/build-and-test-plan.md,
-# Phases 1-2, and Phase 4 (see docs/claude_notes/notes_arch_x86_64.txt,
+# Phases 1-2, and Phase 4 (see docs/claude_notes/notes_arch_amd64_jserv.txt,
 # notes_arch_amd64.txt, notes_arch_riscv32.txt - riscv32's own test-riscv32
 # now passes (bug 4, a missing user-program start() wrapper, fixed
 # 2026-09-07); notes_arch_arm64.txt - test-arm64 now passes too (the
@@ -38,11 +38,28 @@
 # repo's four ARM32 ports (see that section's own comment below, and
 # ./configure's matching "arm" section) and was promoted to the same
 # single-fork-per-ISA exception as riscv64/i386/riscv32/arm64 above -
-# renamed to forks/arm outright (2026-09-08). Unlike those four, this
-# is a curated exception: forks/rpi1, forks/rpi2, and forks/armv6-rpi
-# stay under their fork-directory names on purpose, since there are
-# still three OTHER ARM32 ports in this repo and renaming all of them
-# to "arm" would destroy that disambiguation - only the winner moved.
+# renamed to forks/arm outright (2026-09-08).
+#
+# A SECOND, different kind of rename, also done 2026-09-08: forks/rpi1,
+# forks/rpi2, forks/armv6-rpi, forks/pi_mp, forks/rpi4, and forks/x86_64
+# were renamed to forks/arm-pi1, forks/arm-pi2, forks/arm-pi1-bis,
+# forks/arm64-pi3, forks/arm64-pi4, and forks/amd64-jserv respectively -
+# NOT single-ISA-representative promotions like arm/arm64/riscv64/i386/
+# riscv32 above (each of those five still has its own official ISA
+# representative: forks/arm for ARM32, forks/arm64 for AArch64,
+# forks/amd64 for this specific x86-64 lineage), but an ISA-PREFIXED
+# GROUPING of real-hardware/alternate ports that stay genuinely distinct
+# builds, done to make the eventual factorization-phase merge easier to
+# reason about (related forks now sort together by prefix). forks/arm-pi1
+# and forks/arm-pi1-bis both target the literal same real board (ARMv6
+# Raspberry Pi 1/Model B - zhiyihuang's and inaciose's independent
+# ports); forks/arm64-pi3 and forks/arm64-pi4 target DIFFERENT real
+# boards (Pi 3 vs Pi 4) under the same 64-bit ARM ISA, so "-pi3"/"-pi4"
+# rather than a "-bis" pair; forks/amd64-jserv is jserv's independent,
+# fully-working x86-64 port, grouped under the "amd64" ISA prefix
+# alongside MIT's own forks/amd64 rather than left under its old
+# upstream-repo name. See docs/PROVENANCE.md for the upstream-repo ->
+# current-forks-path mapping table.
 
 -include Makefile.config
 
@@ -50,8 +67,8 @@ TOOLPREFIX_RISCV64 ?=
 QEMU_RISCV64 ?= qemu-system-riscv64
 TOOLPREFIX_I386 ?=
 QEMU_I386 ?= qemu-system-i386
-TOOLPREFIX_X86_64 ?=
-QEMU_X86_64 ?= qemu-system-x86_64
+TOOLPREFIX_AMD64_JSERV ?=
+QEMU_AMD64_JSERV ?= qemu-system-x86_64
 TOOLPREFIX_AMD64 ?=
 QEMU_AMD64 ?= qemu-system-x86_64
 TOOLPREFIX_RISCV32 ?=
@@ -63,25 +80,25 @@ QEMU_MIPS ?= qemu-system-mipsel
 TOOLPREFIX_LOONGARCH ?=
 CC_LOONGARCH ?=
 QEMU_LOONGARCH ?= qemu-system-loongarch64
-TOOLPREFIX_ARMV6_RPI ?=
-QEMU_ARMV6_RPI ?= qemu-system-arm
-TOOLPREFIX_RPI1 ?=
-QEMU_RPI1 ?= qemu-system-arm
-TOOLPREFIX_RPI2 ?=
-QEMU_RPI2 ?= qemu-system-arm
+TOOLPREFIX_ARM_PI1_BIS ?=
+QEMU_ARM_PI1_BIS ?= qemu-system-arm
+TOOLPREFIX_ARM_PI1 ?=
+QEMU_ARM_PI1 ?= qemu-system-arm
+TOOLPREFIX_ARM_PI2 ?=
+QEMU_ARM_PI2 ?= qemu-system-arm
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
-        build-x86_64 run-x86_64 test-x86_64 clean-x86_64 kill-x86_64 check-x86_64-toolchain \
+        build-amd64-jserv run-amd64-jserv test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
         build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
         build-mips run-mips test-mips clean-mips kill-mips check-mips-toolchain \
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
-        build-armv6-rpi run-armv6-rpi check-armv6-rpi-toolchain \
+        build-arm-pi1-bis run-arm-pi1-bis check-arm-pi1-bis-toolchain \
         build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
-        build-rpi1 run-rpi1 check-rpi1-toolchain \
-        build-rpi2 run-rpi2 check-rpi2-toolchain \
+        build-arm-pi1 run-arm-pi1 check-arm-pi1-toolchain \
+        build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -159,22 +176,28 @@ kill-i386:
 	-pkill -f '$(QEMU_I386)' 2>/dev/null || true
 
 ###############################################################################
-# x86_64 (forks/x86_64, jserv/xv6-x86_64)
+# amd64-jserv (forks/amd64-jserv, jserv/xv6-x86_64 - renamed from forks/x86_64)
 ###############################################################################
+# jserv's independent, actively-maintained x86-64 port - unrelated to
+# forks/amd64 (MIT's own abandoned 2018 x86-64 experiment) by lineage,
+# grouped under the shared "amd64" ISA prefix for the eventual
+# factorization-phase merge (see this Makefile's own header comment).
+# Both are fully working under QEMU; there is no "winner" here the way
+# there was among the four ARM32 ports - amd64-jserv/amd64 are peers.
 
-check-x86_64-toolchain:
-	@if [ "$(TOOLPREFIX_X86_64)" = NONE ] || [ "$(QEMU_X86_64)" = NONE ]; then \
-		echo "Makefile: x86_64 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+check-amd64-jserv-toolchain:
+	@if [ "$(TOOLPREFIX_AMD64_JSERV)" = NONE ] || [ "$(QEMU_AMD64_JSERV)" = NONE ]; then \
+		echo "Makefile: amd64-jserv toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
-# forks/x86_64/Makefile has no TOOLPREFIX at all - it's CROSS_COMPILE
-# there (see ./configure's own x86_64 section for why this repo still
-# calls the detected value TOOLPREFIX_X86_64 for naming consistency with
-# every other arch, just passed under the name this fork's Makefile
-# actually expects).
+# forks/amd64-jserv/Makefile has no TOOLPREFIX at all - it's CROSS_COMPILE
+# there (see ./configure's own amd64-jserv section for why this repo
+# still calls the detected value TOOLPREFIX_AMD64_JSERV for naming
+# consistency with every other arch, just passed under the name this
+# fork's Makefile actually expects).
 #
-# CPUS=2: forks/x86_64/Makefile's own "ifndef CPUS" default is this
+# CPUS=2: forks/amd64-jserv/Makefile's own "ifndef CPUS" default is this
 # HOST's own core count (`grep -c ^processor /proc/cpuinfo`), unlike
 # every other fork here (forks/riscv64 hardcodes 3, forks/i386 hardcodes 2)
 # - harmless on a native x86_64 deployment, but on this 64-core dev
@@ -186,26 +209,26 @@ check-x86_64-toolchain:
 # -smp 2, took under 30s). Not a logic bug, just a bad default to
 # inherit unmodified into an automated/CI context - pass a small,
 # explicit CPUS here rather than edit that default in the fork itself.
-build-x86_64: check-x86_64-toolchain
-	$(MAKE) -C forks/x86_64 CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) out/kernel.elf fs.img xv6.img
+build-amd64-jserv: check-amd64-jserv-toolchain
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) out/kernel.elf fs.img xv6.img
 
-run-x86_64: check-x86_64-toolchain
-	$(MAKE) -C forks/x86_64 CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) CPUS=2 qemu-nox
+run-amd64-jserv: check-amd64-jserv-toolchain
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 qemu-nox
 
-# Unlike forks/riscv64's/forks/i386's own QEMU vars, forks/x86_64/Makefile's
-# is "QEMU ?= qemu-system-x86_64" (a conditional default) - so QEMU
-# genuinely threads through the environment correctly here, not just
-# CROSS_COMPILE. CPUS is also "ifndef"-guarded (like TOOLPREFIX
+# Unlike forks/riscv64's/forks/i386's own QEMU vars, forks/amd64-jserv/
+# Makefile's is "QEMU ?= qemu-system-x86_64" (a conditional default) - so
+# QEMU genuinely threads through the environment correctly here, not
+# just CROSS_COMPILE. CPUS is also "ifndef"-guarded (like TOOLPREFIX
 # elsewhere), so it too threads through the environment correctly into
 # test-xv6.py's own "make qemu-nox" subprocess call.
-test-x86_64: check-x86_64-toolchain build-x86_64
-	cd forks/x86_64 && CROSS_COMPILE=$(TOOLPREFIX_X86_64) QEMU=$(QEMU_X86_64) CPUS=2 ./test-xv6.py
+test-amd64-jserv: check-amd64-jserv-toolchain build-amd64-jserv
+	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 ./test-xv6.py
 
-clean-x86_64:
-	$(MAKE) -C forks/x86_64 clean
+clean-amd64-jserv:
+	$(MAKE) -C forks/amd64-jserv clean
 
-kill-x86_64:
-	-pkill -f '$(QEMU_X86_64)' 2>/dev/null || true
+kill-amd64-jserv:
+	-pkill -f '$(QEMU_AMD64_JSERV)' 2>/dev/null || true
 
 ###############################################################################
 # amd64 (forks/amd64, MIT's own abandoned 2018 x86-64 experiment)
@@ -383,38 +406,43 @@ kill-loongarch:
 	-pkill -f '$(QEMU_LOONGARCH)' 2>/dev/null || true
 
 ###############################################################################
-# armv6-rpi (forks/armv6-rpi, inaciose/xv6-armv6-rpi)
+# arm-pi1-bis (forks/arm-pi1-bis, inaciose/xv6-armv6-rpi - renamed from
+# forks/armv6-rpi)
 ###############################################################################
-# Named for the fork directory, not a bare ISA name - see ./configure's
-# own comment on this same section for why (no single natural "arm32"
-# bare name given this repo has two real ARMv6/ARMv7 32-bit ports).
+# Targets the literal same real board as forks/arm-pi1 below (ARMv6
+# Raspberry Pi 1/Model B) - inaciose's independent implementation, not a
+# fork of zhiyihuang's (see docs/PROVENANCE.md). Grouped under the
+# shared "arm" ISA prefix, "-bis" marking it as the second, independent
+# port of that same board (see this Makefile's own header comment on
+# this rename).
 #
-# claude: forks/armv6-rpi/makefile.inc's own toolchain variable is
+# claude: forks/arm-pi1-bis/makefile.inc's own toolchain variable is
 # "CROSSCOMPILE", not "TOOLPREFIX" like every other fork here - passed
 # through as-is below rather than renamed, to keep this repo's own
 # changes to that file minimal.
 #
-# No test-armv6-rpi/clean-armv6-rpi/kill-armv6-rpi yet, and not folded
-# into build-all/run-all/test-all: six real bugs were found and fixed
-# this bring-up (see notes_arch_armv6_rpi.txt) and boot now progresses
-# vastly further than before - past the point where earlier bugs caused
-# an immediate crash loop - but it does not reach a shell yet. The last
-# remaining issue looks like it may be at the QEMU "-M raspi1ap" board-
-# emulation/firmware level rather than something fixable from this
-# kernel's own source, so build-armv6-rpi/run-armv6-rpi are wired up
-# (per the user's own "at least connect it... even if it fails"), but
-# there is no reliable pass/fail console signal yet for a scripted test.
-check-armv6-rpi-toolchain:
-	@if [ "$(TOOLPREFIX_ARMV6_RPI)" = NONE ] || [ "$(QEMU_ARMV6_RPI)" = NONE ]; then \
-		echo "Makefile: armv6-rpi toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+# No test-arm-pi1-bis/clean-arm-pi1-bis/kill-arm-pi1-bis yet, and not
+# folded into build-all/run-all/test-all: six real bugs were found and
+# fixed this bring-up (see notes_arch_arm_pi1_bis.txt) and boot now
+# progresses vastly further than before - past the point where earlier
+# bugs caused an immediate crash loop - but it does not reach a shell
+# yet. The last remaining issue looks like it may be at the QEMU "-M
+# raspi1ap" board-emulation/firmware level rather than something fixable
+# from this kernel's own source, so build-arm-pi1-bis/run-arm-pi1-bis
+# are wired up (per the user's own "at least connect it... even if it
+# fails"), but there is no reliable pass/fail console signal yet for a
+# scripted test.
+check-arm-pi1-bis-toolchain:
+	@if [ "$(TOOLPREFIX_ARM_PI1_BIS)" = NONE ] || [ "$(QEMU_ARM_PI1_BIS)" = NONE ]; then \
+		echo "Makefile: arm-pi1-bis toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
-build-armv6-rpi: check-armv6-rpi-toolchain
-	$(MAKE) -C forks/armv6-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV6_RPI) QEMU=$(QEMU_ARMV6_RPI) kernel.elf
+build-arm-pi1-bis: check-arm-pi1-bis-toolchain
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) kernel.elf
 
-run-armv6-rpi: check-armv6-rpi-toolchain
-	$(MAKE) -C forks/armv6-rpi CROSSCOMPILE=$(TOOLPREFIX_ARMV6_RPI) QEMU=$(QEMU_ARMV6_RPI) qemu
+run-arm-pi1-bis: check-arm-pi1-bis-toolchain
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) qemu
 
 ###############################################################################
 # arm (forks/arm, inaciose/xv6-armv7-rpi - renamed from forks/armv7-rpi)
@@ -423,8 +451,8 @@ run-armv6-rpi: check-armv6-rpi-toolchain
 # here: the SMP boot-gating gap noted below was fixed, along with a
 # Thumb/ARM codegen mismatch and a console/interrupt-routing swap to
 # PL011 (see notes_arch_arm.txt), reaching a genuinely interactive shell
-# with a passing usertests run - so unlike forks/armv6-rpi/forks/rpi1/
-# forks/rpi2, which keep their fork-directory names (see this Makefile's
+# with a passing usertests run - so unlike forks/arm-pi1-bis/forks/arm-pi1/
+# forks/arm-pi2, which keep their own (ISA-prefixed) names (see this Makefile's
 # own header comment on why), this fork was promoted to the bare ISA
 # name outright and its directory renamed forks/armv7-rpi -> forks/arm
 # to match (2026-09-08), same single-fork-per-ISA treatment as
@@ -458,83 +486,86 @@ kill-arm:
 	-pkill -f '$(QEMU_ARM)' 2>/dev/null || true
 
 ###############################################################################
-# rpi1 (forks/rpi1, zhiyihuang/xv6_rpi_port)
+# arm-pi1 (forks/arm-pi1, zhiyihuang/xv6_rpi_port - renamed from forks/rpi1)
 ###############################################################################
 # claude: IMPORTANT - the user has physical Raspberry Pi 1/2 hardware
-# and this fork genuinely boots there (forks/rpi1/kernel.ld, "make all",
+# and this fork genuinely boots there (forks/arm-pi1/kernel.ld, "make all",
 # "kernel.img"). This section ONLY drives the separate, purely-additive
 # QEMU-only targets (kernel-qemu.ld/"kernel-qemu.img"/"qemu" - see
-# notes_arch_rpi1.txt) - never touches the real-hardware build at all.
+# notes_arch_arm_pi1.txt) - never touches the real-hardware build at all.
 # Do not fold the real-hardware target into this repo's top-level
-# Makefile; it stays reachable only via forks/rpi1's own Makefile
+# Makefile; it stays reachable only via forks/arm-pi1's own Makefile
 # directly, by design (this repo's top-level build system is
 # specifically about QEMU-based build/boot, per CLAUDE.md).
 #
-# forks/rpi1/Makefile's own cross-toolchain variable is "ARMGNU", and
+# forks/arm-pi1/Makefile's own cross-toolchain variable is "ARMGNU", and
 # (unlike every other fork's TOOLPREFIX/CROSSCOMPILE) it does NOT
 # include a trailing "-" - $(ARMGNU)-gcc etc. add it themselves - so the
-# trailing "-" that ./configure's own TOOLPREFIX_RPI1 always includes
+# trailing "-" that ./configure's own TOOLPREFIX_ARM_PI1 always includes
 # (matching every other TOOLPREFIX_<ARCH> in this repo) needs stripping
 # here specifically.
 #
-# No test-rpi1/clean-rpi1/kill-rpi1 yet, and not folded into build-all/
-# run-all/test-all: boots cleanly under QEMU with no crash loop, but
-# produces no visible console output - two separate, unfixed QEMU/
-# mailbox-protocol gaps documented in notes_arch_rpi1.txt, not a
+# No test-arm-pi1/clean-arm-pi1/kill-arm-pi1 yet, and not folded into
+# build-all/run-all/test-all: boots cleanly under QEMU with no crash
+# loop, but produces no visible console output - two separate, unfixed
+# QEMU/mailbox-protocol gaps documented in notes_arch_arm_pi1.txt, not a
 # scripted pass/fail signal to build a test around yet.
-check-rpi1-toolchain:
-	@if [ "$(TOOLPREFIX_RPI1)" = NONE ] || [ "$(QEMU_RPI1)" = NONE ]; then \
-		echo "Makefile: rpi1 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+check-arm-pi1-toolchain:
+	@if [ "$(TOOLPREFIX_ARM_PI1)" = NONE ] || [ "$(QEMU_ARM_PI1)" = NONE ]; then \
+		echo "Makefile: arm-pi1 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
-build-rpi1: check-rpi1-toolchain
-	$(MAKE) -C forks/rpi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_RPI1)) QEMU=$(QEMU_RPI1) kernel-qemu.img
+build-arm-pi1: check-arm-pi1-toolchain
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) kernel-qemu.img
 
-run-rpi1: check-rpi1-toolchain
-	$(MAKE) -C forks/rpi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_RPI1)) QEMU=$(QEMU_RPI1) qemu
+run-arm-pi1: check-arm-pi1-toolchain
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) qemu
 
 ###############################################################################
-# rpi2 (forks/rpi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2)
+# arm-pi2 (forks/arm-pi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2 -
+# renamed from forks/rpi2)
 ###############################################################################
-# claude: same real-hardware-safety note as rpi1 above applies here -
+# claude: same real-hardware-safety note as arm-pi1 above applies here -
 # the user has physical Raspberry Pi 2 hardware, this section only
 # drives the additive QEMU-only "kernel7-qemu.bin"/"qemu" targets, never
-# the real-hardware "kernel7.bin"/"all" targets (see notes_arch_rpi2.txt).
+# the real-hardware "kernel7.bin"/"all" targets (see
+# notes_arch_arm_pi2.txt).
 #
-# Unlike forks/rpi1's own "ARMGNU" (no trailing "-"), forks/rpi2/
+# Unlike forks/arm-pi1's own "ARMGNU" (no trailing "-"), forks/arm-pi2/
 # Makefile's own toolchain variable is "TOOLCHAIN" and DOES expect the
 # trailing "-" (matching every other TOOLPREFIX_<ARCH> in this repo) -
 # passed through as-is, no stripping needed.
 #
-# No test-rpi2/clean-rpi2/kill-rpi2 yet, not folded into build-all/
-# run-all/test-all: boots cleanly under QEMU through the full firmware
-# handoff and well into real kernel logic, but hits an unresolved crash
-# before reaching any console output - see notes_arch_rpi2.txt.
-check-rpi2-toolchain:
-	@if [ "$(TOOLPREFIX_RPI2)" = NONE ] || [ "$(QEMU_RPI2)" = NONE ]; then \
-		echo "Makefile: rpi2 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+# No test-arm-pi2/clean-arm-pi2/kill-arm-pi2 yet, not folded into
+# build-all/run-all/test-all: boots cleanly under QEMU through the full
+# firmware handoff and well into real kernel logic, but hits an
+# unresolved crash before reaching any console output - see
+# notes_arch_arm_pi2.txt.
+check-arm-pi2-toolchain:
+	@if [ "$(TOOLPREFIX_ARM_PI2)" = NONE ] || [ "$(QEMU_ARM_PI2)" = NONE ]; then \
+		echo "Makefile: arm-pi2 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
-build-rpi2: check-rpi2-toolchain
-	$(MAKE) -C forks/rpi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_RPI2) QEMU=$(QEMU_RPI2) kernel7-qemu.bin
+build-arm-pi2: check-arm-pi2-toolchain
+	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) kernel7-qemu.bin
 
-run-rpi2: check-rpi2-toolchain
-	$(MAKE) -C forks/rpi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_RPI2) QEMU=$(QEMU_RPI2) qemu
+run-arm-pi2: check-arm-pi2-toolchain
+	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) qemu
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-x86_64 build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-mips
+build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-mips
 
-test-all: test-riscv64 test-i386 test-x86_64 test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-mips
+test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-mips
 
-clean-all: clean-riscv64 clean-i386 clean-x86_64 clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-mips
+clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-mips
 
-kill-all: kill-riscv64 kill-i386 kill-x86_64 kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-mips
+kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-mips
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

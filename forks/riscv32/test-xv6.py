@@ -13,7 +13,7 @@
 # so it starts passing automatically once bug 4 is fixed - no need to
 # remember to come back and add it later.
 #
-# Unlike forks/x86/forks/x86_64 (whole-disk xv6.img) or forks/amd64
+# Unlike forks/x86/forks/amd64-jserv (whole-disk xv6.img) or forks/amd64
 # (multiboot -kernel with no disk image at all), this fork's own "qemu"
 # target already boots via "-kernel kernel/kernel" plus a separate
 # virtio-mmio fs.img drive (see kernel/kernel.ld's own comment: entry.S

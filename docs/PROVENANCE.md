@@ -8,6 +8,39 @@ The abandoned `gitlab.com/xv6-multiarch` project is *not* merged in — it is a
 fresh `git init` with nothing recoverable — but its `kernel/i386`,
 `kernel/arm` layout is the precedent for the `arch/<name>/` convention here.
 
+## Upstream repo -> current `forks/` path
+
+Everything below this point (fork points, evidence, commit counts) refers to
+ports by their *original* identity - the upstream repo, or the name this
+repo first gave the fork - since that is what the historical analysis is
+about and it does not change. But `forks/<name>/` directory names have since
+moved for six of them (see `CLAUDE.md`'s own "Architecture naming
+convention" section for why - two different kinds of rename, both done
+history-preservingly, verified via `git log --follow`/`git blame -C` after
+each). This table is the current answer to "where did `<upstream>` end up":
+
+| upstream repo | original name here | current `forks/` path |
+|---|---|---|
+| mit-pdos/xv6-public | `x86` | `forks/i386` |
+| mit-pdos/xv6-riscv | `riscv` | `forks/riscv64` |
+| MIT xv6-riscv, pre-riscv | `amd64` | `forks/amd64` (unchanged) |
+| jserv/xv6-x86_64 | `x86_64` | `forks/amd64-jserv` |
+| nullpo-head/xv6-mips | `mips` | `forks/mips` (unchanged) |
+| k-mrm/xv6-aarch64 | `aarch64` | `forks/arm64` |
+| zhiyihuang/xv6_rpi_port | `rpi1` | `forks/arm-pi1` |
+| zhiyihuang/xv6_rpi2_port | `rpi2` | `forks/arm-pi2` |
+| inaciose/xv6-armv6-rpi | `armv6-rpi` | `forks/arm-pi1-bis` |
+| inaciose/xv6-armv7-rpi | `armv7-rpi` | `forks/arm` |
+| michaelengel/xv6-rv32 | `rv32` | `forks/riscv32` |
+| michaelengel/xv6-d1 | `d1` | `forks/d1` (unchanged) |
+| SKT-CPUOS/xv6-loongarch-exp | `loongarch` | `forks/loongarch` (unchanged) |
+| patha454/xv6_pi_mp | `pi_mp` | `forks/arm64-pi3` |
+| k-mrm/xv6-rpi4 | `rpi4` | `forks/arm64-pi4` |
+
+Standalone branches (`git branch -a`) still use the *original* names listed
+above, not the current `forks/` paths - `git log armv7-rpi`, not
+`git log arm`. See the root README's own "Browsing" section.
+
 ## Two kinds of upstream
 
 The single most useful thing to establish about any port is whether it is a

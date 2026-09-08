@@ -100,7 +100,7 @@ $(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
 # source, same CFLAGS/CC_OPTIONS, only the LOAD ADDRESS differs - against
 # the same kernel.ld (already fully parameterized via PHYSOFFSET/
 # KERNOFFSET --defsym symbols, so no separate linker script is needed
-# here unlike the sibling forks/rpi1 fork). QEMU's "-M raspi2b" needs the
+# here unlike the sibling forks/arm-pi1 fork). QEMU's "-M raspi2b" needs the
 # image placed at physical 0x10000, not the real-hardware 0x8000
 # (confirmed for the same board via forks/arm's own bring-up, forks/
 # armv7-rpi at the time - see notes_arch_arm.txt bug 7 - and

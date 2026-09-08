@@ -56,7 +56,7 @@ That single comparison identified the exact fix needed (more headroom in
 MAXFILE*BSIZE) and, just as importantly, which fix was safe: doubling
 BSIZE (multiplying the NINDIRECT term) rather than raising NDIRECT
 (which would also grow struct dinode and need re-deriving IPB/inode-block
-counts) - see notes_arch_x86_64.txt for the full reasoning and the
+counts) - see notes_arch_amd64_jserv.txt for the full reasoning and the
 cross-check against forks/riscv64/kernel/fs.h's own BSIZE=1024 precedent.
 The general lesson: an assertion failure names a file and a line for a
 reason - compute the real values on both sides of the failing condition
@@ -89,7 +89,7 @@ after a `hlt` instruction inside scheduler()'s own documented idle-wait
 path (`if no runnable process, hlt() until the next interrupt`)" -
 reframing the question from "where is it stuck" (answered) to "why does
 this specific hlt() never get woken back up" (the real remaining
-question - see notes_arch_x86_64.txt for how that was run down).
+question - see notes_arch_amd64_jserv.txt for how that was run down).
 
 `gdb-multiarch` (not the host's plain `gdb`) is required on a non-x86
 host - confirmed plain `gdb`'s `set architecture i386:x86-64` fails with
@@ -200,7 +200,7 @@ missing `i686-linux-gnu-` candidate in its own TOOLPREFIX probe, or the
 in its siblings immediately rather than waiting to rediscover it
 independently during that arch's own bring-up: forks/x86_64 turned out
 to share the exact same sh.c-derived bug (fixed the same way, see
-notes_arch_x86_64.txt), while forks/riscv64's own kernel/fs.h had already
+notes_arch_amd64_jserv.txt), while forks/riscv64's own kernel/fs.h had already
 independently solved the same class of problem forks/x86_64 hit
 (MAXFILE headroom) by using a bigger BSIZE - a precedent worth searching
 for and citing rather than re-deriving the fix from first principles.

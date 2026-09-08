@@ -1,5 +1,5 @@
-notes_arch_armv6_rpi.txt
-========================
+notes_arch_arm_pi1_bis.txt
+==========================
 
 Written: 2026-09-07, against commit ead0290 (the loongarch bring-up
 commit), during the armv6-rpi bring-up itself. Phase 4 of

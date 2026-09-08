@@ -1,5 +1,5 @@
-notes_arch_rpi2.txt
-====================
+notes_arch_arm_pi2.txt
+======================
 
 Written: 2026-09-07, against commit 1865287 (the rpi1 bring-up commit),
 during the rpi2 bring-up itself. Phase 4 of
@@ -18,7 +18,7 @@ gdb-based single-stepping to pin down, not attempted this session.
 modified in any way that could affect its behavior** - see "Real
 hardware safety" below.
 
-IMPORTANT CONTEXT: same as notes_arch_rpi1.txt - the user owns physical
+IMPORTANT CONTEXT: same as notes_arch_arm_pi1.txt - the user owns physical
 Raspberry Pi 1 and Pi 2 boards and can test forks/rpi1/forks/rpi2 on
 real hardware. All changes below were chosen to be safe for both
 targets, or purely additive.
@@ -80,7 +80,7 @@ forks/rpi1's own (same "while(t != getsystemtime());" exact-equality
 spin-wait) - same root cause (QEMU's emulated timer counter can advance
 by more than 1 between two reads and skip the exact target), same fix
 (a signed "target reached or passed" comparison), same justification
-for why it's safe on real hardware too. See notes_arch_rpi1.txt bug 4
+for why it's safe on real hardware too. See notes_arch_arm_pi1.txt bug 4
 and ~/principia/kernel/COMPILE/9/bcm/clock.c's own "claude:"-tagged
 comment on this exact class of bug for the same real hardware family.
 
@@ -158,7 +158,7 @@ Wired up in ./configure and the top-level Makefile as build-rpi2/
 run-rpi2 (the QEMU target only, "kernel7-qemu.bin"/"qemu" - the
 real-hardware "kernel7.bin"/"all" targets remain directly reachable via
 the fork's own Makefile, untouched, same reasoning as forks/rpi1 - see
-notes_arch_rpi1.txt) - no test-rpi2/clean-rpi2/kill-rpi2 yet, and not
+notes_arch_arm_pi1.txt) - no test-rpi2/clean-rpi2/kill-rpi2 yet, and not
 folded into build-all/run-all/test-all, since there is no console
 output yet (the crash happens before any UART/framebuffer output would
 even be reached) to build a real pass/fail signal around.

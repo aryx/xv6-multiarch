@@ -70,21 +70,38 @@ Makefile targets and `./configure`'s own `TOOLPREFIX_<ARCH>`/`QEMU_<ARCH>`
 variables use the bare ISA name (`riscv64`, `i386`, ...), matching
 `~/goken/include/arch/` and `~/c--`'s `CC<ARCH>`/`RUN_<ARCH>` convention.
 For most ports this still differs from the `forks/<name>/` directory
-name, which instead names the upstream repo/port (`forks/armv6-rpi` is
-the upstream repo name, `inaciose/xv6-armv6-rpi`) - those directories
-are deliberately **not** renamed to match: that would disturb the
-directory-content history the eventual factorization phase depends on,
-for no benefit to this phase. `forks/riscv`, `forks/x86`, `forks/rv32`,
-`forks/aarch64`, and `forks/armv7-rpi` were the exception: renamed to
-`forks/riscv64`/`forks/i386`/`forks/riscv32`/`forks/arm64`/`forks/arm`
-outright, each because it's the single, unambiguous fork for that
-ISA/name - true from the start for the first four; true for `forks/arm`
-only once it beat the other three ARM32 candidates (`armv6-rpi`,
-`rpi1`, `rpi2`, which keep their fork-directory names since the
-ambiguity between them is real and worth preserving - see the root
-README's port table and this file's own "Adding a new arch" section on
-why `armv7-rpi` specifically earned that promotion) and was renamed
-2026-09-08, once the directory and target names could agree.
+name - those directories are deliberately **not** renamed to arbitrary
+short names: that would disturb the directory-content history the
+eventual factorization phase depends on, for no benefit to this phase.
+Two distinct kinds of rename ARE done, both preserving history (verified
+via `git log --follow`/`git blame -C` after each one):
+
+1. **Single-ISA-representative promotion.** `forks/riscv`, `forks/x86`,
+   `forks/rv32`, `forks/aarch64`, and `forks/armv7-rpi` were renamed to
+   `forks/riscv64`/`forks/i386`/`forks/riscv32`/`forks/arm64`/`forks/arm`
+   outright, each because it's the single, unambiguous fork for that
+   ISA/name - true from the start for the first four; true for
+   `forks/arm` only once it beat the other three ARM32 candidates and
+   was promoted (2026-09-08, see this file's own "Adding a new arch"
+   section on why `armv7-rpi` specifically earned it), once the
+   directory and target names could agree.
+2. **ISA-prefixed grouping**, added 2026-09-08 and NOT a representative
+   promotion (each still has its own separate official representative -
+   `forks/arm`, `forks/arm64`, `forks/amd64`): `forks/rpi1`, `forks/rpi2`,
+   `forks/armv6-rpi`, `forks/pi_mp`, `forks/rpi4`, and `forks/x86_64`
+   were renamed to `forks/arm-pi1`, `forks/arm-pi2`, `forks/arm-pi1-bis`,
+   `forks/arm64-pi3`, `forks/arm64-pi4`, and `forks/amd64-jserv` - real,
+   distinct peer/derivative ports grouped under a shared ISA prefix
+   purely to make the eventual factorization-phase merge easier to
+   reason about (related forks now sort together). `forks/arm-pi1` and
+   `forks/arm-pi1-bis` target the literal same real board (ARMv6
+   Raspberry Pi 1/Model B - zhiyihuang's and inaciose's independent
+   ports, hence "-bis" for the second one); `forks/arm64-pi3` and
+   `forks/arm64-pi4` target DIFFERENT real boards (Pi 3 vs Pi 4) under
+   the same 64-bit ARM ISA, so no "-bis"; `forks/amd64-jserv` is jserv's
+   independent, fully-working x86-64 port grouped alongside MIT's own
+   `forks/amd64`, not a derivative of it. See `docs/PROVENANCE.md` for
+   the upstream-repo -> current-forks-path mapping table.
 
 ## Adding a new arch (Phase 4)
 

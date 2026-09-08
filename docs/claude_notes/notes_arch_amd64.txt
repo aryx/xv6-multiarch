@@ -7,7 +7,7 @@ attempted from that phase's list. Ends at "builds clean, boots, passes
 the full usertests suite" on the FIRST real boot attempt, needing only
 one of the two GCC-false-positive fixes forks/i386/forks/x86_64 both
 needed - by far the easiest bring-up so far. See
-docs/claude_notes/notes_arch_x86_64.txt for the harder sibling story this
+docs/claude_notes/notes_arch_amd64_jserv.txt for the harder sibling story this
 one contrasts with.
 
 What this is

@@ -37,7 +37,7 @@ README's fork-point table: `git merge-base` against k-mrm's own
 xv6-aarch64 confirms it) - same author, real Pi 4 follow-up to this
 QEMU-targeted aarch64 port. Genealogically rpi4 has nothing to do with
 the separate rpi1/rpi2/armv6-rpi/armv7-rpi ARM32 "Pi" family (see
-notes_arch_rpi1.txt/notes_arch_rpi2.txt) despite the shared "Pi"
+notes_arch_arm_pi1.txt/notes_arch_arm_pi2.txt) despite the shared "Pi"
 branding - it descends from this 64-bit port instead. rpi4 has not been
 brought up in this repo's Phase 4 QEMU work yet (its own README says
 QEMU support needs a hand-patched fork of QEMU, not mainline) - no
@@ -204,7 +204,7 @@ Not yet tried:
     either_copyout somehow.
   - Checking bmap()/the virtio_disk.c read path specifically for a
     partial-transfer bug analogous to forks/x86_64's own multi-sector
-    ATA PIO race (see notes_arch_x86_64.txt) - virtio is a different
+    ATA PIO race (see notes_arch_amd64_jserv.txt) - virtio is a different
     mechanism (ring buffers, not PIO polling) but "reads only the first
     unit of a multi-unit transfer" is the same *shape* of bug, worth
     checking for specifically rather than assumed absent.

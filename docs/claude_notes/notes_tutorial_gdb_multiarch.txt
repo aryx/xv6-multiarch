@@ -4,7 +4,7 @@ notes_tutorial_gdb_multiarch.txt
 A hands-on tutorial for debugging a hung/misbehaving xv6 kernel under QEMU
 with `gdb-multiarch`, written from a real session bringing up forks/x86_64
 (2026-09-05/06) - every command and finding below actually happened, in
-this order, against this repo. See docs/claude_notes/notes_arch_x86_64.txt
+this order, against this repo. See docs/claude_notes/notes_arch_amd64_jserv.txt
 for the bug-hunt's actual conclusions; this file is the *how*, written so
 a future session (or you) can reuse the technique on the next hung arch
 without re-deriving it from scratch.
@@ -276,7 +276,7 @@ directly showed the sequence `idestart -> trap -> ideintr -> trap` -
 i.e. the disk read WAS issued, an interrupt WAS delivered, and the
 handler WAS entered. That ruled out "no interrupt arrives at all" in one
 shot and pointed at something *inside* the interrupt-handling chain
-instead (see notes_arch_x86_64.txt for where that led: a real bug, found
+instead (see notes_arch_amd64_jserv.txt for where that led: a real bug, found
 by comparing this fork's ide.c/console.c/uart.c against the working
 i386 sibling's simpler interrupt-enable calls).
 

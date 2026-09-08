@@ -1,5 +1,5 @@
-notes_arch_rpi1.txt
-====================
+notes_arch_arm_pi1.txt
+======================
 
 Written: 2026-09-07, against commit eb760b5 (the armv7-rpi bring-up
 commit), during the rpi1 bring-up itself. Phase 4 of
@@ -84,7 +84,7 @@ Bug 3 (real, fixed, proactive): "-Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s" only r
 Fixed proactively, before actually being hit as a build/link failure -
 this is the EXACT SAME flag pattern that caused a real, reproduced
 Thumb-switching-BLX crash in the sibling armv6-rpi port under QEMU (see
-notes_arch_armv6_rpi.txt bug 4) - "-Wa," flags only restrict what the
+notes_arch_arm_pi1_bis.txt bug 4) - "-Wa," flags only restrict what the
 ASSEMBLER stage accepts, not what gcc's own code generator targets,
 which silently falls back to this toolchain's real default
 (armv7-a+fp) without an explicit override. Replaced with real gcc-level
@@ -109,7 +109,7 @@ kernel.ld links at physical 0x8000 (AT(0x8000)) - the address real
 Raspberry Pi 1 firmware always loads a kernel.img at. Confirmed via the
 QEMU monitor's "xp" command that QEMU's "-M raspi1ap" "-kernel" loader
 (for a raw binary) places content at physical 0x10000 instead - same
-finding as notes_arch_armv6_rpi.txt's own bug 5. Rather than changing
+finding as notes_arch_arm_pi1_bis.txt's own bug 5. Rather than changing
 kernel.ld itself (which would break real hardware boot), added a
 SEPARATE kernel-qemu.ld (identical SECTIONS layout, only the base
 address differs: 0x80010000/AT(0x10000)) and new, purely-additive
