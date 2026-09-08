@@ -2,7 +2,6 @@
 _*
 *.o
 *.d
-*.asm
 *.sym
 *.img
 vectors.S

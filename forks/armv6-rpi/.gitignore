@@ -9,12 +9,11 @@
 
 # claude: this port's own build outputs that weren't covered by the
 # generic patterns below - build/ (all .o/.d go here per makefile.inc's
-# own build-directory rule), disassembly/binary dumps (*.asm/*.dis),
-# the raw-binary kernel image (*.img), the compiled user programs
-# (bare "_name", no extension - xv6's own convention), and the host
-# mkfs tool (also a bare binary name).
+# own build-directory rule), disassembly dumps (*.dis - *.asm is covered
+# by the toplevel .gitignore), the raw-binary kernel image (*.img), the
+# compiled user programs (bare "_name", no extension - xv6's own
+# convention), and the host mkfs tool (also a bare binary name).
 build/
-*.asm
 *.dis
 *.img
 usr/_*

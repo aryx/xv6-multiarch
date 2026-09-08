@@ -352,8 +352,8 @@ upgrades the pattern from "interesting coincidence" to "go looking for a
 shared root cause in the common ancestor code" rather than re-diagnosing
 each one from scratch.
 
-16. QEMU's own `info mtree` monitor command is authoritative for "what's really at this address" - don't trust a kernel's own hardcoded constant
---------------------------------------------------------------------------------------------------------------------------------------------------------
+16. QEMU's own `info mtree` monitor command is authoritative for "what's really at this address" - but you still have to read its output carefully, line by line, not skim it
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 When a kernel hangs polling a device that should respond, or writes to
 something that seems to have no effect, the fastest way to settle "is
 this address even right" is to ask QEMU directly rather than cross-
@@ -366,19 +366,44 @@ shell, `echo "info mtree" | nc -U /path/to/sock` (`nc`, not `socat`,
 if the latter isn't installed - both work). This prints the *actual*,
 live physical memory map: every device's real base address and size,
 organized by which internal bus/address-space it lives in, straight
-from QEMU's own device model. During mips bring-up this immediately
-showed `0x14000000` (what the kernel's own `io_port_base` assumed was
-the legacy PCI/ISA I/O window) actually belongs to the GT64120 system
-controller's PCI config-space registers, an unrelated device - the
-real I/O window was aliased at `0x10000000`, a 64MB difference that
-had been silently sending every `inb()`/`outb()` in the kernel to the
-wrong device for an unknown number of years. This is the same class of
-technique as item 11's `-d int,guest_errors` trace (ask the emulator
-directly instead of reasoning from source), applied to address-space
-layout instead of trap/exception history - reach for `info mtree`
-specifically when the question is "where does this address actually
-land", and item 11's trace when the question is "what trap did the CPU
-actually take".
+from QEMU's own device model. This is the same class of technique as
+item 11's `-d int,guest_errors` trace (ask the emulator directly
+instead of reasoning from source), applied to address-space layout
+instead of trap/exception history - reach for `info mtree` specifically
+when the question is "where does this address actually land", and item
+11's trace when the question is "what trap did the CPU actually take".
+
+During mips bring-up this immediately showed `0x14000000` (what the
+kernel's own `io_port_base` assumed was the legacy PCI/ISA I/O window)
+actually belongs to the GT64120 system controller's PCI config-space
+registers, an unrelated device - real progress, `info mtree` did its
+job. But the FIX drawn from that same output was itself wrong, and
+stayed wrong across an entire subsequent bring-up session: the real
+line was
+
+  0000000010000000-0000000017ffffff (prio 0, i/o): alias pci0-mem0 @pci0-mem ...
+  0000000018000000-00000000181fffff (prio 0, i/o): alias pci0-io @io ...
+
+and the fix taken at the time was `0x10000000` (`pci0-mem0` - PCI
+*memory* space) instead of the actually-correct `0x18000000`
+(`pci0-io` - PCI *I/O* space, two lines down, a different address
+space entirely despite the very similar-looking label). Writing/
+reading through the wrong-but-real window doesn't fault or show up in
+`-d guest_errors` (it's backed memory, just the wrong kind), so the
+original symptom (an `ideinit()` busy-wait hang) genuinely went away -
+enough surface-level improvement to make the fix look validated - while
+the real bug (a UART that produced zero console output) persisted for
+an entire separate investigation, root-caused only when a *later*
+session re-ran `info mtree` and read the two adjacent alias lines
+properly, then cross-checked with a direct register readback (`xp` on
+the live UART's IIR at the candidate address, see item 18 below) rather
+than trusting the mtree line alone a second time. The tool was right
+both times; only the reading of it was careless the first time. Worth
+remembering: `info mtree`'s output rewards a careful line-by-line read,
+not a skim for the first plausible-looking alias - two adjacent regions
+with near-identical labels (`pci0-mem0` vs `pci0-io`) are exactly the
+shape of mistake that's easy to make once and then re-derive fixes on
+top of for a long time before anyone re-checks the original evidence.
 
 17. When "no console output" survives every kernel-code check, rule out the *host-side capture path* by reading a raw pty directly, not `-nographic`'s stdio multiplexing
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

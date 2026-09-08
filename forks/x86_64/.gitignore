@@ -3,7 +3,6 @@ _*
 .*.swp
 *.o
 *.d
-*.asm
 *.sym
 *.img
 vectors.S
