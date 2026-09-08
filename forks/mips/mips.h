@@ -4,20 +4,24 @@
 
 #define MAXASID 255
 
-// claude: this used to be 0xb4000000. QEMU's "malta" board aliases the
-// PCI/ISA I/O port space (where the legacy 0x1f0/0x3f6/0x3f8-style
-// ports this driver uses actually live) at PHYSICAL address 0x10000000
-// - confirmed directly via the monitor's own "info mtree"
-// ("0000000010000000-0000000011ffffff ... alias pci0-io @io"), not
-// 0x14000000 (that address is the GT64120 system controller's own
-// config-space registers, a different device entirely). In KSEG1
-// (uncached, +0xA0000000) terms that's 0xB0000000, not 0xB4000000 - a
-// 64MB-off mistake (whether inherited from an older QEMU version's
-// memory map or original to this port isn't known) that silently sent
-// every inb()/outb() to unmapped RAM/empty-slot space instead of any
-// real device, hanging ideinit()'s very first idewait() call forever
-// (see docs/claude_notes/notes_arch_mips.txt).
-static int io_port_base = 0xb0000000;
+// claude: this was 0xb4000000 originally, then "corrected" to 0xb0000000
+// in an earlier session (see notes_arch_mips.txt bug 3) - that fix was
+// ITSELF wrong, a misread of "info mtree"'s output: physical
+// 0x10000000-0x17ffffff is "alias pci0-mem0 @pci0-mem" - the PCI
+// *memory* window, not I/O - reads/writes there land on unbacked/empty
+// space (silently, no guest_errors trace, no fault - just no effect),
+// which is exactly why bug 3's own ideinit() hang went away (the CPU
+// wasn't spinning on a real busy-bit anymore) while bug 5 (no console
+// output at all) remained unexplained for two more sessions. The REAL
+// PCI/ISA I/O aperture - where the legacy 0x1f0/0x3f6/0x3f8-style ports
+// this driver uses actually live - is aliased at physical 0x18000000,
+// per "info mtree"'s own "0000000018000000-00000000181fffff ... alias
+// pci0-io @io" line, confirmed further by reading back a live UART
+// register there directly: "xp/4xb" at 0x180003f8 shows IIR (offset 2)
+// = 0x01 ("no interrupt pending", the correct 16550 reset default),
+// while the same read at the old 0x100003f8 is all zero bytes. In
+// KSEG1 (uncached, +0xA0000000) terms that's 0xB8000000.
+static int io_port_base = 0xb8000000;
 
 static inline volatile uchar
 inb(ushort port)

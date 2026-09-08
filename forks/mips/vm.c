@@ -269,10 +269,36 @@ freevm(pde_t *pgdir)
 
 // Clear PTE_U on a page. Used to create an inaccessible
 // page beneath the user stack.
-// MIPS does not support memory access control by pages, so this does nothing.
+//
+// claude: this used to be a no-op ("MIPS does not support memory access
+// control by pages, so this does nothing") - true in the sense that
+// there's no PTE_U-equivalent *permission* bit in a MIPS TLB entry, but
+// the guard page doesn't need permission control, just to stop being
+// present: exec()'s own copyout()/uva2ka() path already correctly
+// checks ELO_V (see uva2ka() above) and every real hardware/QEMU TLB
+// refill of an ELO_V=0 entry already correctly raises a TLB-invalid
+// exception on its own (that's what the V bit is *for*) - so clearing
+// ELO_V here achieves the same "this address must not be touched"
+// outcome as x86's PTE_U-clearing, just via the mechanism MIPS actually
+// has. Without this, bigargtest() (usertests.c) silently corrupted
+// memory below the guard page instead of failing exec() - see
+// notes_arch_mips.txt bug 7.
+//
+// pte_t packs TWO pages' EntryLo values into one 64-bit word (ELX(va),
+// bit 12 of the address, selects which 32-bit half - see mmu.h's own
+// PTE_ELO/ELX) - since the guard page and the usable stack page above
+// it are exactly one page apart, they land in the SAME pte_t slot,
+// different halves, so only THAT specific half's V bit is cleared here,
+// not the whole word (which would also unmap the adjacent usable page).
 void
 clearpteu(pde_t *pgdir, char *uva)
 {
+  pte_t *pte;
+
+  pte = walkpgdir(pgdir, 0, uva, 0, 0);
+  if(pte == 0)
+    panic("clearpteu");
+  *pte &= ~((pte_t)ELO_V << (32 * (1 - ELX(uva))));
 }
 
 // Given a parent process's page table, create a copy
@@ -290,8 +316,17 @@ copyuvm(pde_t *pgdir, char asid, uint sz)
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, asid, (void *) i, 0, 0)) == 0)
       panic("copyuvm: pte should exist");
+    // claude: this used to panic here ("page not present") - true up
+    // through this file's own clearpteu() being a no-op, but now that
+    // clearpteu() actually clears ELO_V on the guard page beneath the
+    // user stack (MIPS's own way of implementing what x86 does with a
+    // separate PTE_U bit - see clearpteu()'s own comment), the guard
+    // page is a genuine, intentional exception within [0,sz) - skip
+    // copying it rather than panicking; the child ends up with the
+    // exact same "not present" state there, which is the correct
+    // outcome (neither parent nor child should ever access it).
     if(!(PTE_ELO(*pte, ELX(i)) & ELO_V))
-      panic("copyuvm: page not present");
+      continue;
     pa = ELO_ADDR(PTE_ELO(*pte, ELX(i)));
     flags = ELO_FLAGS(PTE_ELO(*pte, ELX(i)));
     if((mem = kalloc()) == 0)

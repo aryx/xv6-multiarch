@@ -2,16 +2,26 @@ notes_arch_mips.txt
 ===================
 
 Written: 2026-09-06, against commit 7a91ab9 (the aarch64->arm64 rename
-commit), during the mips bring-up itself. Phase 4 of
-docs/claude_notes/build-and-test-plan.md, fifth port attempted from that
-phase's list. Status: NOT fully working yet - four real bugs found and
-fixed (a modern-toolchain calling-convention mismatch, a removed QEMU
-machine type, a wrong I/O-space base address, and a linker/objcopy bug
-that inflated a bootstrap blob to 4.2MB), and the kernel now builds
-clean and boots without panicking or hanging - but produces zero visible
-console output, for a reason still NOT root-caused (see "Bug 5" below,
-including a follow-up session's UPDATE that ruled out the originally
-suspected explanation).
+commit), during the mips bring-up itself. Updated 2026-09-07 in a
+follow-up session that root-caused and fixed bug 5 (no console output)
+and found four more real bugs while pushing on to a real usertests run.
+Phase 4 of docs/claude_notes/build-and-test-plan.md, fifth port
+attempted from that phase's list. Status: genuinely interactive shell,
+usertests now runs and passes a real, growing majority of its own
+sub-tests (createdelete/linkunlink/concreate/fourfiles/sharedfd/bigarg
+x2/bigwrite/bss all confirmed "ok") - but still not a clean full pass:
+"sbrk test" hangs (confirmed via gdb sampling: PC never advances),
+NOT yet root-caused, session paused here to commit real, verified
+progress rather than keep digging - see "Gap (still open)" below.
+Eight real bugs found and fixed in total this port's whole history (see
+below): a modern-toolchain calling-convention mismatch, a removed QEMU
+machine type, a wrong I/O-space base address (itself later found to be
+STILL wrong, see bug 5's own follow-up), a linker/objcopy bug that
+inflated a bootstrap blob to 4.2MB, the real bug-5 root cause (io_port_base
+pointed at PCI memory space, not I/O space), a stray non-page-aligned
+.reginfo LOAD segment breaking every exec()'d program, a too-small
+MAXFILE that made the usertests binary itself un-storable, and a
+completely unimplemented (no-op stub) stack guard-page mechanism.
 
 What this is
 ------------
@@ -233,48 +243,209 @@ non-tty-pipe concerns. Still zero bytes, confirming this is a genuine
 emulation/kernel-code bug, not an artifact of how output was being
 captured.
 
-Net effect: bug 5 is CONFIRMED real and still NOT root-caused. The two
-candidate next steps from the original investigation ((a) port uart.c
-to the malta-fpga UART's own wider register stride, (b) find a QEMU
-flag to reroute stdio to the ISA ports) are both now less promising
-given the above - (b) looks backwards (serial0 already likely *is* an
-ISA port), and (a) would target a chardev (`fpga`) that turned out to
-need `-display` support (`vc` backend) to even be visible under
-`-nographic`, which doesn't fit this kernel's design at all. The
-actual bug is more likely in the ISA-serial byte-lane/bridge path
-itself (GT64120-mediated PCI/ISA I/O from the CPU side) or in a device
-lifecycle/reset-ordering detail this session didn't reach - left open
-for a future session with fresh eyes, rather than guessed at further.
+Net effect at the end of that session: bug 5 was confirmed real and
+still not root-caused, with both original candidate next steps ((a)
+port uart.c to the malta-fpga UART, (b) find a QEMU flag to reroute
+stdio) ruled out as unpromising. Resolved in the follow-up session -
+see below.
+
+Bug 5, root cause (found in the follow-up session): io_port_base pointed at PCI *memory* space, not I/O space
+------------------------------------------------------------------------------------------------------------------
+The fix in the ORIGINAL bug 3 (`io_port_base = 0xb0000000`, physical
+0x10000000) was itself a misread of `info mtree`'s output - confirmed
+by running `info mtree` fresh in this session and reading it far more
+carefully:
+
+  0000000010000000-0000000017ffffff (prio 0, i/o): alias pci0-mem0 @pci0-mem ...
+  0000000018000000-00000000181fffff (prio 0, i/o): alias pci0-io @io ...
+
+Physical 0x10000000-0x17ffffff is `pci0-mem0` - the PCI *memory*
+window, a completely different address space from PCI *I/O* space
+(`pci0-io`, which is where the classic 0x1f0/0x3f6/0x3f8-style ports
+this driver uses actually live) - that's aliased at physical
+**0x18000000**, not 0x10000000. Writing/reading through the wrong
+window doesn't fault or trace as a guest error (it's real, backed
+memory - just the wrong kind), so bug 3's own ideinit() hang going away
+after that fix was real (the CPU stopped spinning on a fake busy-bit),
+but the actual UART writes were still landing on unbacked/irrelevant
+memory the whole time - explaining why every single register-level
+verification in the original bug 5 investigation checked out (uart=1
+correctly detected as real hardware present, uartputc() called with a
+sensible byte, the outb() store instruction genuinely executing) while
+still producing zero visible output: the store executed, just at the
+wrong physical address.
+
+Confirmed two ways before touching any code:
+  - `info mtree` itself, read precisely this time (see above).
+  - `xp/4xb` on the two candidate physical addresses for COM1
+    (0x100003f8 vs 0x180003f8): the old address read all zero bytes
+    (unbacked/empty); the new one showed IIR (offset 2) = 0x01, the
+    correct 16550 reset-default "no interrupt pending" value - i.e. a
+    real, live UART register, not garbage.
+
+Fixed by changing `io_port_base` from `0xb0000000` to `0xb8000000`
+(KSEG1-uncached alias of physical 0x18000000). Console output works
+immediately - `qemu-system-mipsel -kernel kernelmemfs ... -nographic`
+now prints "xv6...", "cpu0: starting", and (once bug 6 below was also
+fixed) "init: starting sh" / a real interactive "$ " prompt.
+
+Bug 6 (real, fixed): every exec()'d user program panicked on "loaduvm: addr must be page aligned"
+--------------------------------------------------------------------------------------------------------
+Found immediately after fixing bug 5 (the newly-visible console showed
+"cpu0: starting" then this panic, before "init: starting sh" ever
+printed - the very first exec("/init", ...) call). `readelf -l` on a
+built `_init` showed why: GNU ld's default MIPS O32 linker script (this
+fork never had a custom one - see bug 8 below for a DIFFERENT,
+already-fixed instance of the same underlying pattern, for `initcode`
+specifically) gives `.reginfo` its own SEPARATE program header - typed
+LOAD, in addition to (and covering the same bytes as) a REGINFO-typed
+one - at a non-page-aligned virtual address (0x004000f0 in that build).
+exec()'s loaduvm() walks every PT_LOAD segment and panics on that one.
+
+Tried first, insufficient on its own: extending the Makefile's existing
+`$(OBJCOPY) -R .MIPS.abiflags $*.o $@` step (already there from bug 4's
+own fix) to also strip `.reginfo` - confirmed by hand
+(`mipsel-linux-gnu-objcopy -R .MIPS.abiflags -R .reginfo ...` then
+`readelf -l`) that this only *empties* the LOAD segment's size, it
+doesn't remove the segment header itself - loaduvm()'s own page-align
+check runs unconditionally before ever looking at size, so it still
+panics on the same (now-empty) segment's still-misaligned address.
+
+Real fix: a new forks/mips/user.ld linker script (this fork never had
+one at all - user programs linked with a flat `-N -e main -Ttext 0`),
+combining `.text`/`.rodata`/`.data`/`.bss` into one segment at vaddr 0
+(same as the default script already did - that part wasn't broken) and
+explicitly `/DISCARD/`-ing `.reginfo`/`.MIPS.abiflags`/a few other
+MIPS-toolchain metadata sections so their LOAD headers never get
+created in the first place. Verified directly by hand (`readelf -l` on
+a test link with `-T user.ld`) before wiring it into the Makefile's
+`_%:`/`_forktest` rules (`-Ttext 0` replaced with `-T user.ld`; the
+pre-existing objcopy step left in place since it's still needed to
+produce `$@` from the `$*.o` intermediate, even though the section-strip
+half of what it does is now redundant).
+
+Bug 7 (real, fixed): MAXFILE too small for the usertests binary; a stack guard-page mechanism that was never actually implemented
+----------------------------------------------------------------------------------------------------------------------------------------
+`usertests.c` exists in `usr/` but was excluded from `UPROGS` (only
+listed in a separate, unused `BACK_UPROGS`) - the note above wondering
+whether this was because it simply didn't fit turned out to be exactly
+right, and there was a second, deeper reason too.
+
+Part 1 - MAXFILE: building `_usertests` standalone gave an 84,172-byte
+binary; `MAXFILE*BSIZE` was 71,680 bytes (`NDIRECT=12`) - the same
+class of bug forks/x86_64 hit (see notes_arch_x86_64.txt) and fixed the
+same way: raise `NDIRECT`, keep `BSIZE=512`. `struct dinode`'s own size
+(`12 + 4*(NDIRECT+1)` bytes) must stay a power of two, per mkfs.c's own
+`assert((512 % sizeof(struct dinode)) == 0)` - `NDIRECT=60` gives a
+256-byte dinode and `MAXFILE*BSIZE=96256` bytes, comfortable margin.
+Raising `NDIRECT` shrank `IPB` (inodes per block) from 8 to 2, which
+grew the fixed-size inode region from 25 to 100 blocks - tripping
+mkfs.c's own `assert(nblocks + usedblocks + nlog == size)` (`size` was
+hardcoded to 1024) until `size` was raised to 1099 to match. Both
+changes are pure arithmetic, worked out by hand and verified against
+mkfs's own printed `used`/`total` line before trusting them.
+
+Part 2 - the guard page: with MAXFILE fixed, `_usertests` was addable
+to UPROGS and built into fs.img - `usertests` ran, got through several
+sub-tests, then failed cleanly on `bigargtest()` ("does exec return an
+error if the arguments are larger than a page? or does it write below
+the stack and wreck the instructions/data?" - the comment on this test
+in usertests.c literally names the exact failure mode). Root cause:
+`clearpteu()` (creates the inaccessible guard page beneath the user
+stack, so a stack overflow faults instead of silently corrupting
+memory) was a complete no-op stub, with its own comment explaining why:
+"MIPS does not support memory access control by pages, so this does
+nothing." True in the narrow sense that there's no PTE_U-equivalent
+*permission* bit in a MIPS TLB entry the way x86 has - but the guard
+page doesn't need permission control, just to stop being *present*:
+`uva2ka()` already correctly checks the ELO_V (valid) bit and returns
+failure if it's clear, and any real hardware/QEMU TLB refill of an
+ELO_V=0 entry already correctly raises a TLB-invalid exception on its
+own (that's what the V bit is *for*). Implemented `clearpteu()` for
+real: `walkpgdir()` to find the guard page's PTE, then clear just the
+ELO_V bit for that page's half of the packed 64-bit `pte_t` (MIPS packs
+two pages' EntryLo values per PTE slot, selected by `ELX(va)` = bit 12
+of the address - the guard page and the usable stack page above it are
+exactly one page apart, so they share one slot, different halves; only
+the guard half is touched).
+
+This exposed one more latent assumption, breaking `fork()` immediately
+after the `clearpteu()` fix (a NEW panic, "copyuvm: page not present",
+right after "init: starting sh" - init forking to exec sh): `copyuvm()`
+(duplicates a parent's address space for a child) assumed every page
+within `[0, sz)` is present and panicked otherwise - true before this
+session's fix (the guard page was always "present" whether or not it
+was supposed to be usable, since clearpteu() never touched it), false
+now that a genuine intentional gap exists. Compare i386's own
+`copyuvm()` (same structure, this port's ancestor lineage): it checks
+PTE_P (presence) only, since x86's PTE_U is a separate bit orthogonal
+to presence - the x86 guard page stays present throughout, so its own
+copyuvm() never hits this. MIPS has no such orthogonal bit, so
+presence-via-ELO_V really is the only implementation MIPS has for this
+concept, and downstream code needs to tolerate it. Fixed by turning the
+panic into a skip (`continue` instead of `panic("copyuvm: page not
+present")`) - the child ends up with the same "not present" state at
+that address, which is the correct outcome. Audited the two other
+functions with the same-shaped loop (`deallocuvm()`, `freevm()`) for
+the identical assumption - both already tolerate a non-present page
+gracefully (an `if(pte) ... else-if(V) free-it` shape with no `else`
+branch, or delegating to `deallocuvm()`), no fix needed there.
+
+Also removed as dead code once fixed: `BACK_UPROGS` (a second UPROGS-
+shaped list whose only difference from UPROGS was including
+`_usertests`, never referenced anywhere else in the Makefile) - now
+that `_usertests` is in the real UPROGS, the two lists were identical,
+so keeping both (two lists to maintain in sync) was pure debt.
 
 Verification so far
 ------------------------
   make TOOLPREFIX=mipsel-linux-gnu- kernelmemfs
-    -> builds clean (two real fixes: -mno-abicalls, .reginfo stripped)
+    -> builds clean (bugs 1/4/6/7 fixes all included; -Wall, not -Werror,
+       so the pre-existing timer.c TIMER_DIV truncation warning is
+       still there, benign and untouched - same class of thing as every
+       other fork's own harmless -Wall noise)
   qemu-system-mipsel -kernel kernelmemfs -smp 1 -m 256 -M malta -nographic
-    -> boots all the way through real kernel init and scheduling (traced
-       via gdb and -d in_asm) with no panic and no hang - but prints
-       nothing visible, per bug 5 above.
+    -> "xv6...", "cpu0: starting", "init: starting sh", "$ " - genuinely
+       interactive, confirmed via a scripted "ls" producing a real
+       directory listing
+  "usertests" at the shell prompt
+    -> runs for real, "ok" on createdelete/linkunlink/concreate/
+       fourfiles/sharedfd/bigarg (both calls)/bigwrite/bss - real,
+       substantial progress, but NOT a clean full pass yet, see the gap
+       below
 
-Still open / not investigated this session
---------------------------------------------------
-- Bug 5 above (no console output) - this is what blocks everything else
-  (usertests, the disk-based `kernel` path, wiring up a real
-  test-xv6.py) from being verifiable at all right now.
+Gap (still open, NOT fixed): usertests hangs on "sbrk test"
+--------------------------------------------------------------------------
+After "bss test ok", the very next test (`sbrktest()`, called via
+usertests.c's own `sbrk test` label) prints its own "sbrk test" banner
+and then produces no further output at all - confirmed genuinely stuck,
+not just slow, via gdb-multiarch sampling (`qemu-system-mipsel ... -s`,
+`target remote localhost:1234`, detach/reattach every 1-2 seconds):
+`$pc` sits at the exact same address (inside `outb()`, called from
+`picsendeoi()` - i.e. normal periodic timer-interrupt-epilogue
+activity, NOT evidence of where the hang actually is, just the most
+frequently-sampled code path since interrupts keep firing) across
+repeated samples seconds apart, with $v0/$v1/$a0/$a1 cycling through a
+small set of PIC-command-port values each time - i.e. the CPU is alive
+and timer interrupts are still being serviced, but whatever process was
+running `sbrktest()` itself never makes forward progress. NOT yet
+root-caused: the next step is finding which process is stuck and why
+(inspecting `ptable.proc[]` directly via gdb with kernelmemfs's own
+DWARF symbols loaded, checking each entry's `state`/`chan`/`name`,
+rather than sampling `$pc` at essentially-random points during
+periodic interrupt handling) - session paused here to commit the four
+solid, verified fixes above rather than keep digging without a fresh
+lead.
+
+Still open / not investigated
+--------------------------------------
+- The sbrk-test hang above - blocks a clean "ALL TESTS PASSED",
+  so test-mips is not wired up yet.
 - The `kernel` (disk-based, non-memfs) boot path's own `-hdb`-vs-`-hda`
   bug (see "The `kernel` disk-based boot path was never finished by the
-  port's own author" above) - lower priority than bug 5, since even
-  fixing it wouldn't produce visible output either.
-- `usertests.c` exists in `usr/` but is deliberately excluded from this
-  fork's own `UPROGS` list (only present in a separate, unused
-  `BACK_UPROGS` list) - worth checking, once bug 5 is fixed, whether
-  this fork's own `NDIRECT`/`MAXFILE`/`FSSIZE` headroom
-  (`fs.h`: `BSIZE=512, NDIRECT=12` -> `MAXFILE*BSIZE = 71680` bytes) is
-  enough for its usertests binary, or whether it needs the same class of
-  fix forks/x86_64 needed (see notes_arch_x86_64.txt) - this may be
-  *why* the port's own author excluded it in the first place, not yet
-  checked.
-- CI/Docker/./configure/top-level Makefile wiring - deliberately
-  deferred until bug 5 is resolved and there's at least a way to observe
-  whether the kernel is doing the right thing, per this repo's own
-  "Adding a new arch" convention (see notes_arch_rv32.txt's own
-  "Still open" section for the same reasoning applied there).
+  port's own author" above) - lower priority, kernelmemfs is this
+  port's own documented recommended path.
+- CI/Docker/./configure/top-level Makefile wiring beyond build-mips/
+  run-mips (already wired) - deliberately deferred until the sbrk hang
+  is resolved and a real test-xv6.py can assert "ALL TESTS PASSED", per
+  this repo's own "Adding a new arch" convention.

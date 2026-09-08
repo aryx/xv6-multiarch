@@ -16,7 +16,16 @@
 int nblocks = (995-LOGSIZE);
 int nlog = LOGSIZE;
 int ninodes = 200;
-int size = 1024;
+// claude: was 1024 - raising fs.h's own NDIRECT (see that file's own
+// comment) to fit _usertests grew struct dinode from 64 to 256 bytes,
+// dropping IPB (inodes per block) from 8 to 2, so the fixed-size inode
+// region now needs 100 blocks instead of 25 - usedblocks (ninodes/IPB +
+// 3 + bitblocks) grew from 29 to 104, and this file's own
+// "assert(nblocks + usedblocks + nlog == size)" (nblocks+nlog is a
+// constant 995 regardless of NDIRECT) requires size == 995+usedblocks,
+// i.e. 1099 now, not 1024. bitblocks (size/(512*8) + 1) stays 1 either
+// way, well under the 4096-block threshold where it'd need to grow too.
+int size = 1099;
 
 int fsfd;
 struct superblock sb;

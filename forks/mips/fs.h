@@ -19,7 +19,18 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
-#define NDIRECT 12
+// claude: was 12 (MAXFILE*BSIZE = 71680 bytes) - too small for the
+// compiled _usertests binary (84172 bytes, -O0 -g), the same class of
+// bug forks/x86_64 hit (see notes_arch_x86_64.txt) and fixed the same
+// way: raise NDIRECT, keep BSIZE=512 (touching BSIZE would ripple into
+// the disk-interrupt code path). struct dinode's own size
+// (12 + 4*(NDIRECT+1) bytes) must stay a power of two so it divides
+// BSIZE evenly (IPB = BSIZE/sizeof(dinode) needs to be a whole number,
+// same constraint x86_64's own notes derive) - 12 gave a 64-byte dinode
+// (IPB=8); 60 gives a 256-byte dinode (IPB=2) and
+// MAXFILE*BSIZE=96256 bytes, comfortable margin above the actual
+// binary size rather than the bare minimum.
+#define NDIRECT 60
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 

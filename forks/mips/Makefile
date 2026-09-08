@@ -151,16 +151,27 @@ vectors.S: vectors.pl
 
 ULIB = lib/ulib.o lib/usys.o lib/printf.o lib/umalloc.o
 
-_%: usr/%.o $(ULIB)
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $*.o $^
+# claude: "-T user.ld" added (was just "-N -e main -Ttext 0") - see
+# user.ld's own header comment for why: the default MIPS linker script
+# gives .reginfo its own stray LOAD-typed program header at a non-page-
+# aligned address, which exec()'s loaduvm() panics on for every single
+# user program (not just initcode, which the pre-existing
+# "$(OBJCOPY) -R .MIPS.abiflags" line below was a partial, insufficient
+# fix for - see notes_arch_mips.txt bug 6). That objcopy line is now
+# redundant (user.ld already discards .MIPS.abiflags at link time, so
+# "-R .MIPS.abiflags" is a harmless no-op) but left in place since it's
+# still needed to produce $@ from the $*.o intermediate ld actually
+# writes to.
+_%: usr/%.o $(ULIB) user.ld
+	$(LD) $(LDFLAGS) -N -e main -T user.ld -o $*.o $< $(ULIB)
 	$(OBJCOPY) -R .MIPS.abiflags $*.o $@
 	$(OBJDUMP) -S $*.o > $*.asm
 	$(OBJDUMP) -t $*.o | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
-_forktest: usr/forktest.o $(ULIB)
+_forktest: usr/forktest.o $(ULIB) user.ld
 	# forktest has less library code linked in - needs to be small
 	# in order to be able to max out the proc table.
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest usr/forktest.o lib/ulib.o lib/usys.o
+	$(LD) $(LDFLAGS) -N -e main -T user.ld -o _forktest usr/forktest.o lib/ulib.o lib/usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
 mkfs: tools/mkfs.c fs.h
@@ -172,23 +183,11 @@ mkfs: tools/mkfs.c fs.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
-BACK_UPROGS=\
-	_cat\
-	_echo\
-	_forktest\
-	_grep\
-	_init\
-	_kill\
-	_ln\
-	_ls\
-	_mkdir\
-	_rm\
-	_sh\
-	_stressfs\
-	_usertests\
-	_wc\
-	_zombie\
-
+# claude: was two lists here, UPROGS and a BACK_UPROGS that added
+# _usertests (excluded from UPROGS - see fs.h's own comment on why:
+# it didn't fit, MAXFILE was too small) - now that's fixed, they were
+# identical, so BACK_UPROGS (never referenced anywhere else) was dead
+# weight and removed rather than kept as two lists to keep in sync.
 UPROGS=\
 	_cat\
 	_echo\
@@ -202,6 +201,7 @@ UPROGS=\
 	_rm\
 	_sh\
 	_stressfs\
+	_usertests\
 	_wc\
 	_zombie\
 
