@@ -4,16 +4,32 @@ notes_arch_arm_pi1.txt
 Written: 2026-09-07, against commit eb760b5 (the armv7-rpi bring-up
 commit), during the rpi1 bring-up itself. Phase 4 of
 docs/claude_notes/build-and-test-plan.md, ninth port attempted from that
-phase's list, third of the four ARM board ports. Status: NOT fully
-working under QEMU yet - three real, universally-safe bugs fixed (safe
-for real hardware too, not QEMU-only hacks), boot now runs cleanly under
-QEMU's "-M raspi1ap" through the full firmware handoff, UART init, and
-into real kernel logic with no crash loop - but produces no visible
-output, for two SEPARATE, well-understood reasons (see "Two console
-paths, two different QEMU gaps" below), neither of which was fixed this
-session. **The real-hardware build path (kernel.img, "make all") was
-NOT modified in any way that could affect its behavior** - see "Real
-hardware safety" below.
+phase's list, third of the four ARM board ports.
+
+STATUS (updated 2026-09-08): FULLY WORKING - a second session (see
+"Session 2" below) found and fixed four more real bugs, reaching a
+genuinely interactive shell under QEMU and a full, unmodified
+"ALL TESTS PASSED" usertests run. Wired up as build-arm-pi1/run-arm-pi1/
+test-arm-pi1/clean-arm-pi1/kill-arm-pi1, folded into build-all/test-all/
+clean-all/kill-all, plus a Dockerfile ARCH=arm-pi1 case and
+.github/workflows/docker.yml matrix entry (verified locally with
+"docker build --build-arg ARCH=arm-pi1" first, per this repo's own
+convention). **The real-hardware build path (kernel.img, "make all")
+remains untouched by every fix in both sessions** - verified after
+every single change, not just at the end - see "Real hardware safety"
+below and Session 2's own verification notes.
+
+Original session status (2026-09-07, superseded by Session 2 below):
+three real, universally-safe bugs fixed (safe for real hardware too,
+not QEMU-only hacks), boot ran cleanly under QEMU's "-M raspi1ap"
+through the full firmware handoff and UART init - but produced no
+visible output, attributed at the time to two separate, seemingly
+QEMU-firmware-level gaps (see "Two console paths, two different QEMU
+gaps" below). Session 2 found this diagnosis was INCOMPLETE: on
+re-verification, the exact same build actually hit a silent, 100%-
+reproducible infinite fault loop before ever reaching console output at
+all - a real, fixable kernel bug (see Session 2's own "correcting the
+record" note), not just an unfixable QEMU/firmware limitation.
 
 IMPORTANT CONTEXT: the user owns physical Raspberry Pi 1 and Pi 2
 boards and can test forks/rpi1/forks/rpi2 on real hardware - unlike
@@ -225,3 +241,191 @@ is specifically about QEMU-based build/boot per CLAUDE.md) - no
 test-rpi1/clean-rpi1/kill-rpi1 yet, and not folded into build-all/
 run-all/test-all, since there is no console output yet to build a real
 pass/fail signal around.
+
+================================================================================
+Session 2 (2026-09-08): from a silent freeze to a full "ALL TESTS PASSED"
+================================================================================
+
+Correcting the record: the original "no crash loop" claim was wrong
+------------------------------------------------------------------------
+Re-running the EXACT verification command from Session 1
+("qemu-system-arm -M raspi1ap -nographic -kernel kernel-qemu.img")
+against the UNMODIFIED committed source (confirmed via "git stash" -
+zero source changes between the two sessions besides a pure directory
+rename) produced a completely different result: a genuine, 100%-
+reproducible infinite Prefetch Abort loop (IFSR 0x5, IFAR 0x10000 -
+confirmed via "-d int": 1.26 MILLION identical faults in a 10-second
+capture, zero variation, reproduced identically across three
+independent runs) - not "zero crash-loop noise... well into real
+kernel logic" as Session 1 recorded. Same QEMU package version both
+times (1:8.2.2+ds-0ubuntu1.18, confirmed via /var/log/dpkg.log - the
+upgrade to that version predates Session 1 by two days), so this isn't
+a QEMU-version drift either. Best explanation: Session 1's own
+verification likely only checked that boot progressed without an
+immediately-visible failure (no serial output either way looks
+identical to "still running") rather than confirming forward progress
+directly - an easy mistake, and exactly why "-d int" long-capture
+verification (see notes_debugging_techniques.txt) is worth doing even
+when a boot LOOKS clean from missing error output alone.
+
+Bug 4 (real, fixed): no PL011 console output at all - Mini-UART has no QEMU chardev, confirmed via "info qtree"
+------------------------------------------------------------------------------------------------------------------------
+Same underlying finding as forks/arm/forks/arm-pi3's own bring-ups:
+"info qtree" shows "dev: bcm2835-aux ... chardev = \"\"" (empty - no
+backend at all) versus "dev: pl011 ... chardev = \"serial0\"" for THIS
+board too (raspi1ap, not just raspi2b/raspi3b - confirmed directly, not
+assumed). Fixed the same way: added a PL011 driver to source/uart.c
+(register offsets at DEVSPACE+0x201xxx, this fork's own existing
+KERNBASE-relative peripheral-mapping convention) and folded its
+put/get calls directly INTO uartputc()/uartgetc()/miniuartintr()/
+enableirqminiuart() rather than adding new call sites - every existing
+caller (console.c, consoleintr()) automatically gets both UARTs for
+free, no source changes needed anywhere else.
+
+Genuinely UNCONDITIONAL, no #ifdef and no runtime QEMU-detection probe
+at all (unlike forks/arm-pi3's own -DRPI3_QEMU split) - two real
+findings made this possible: (1) PL011 is a real, always-physically-
+present peripheral on this SoC (BCM2835 includes the full IP block
+regardless of board), so touching its registers is never unsafe; (2)
+confirmed empirically that writing to PL011 does NOT require remuxing
+GPIO 14/15 away from ALT5 (Mini-UART, this fork's own real-hardware
+pin config) - QEMU's own PL011 model doesn't check GPIO alt-function
+state before accepting writes and routing them to its console chardev,
+so both UARTs work simultaneously through the SAME physical pins
+without any pin-muxing conflict. This is exactly the dynamic-over-
+static-dispatch pattern asked for this session (see
+~/principia/kernel/COMPILE/9/bcm/usbdwc.c's own emulating() for the
+general technique) - it just turned out no runtime CHECK was needed at
+all, because the underlying operation is unconditionally safe on both
+targets.
+
+Bug 5 (real, fixed): gpuputc() writing to an invalid framebuffer pointer, mishandled catastrophically because tvinit() hadn't run yet
+-----------------------------------------------------------------------------------------------------------------------------------------------
+Root cause of the ACTUAL infinite loop (not the two "no visible
+output" theories from Session 1, which turned out to be secondary).
+Chased via "-d in_asm"/"-d int" and the QEMU monitor's "xp"/"info
+roms": consoleinit() calls initframebuf(), which reports SUCCESS
+(fbinfoaddr==0, the only condition this fork's own code checks) even
+though fbinfo.fbp (the framebuffer pointer the GPU is supposed to fill
+in via the mailbox response) never actually gets a valid address under
+QEMU - confirmed the mailbox call itself completes (no hang), just
+returns a value outside real GPU memory (see "Open gap" below for the
+- still unresolved - question of exactly why). gpuputc()'s own
+drawpixel() then writes through that bad pointer during the very first
+"Hello World" print, at 0x10000ish, and the resulting Data Abort landed
+in code that turned out to still be QEMU's own unrelated bootloader ROM
+(physical page 0, "info roms" confirms this is where HVECTORS's own
+SMALL page mapping points), not this kernel's own trap()/panic()
+handler - because tvinit() (which installs the real handler via a
+memmove() into HVECTORS) doesn't run until much later in main.c's
+cmain(), well after the first cprintf(). One real exception, mishandled
+by whatever pre-existing, unrelated code happened to be at the memory
+address the (not-yet-installed) vector table pointed to, cascaded into
+the observed infinite loop.
+
+Two candidate fixes were tried; the second is what's actually in the
+tree:
+  - Moving tvinit()/kinit1()/pinit() earlier (before consoleinit()) so
+    a real trap()/panic() would at least catch the fault gracefully:
+    this DID change the crash signature (confirmed - a genuinely
+    different fault pattern appeared, an Undefined Instruction loop
+    with stack-pointer-looking addresses near KERNBASE-8), meaning it
+    had a real effect, but it exposed a SECOND, separate, unresolved
+    bug (something about tvinit()'s own per-mode-stack kalloc() calls
+    or the relocated vector table's own position-dependent code) rather
+    than reaching output. Reverted rather than compound two open bugs.
+  - What's actually in the tree: don't let gpuputc() write through a
+    bad pointer in the first place. consoleinit() now sanity-checks
+    fbinfo.fbp against the real GPU memory range (GPUMEMBASE..
+    GPUMEMBASE+GPUMEMSIZE, this fork's own existing constants) and sets
+    a `fb_ready` flag; gpuputc() returns immediately if it's false. On
+    real hardware, where the old mailbox API DOES return a real,
+    in-range pointer, fb_ready is true and gpuputc()/the framebuffer
+    console work exactly as before, completely unchanged - this is a
+    genuine runtime validity check, not a QEMU-specific gate, and it
+    directly imitates what forks/arm/forks/arm-pi3 effectively do by
+    simply not depending on a framebuffer at all.
+
+Also reordered console.c's own gpuputc()/uartputc() call pairs (every
+site, consolewrite/printint/cprintf/consputc) to call uartputc() FIRST
+- defense in depth, so a character reaches the wire even if something
+else about gpuputc() ever misbehaves again in the future.
+
+Bug 6 (real, fixed): PL011 RX/keyboard input wasn't wired up either
+------------------------------------------------------------------------
+Same fix shape as forks/arm-pi3's own bring-up: enableirqminiuart()
+also enables gpuenable[1] bit 25 (PL011's real hardware IRQ, 57 = bank
+1 bit 25 - trap.c's own dead enable_intrs() function already had this
+exact bit commented out, anticipating it), and both of trap.c's own IRQ
+dispatch loops (handle_irq() and trap()'s T_IRQ case) now also check
+gpupending[1] bit 25, calling the SAME miniuartintr() either way.
+uartgetc() checks PL011's own RX FIFO first, falling back to the
+Mini-UART - same "merge into the existing function, no new call sites"
+approach as Bug 4.
+
+Not a bug, a test-methodology gotcha worth recording: this fork's own
+console.c explicitly drops a raw '\n' (0x0a) input byte outright
+("if(c == 0xa) break;") and only treats '\r' (0x0d) as Enter - a real,
+intentional serial-terminal convention (physical terminals send \r on
+Enter), not a defect. An early interactive test sent raw '\n' and
+concluded input wasn't working at all; switching to '\r' immediately
+showed full, correct command execution. forks/arm-pi1/test-xv6.py
+(new, see below) sends "\r", not "\n", for exactly this reason.
+
+Verification
+-------------
+  make ARMGNU=arm-linux-gnueabihf  (real-hardware kernel.img)
+    -> builds clean, unchanged, re-verified after EVERY fix above, not
+       just at the end
+  make ARMGNU=arm-linux-gnueabihf kernel-qemu.img
+    -> builds clean
+  qemu-system-arm -M raspi1ap -nographic -kernel kernel-qemu.img
+    -> boots to "init: starting sh" / "$ ", both output AND input work
+       (confirmed via a raw Python socket over a QEMU "-serial tcp:..."
+       connection, avoiding any host PTY/shell quoting ambiguity),
+       "usertests\r" runs the complete, UNMODIFIED usertests.c (no
+       tests skipped or commented out, unlike forks/arm/forks/arm-pi3)
+       and reaches a genuine "ALL TESTS PASSED" - the repeating
+       "trap 4 ... addr 0x2af0 ... kill proc" burst partway through and
+       the later "allocuvm out of memory" line are the same benign,
+       deliberately-provoked patterns documented for every other port
+       in this repo (see CLAUDE.md's own testing-conventions note), not
+       regressions
+  make build-arm-pi1 / make test-arm-pi1 (top-level Makefile)
+    -> reproduces the exact same "ALL TESTS PASSED" via the wired
+       command
+  docker build --build-arg ARCH=arm-pi1 -t xv6-multiarch:arm-pi1-test .
+    -> completes clean, "ALL TESTS PASSED" appears in the build log
+       itself (the RUN step running test-arm-pi1), verified locally
+       before touching .github/workflows/docker.yml, per this repo's
+       own convention
+
+Open gap: framebuffer graphics still don't actually render under QEMU
+---------------------------------------------------------------------------
+fb_ready (Bug 5) makes the CRASH go away by skipping gpuputc() - it
+does not make the framebuffer itself work. Investigated further this
+session, without finding the actual fix: compared this fork's FBI
+struct field-by-field against ~/principia/kernel/COMPILE/9/bcm/
+vcore.c's own working Fbinfo struct (IDENTICAL layout, same 10 fields,
+same order, same u32 sizes, just different names - ruled out); checked
+whether Principia's own working call flushes the cache before the
+mailbox write that xv6 doesn't (source/mailbox.c's own writemailbox()
+already calls flush_dcache_all() before every mailbox write - ruled
+out, at least at the "is the call present" level, not verified deeper);
+checked the VC bus address alias xv6's writemailbox() adds
+(0x40000000) against Principia's own board-specific table
+(~/principia/kernel/COMPILE/9/bcm/raspi1.c: ".busdram = 0x40000000" -
+an exact match for THIS specific board, ruling out a wrong bus alias).
+Confirmed via a real QEMU "screendump" (through the monitor, with a
+genuine GTK display attached via a live X11 :1 DISPLAY in this
+environment - not just "-display none") that the emulated framebuffer
+is currently pure black, consistent with fb_ready gating all drawing
+off. Next step for a future session: instrument (temporarily) exactly
+what value fbinfo.fbp actually comes back as under QEMU, and compare
+against what a genuinely working channel-1 mailbox round-trip should
+look like - possibly QEMU's bcm2835-fb device needs the framebuffer
+"enabled" via a SEPARATE call this fork's own initframebuf() never
+makes (the earlier hypothesis, that QEMU only implements the modern
+property-tag protocol and not channel 1 at all, is now considered
+LESS likely given Principia's own confirmed-working channel-1 usage
+under the same machine).

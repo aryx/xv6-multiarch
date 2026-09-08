@@ -38,6 +38,21 @@ FBI fbinfo __attribute__ ((aligned (16), nocommon));
 extern u8 font[];
 static uint gpucolour=0xffff;
 
+// claude: true once initframebuf()'s mailbox response looks like a
+// real GPU framebuffer pointer - see consoleinit()'s own comment for
+// why this check exists (a real bug: fbinfoaddr, the mailbox call's
+// own status code, reports "success" even when fbinfo.fbp itself was
+// never actually filled in with a usable address - confirmed under
+// QEMU, where the old mailbox-channel-1 API this port uses isn't
+// implemented, so fbinfo.fbp stays whatever it was set to before the
+// call). gpuputc() checks this and skips drawing entirely when false,
+// rather than writing through a pointer that isn't backed by real
+// framebuffer memory - this is a genuine runtime validity check, not
+// a QEMU-specific gate: any environment where framebuffer allocation
+// silently fails this way (real hardware included, in principle) gets
+// the same graceful fallback to UART-only console output.
+static uint fb_ready;
+
 void setgpucolour(u16 c)
 {
     gpucolour = c;
@@ -76,9 +91,18 @@ consolewrite(struct inode *ip, char *buf, int n)
 //  cprintf("consolewrite is called: ip=%x buf=%x, n=%x", ip, buf, n);
   iunlock(ip);
   acquire(&cons.lock);
+  // claude: uartputc() before gpuputc() (here and below) - see
+  // uart.c's own pl011putc() comment. gpuputc()/drawpixel() can fault
+  // (a real, pre-existing bug: tvinit(), which installs this kernel's
+  // own exception vector table, isn't called until well after
+  // consoleinit()/the first console output - see main.c's own
+  // ordering - so an early framebuffer fault is mishandled by
+  // whatever was at the vector table location before tvinit() ran, not
+  // this kernel's own trap()/panic()), so put the character on the
+  // wire first, in case gpuputc() doesn't return.
   for(i = 0; i < n; i++){
-    gpuputc(buf[i] & 0xff);
     uartputc(buf[i] & 0xff);
+    gpuputc(buf[i] & 0xff);
   }
   release(&cons.lock);
   ilock(ip);
@@ -131,6 +155,8 @@ uint tv;
 void
 gpuputc(uint c)
 {
+    if(!fb_ready) return;
+
     if(c=='\n'){
 	cursor_x = 0;
 	cursor_y += fontheight;
@@ -202,8 +228,8 @@ printint(int xx, int base, int sign)
     buf[i++] = '-';
 
   while(--i >= 0){
-    gpuputc(buf[i]);
     uartputc(buf[i]);
+    gpuputc(buf[i]);
   }
 }
 
@@ -227,8 +253,8 @@ cprintf(char *fmt, ...)
   argp = (uint *)(void*)(&fmt + 1);
   for(i = 0; (c = fmt[i] & 0xff) != 0; i++){
     if(c != '%'){
-        gpuputc(c);
-	uartputc(c);
+        uartputc(c);
+	gpuputc(c);
       continue;
     }
     c = fmt[++i] & 0xff;
@@ -246,20 +272,20 @@ cprintf(char *fmt, ...)
       if((s = (char*)*argp++) == 0)
         s = "(null)";
       for(; *s; s++){
-        gpuputc(*s);
-	uartputc(*s);
+        uartputc(*s);
+	gpuputc(*s);
       }
       break;
     case '%':
-	gpuputc('%');
 	uartputc('%');
+	gpuputc('%');
       break;
     default:
       // Print unknown % sequence to draw attention.
-	gpuputc('%');
 	uartputc('%');
-	gpuputc(c);
+	gpuputc('%');
 	uartputc(c);
+	gpuputc(c);
       break;
     }
   }
@@ -297,14 +323,14 @@ consputc(int c)
   }
 
   if(c == BACKSPACE){
-    gpuputc('\b'); gpuputc(' '); gpuputc('\b');
     uartputc('\b'); uartputc(' '); uartputc('\b');
+    gpuputc('\b'); gpuputc(' '); gpuputc('\b');
   } else if(c == C('D')) {
-    gpuputc('^'); gpuputc('D');
     uartputc('^'); uartputc('D');
+    gpuputc('^'); gpuputc('D');
   } else {
-    gpuputc(c);
     uartputc(c);
+    gpuputc(c);
   }
 }
 
@@ -395,6 +421,14 @@ uint fbinfoaddr;
 
   fbinfoaddr = initframebuf(framewidth, frameheight, framecolors);
   if(fbinfoaddr != 0) NotOkLoop();
+
+  // claude: fbinfoaddr (the mailbox call's own status code) reports
+  // "success" even when fbinfo.fbp was never actually filled in with a
+  // usable pointer (see fb_ready's own comment above) - so also sanity
+  // check fbinfo.fbp itself against the real GPU memory range
+  // (GPUMEMBASE..GPUMEMBASE+GPUMEMSIZE) before trusting it. This is
+  // the check that actually protects gpuputc() below.
+  fb_ready = (fbinfo.fbp >= GPUMEMBASE && fbinfo.fbp < (uint)GPUMEMBASE+(uint)GPUMEMSIZE);
 
   initlock(&cons.lock, "console");
   memset(&input, 0, sizeof(input));

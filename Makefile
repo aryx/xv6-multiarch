@@ -14,7 +14,7 @@
 # comment for why the directories themselves aren't renamed to match.
 #
 # Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
-# loongarch, and arm - see docs/claude_notes/build-and-test-plan.md,
+# loongarch, arm, and arm-pi1 - see docs/claude_notes/build-and-test-plan.md,
 # Phases 1-2, and Phase 4 (see docs/claude_notes/notes_arch_amd64_jserv.txt,
 # notes_arch_amd64.txt, notes_arch_riscv32.txt - riscv32's own test-riscv32
 # now passes (bug 4, a missing user-program start() wrapper, fixed
@@ -25,7 +25,10 @@
 # usertests sub-tests skipped (see that file's own "Gap" section);
 # notes_arch_loongarch.txt - fully working; notes_arch_arm.txt -
 # the ARM32 winner among four candidate ports, boots to a real shell,
-# test-arm passes with two known usertests skipped).
+# test-arm passes with two known usertests skipped; notes_arch_arm_pi1.txt -
+# a real Raspberry Pi 1 port (the user owns the hardware); test-arm-pi1
+# now passes with a full, unmodified usertests run, via an additive
+# PL011 console alongside the real-hardware Mini-UART).
 #
 # arm64, not aarch64: the Makefile target/./configure variable name
 # follows ~/c--'s and ~/goken's own CCARM64/RUN_ARM64/arch/arm64/
@@ -104,7 +107,7 @@ QEMU_ARM_PI3 ?= qemu-system-aarch64
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-arm-pi1-bis run-arm-pi1-bis check-arm-pi1-bis-toolchain \
         build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
-        build-arm-pi1 run-arm-pi1 check-arm-pi1-toolchain \
+        build-arm-pi1 run-arm-pi1 test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
         build-arm-pi3 run-arm-pi3 check-arm-pi3-toolchain \
         build-all test-all clean-all kill-all build-docker
@@ -513,11 +516,14 @@ kill-arm:
 # (matching every other TOOLPREFIX_<ARCH> in this repo) needs stripping
 # here specifically.
 #
-# No test-arm-pi1/clean-arm-pi1/kill-arm-pi1 yet, and not folded into
-# build-all/run-all/test-all: boots cleanly under QEMU with no crash
-# loop, but produces no visible console output - two separate, unfixed
-# QEMU/mailbox-protocol gaps documented in notes_arch_arm_pi1.txt, not a
-# scripted pass/fail signal to build a test around yet.
+# test-arm-pi1/clean-arm-pi1/kill-arm-pi1 and build-all/test-all/
+# clean-all/kill-all added 2026-09-08: the console-output gap this
+# section used to describe turned out to be TWO real, fixable bugs
+# (an additive PL011 driver alongside the Mini-UART, and a framebuffer-
+# write fault mishandled because tvinit() hadn't run yet - see
+# notes_arch_arm_pi1.txt), not a QEMU/firmware-only limitation - once
+# fixed, this fork now boots to a real interactive shell and passes a
+# full "ALL TESTS PASSED" usertests run under QEMU.
 check-arm-pi1-toolchain:
 	@if [ "$(TOOLPREFIX_ARM_PI1)" = NONE ] || [ "$(QEMU_ARM_PI1)" = NONE ]; then \
 		echo "Makefile: arm-pi1 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
@@ -529,6 +535,15 @@ build-arm-pi1: check-arm-pi1-toolchain
 
 run-arm-pi1: check-arm-pi1-toolchain
 	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) qemu
+
+test-arm-pi1: check-arm-pi1-toolchain
+	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py
+
+clean-arm-pi1:
+	$(MAKE) -C forks/arm-pi1 clean
+
+kill-arm-pi1:
+	-pkill -f '$(QEMU_ARM_PI1)' 2>/dev/null || true
 
 ###############################################################################
 # arm-pi2 (forks/arm-pi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2 -
@@ -601,13 +616,13 @@ run-arm-pi3: check-arm-pi3-toolchain
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-mips
+build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-mips
 
-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-mips
+test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-mips
 
-clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-mips
+clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-mips
 
-kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-mips
+kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-mips
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

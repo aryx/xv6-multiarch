@@ -668,3 +668,88 @@ configured for - read the actual bootstrap page-table code and
 determine which SPECIFIC sub-range it treats specially (usually a much
 smaller "just enough to get the MMU-transition code running" window
 than the full RAM size), and place the load address inside that.
+
+26. "Boots cleanly, no crash-loop noise" in a prior notes file is a claim to re-verify, not inherit - especially when the only evidence was the absence of visible output
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi1's own notes_arch_arm_pi1.txt (Session 1) recorded "boots
+cleanly through the full firmware handoff... with zero crash-loop
+noise" for a build that, on Session 2's re-verification of the EXACT
+same command against the SAME unmodified source (confirmed via `git
+stash` - proving this wasn't drift from an intervening code change),
+actually hit a 100%-reproducible infinite Prefetch Abort loop (1.26
+million identical faults in a 10-second `-d int` capture). The likely
+explanation: with `-nographic` and no working console output either
+way, "still running with no error" and "silently looping" produce
+IDENTICAL terminal output - there was nothing to distinguish them
+short of actually checking forward progress. General lesson: a past
+finding of "boots clean" that rests on absence of visible failure
+(rather than positive evidence of forward progress - a later print
+statement, an exit code, a monitor-visible PC advancing) is not
+trustworthy on its own; before building further work on top of it,
+either reproduce it fresh with a positive-progress check (`-d int`
+over a multi-second window, or polling PC via the QEMU monitor at two
+different times and confirming it actually moved) or treat it as
+unverified.
+
+27. When a test string doesn't appear, check what the KERNEL actually expects as input before concluding the feature is broken
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Several early interactive tests of forks/arm-pi1's newly-added PL011
+input path sent a raw `\n` (0x0a) as "Enter" and saw individual
+characters echo correctly but no command ever execute - looking exactly
+like a half-broken input path (RX working, line-processing not).
+Reading console.c's own `consoleintr()` found the real answer in one
+line: `if(c == 0xa) break;` - the kernel explicitly DISCARDS a raw
+line-feed and only treats `\r` (0x0d) as Enter, a real, intentional
+serial-terminal convention (physical terminals send `\r`), not a bug
+in the new code at all. Switching every test to send `\r` immediately
+showed full, correct command execution. General lesson: when a
+scripted/interactive test sends a byte sequence and gets a partial or
+absent response, check the kernel's own input-handling code for what
+byte it actually expects before spending time debugging the feature
+under test - `grep` the console/tty input path for the literal
+`==`/`case` comparisons against control characters (0x0a/0x0d/0x08/
+0x7f/...) rather than assuming standard `\n`-terminated line semantics
+apply.
+
+28. When a deep, correct-in-principle fix (reordering boot sequence) exposes a second unrelated bug, prefer reverting to a narrower fix that imitates what already-working sibling ports do
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi1's real root cause (Bug 5 in notes_arch_arm_pi1.txt) was
+that a fault-prone framebuffer write happened before the real
+exception-vector table was installed, so the resulting fault got
+mishandled catastrophically instead of hitting a normal panic(). The
+architecturally "correct" fix - move `tvinit()`/`kinit1()`/`pinit()`
+earlier, before the first framebuffer write - DID change the crash
+signature (proof it was on the right track), but exposed a second,
+separate, unrelated bug (a stack-pointer/vector-table-relocation issue)
+that would have needed its own investigation to resolve. Per the user's
+own steer ("can't we just imitate what the other working forks did?"),
+this was reverted (`git checkout -- source/main.c`) in favor of a
+narrower fix matching the pattern every other working sibling port in
+this repo already uses: don't write through a pointer that hasn't been
+validated (a `fb_ready`-style runtime bounds check gating the risky
+call), rather than reordering boot sequence to make a rare fault path
+survivable. General lesson: when the "root cause" fix requires
+restructuring boot/init ordering and that restructuring surfaces a NEW
+bug, it's often better to step back and ask whether a working sibling
+port already solves the same class of problem more narrowly (skip the
+risky operation when its precondition isn't met) rather than compounding
+two open bugs at once chasing full architectural correctness.
+
+29. QEMU monitor's `screendump` is a real, cheap way to visually verify emulated-framebuffer state, including in a headless sandbox with a live but unused X11 DISPLAY
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+To confirm whether forks/arm-pi1's `fb_ready` guard was correctly
+suppressing framebuffer drawing (as opposed to drawing happening but
+being wrong/corrupted), launching QEMU WITHOUT `-nographic`/
+`-display none` (a real GTK window, made possible by this environment
+unexpectedly already exporting a live `DISPLAY=:1`) and issuing
+`screendump <file>.ppm` through the QEMU monitor produced a real image
+of the emulated framebuffer's current contents, viewable directly (a
+solid black image, consistent with the guard correctly skipping all
+drawing). This is a strictly stronger check than reading register/
+memory state alone for anything display-shaped - it answers "what would
+a user actually see" rather than "does the data structure look
+plausible" - and works even when the framebuffer memory itself can't be
+easily interpreted by hand (arbitrary pixel format/stride). Worth
+reaching for whenever a bug involves a QEMU-emulated display device and
+a graphical `$DISPLAY` happens to be available, instead of only ever
+running `-nographic`.

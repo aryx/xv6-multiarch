@@ -117,6 +117,12 @@ cprintf("More registers: r6: %x, r7: %x, r8: %x, r9: %x, r10: %x, r11: %x, r12: 
 	    if(ip->gpupending[0] & (1 << 29)) {
 		miniuartintr();
 	    }
+	    // claude: PL011's real IRQ is 57 (bank 1, bit 25) - only ever
+	    // set now that uart.c's enableirqminiuart() enables it too;
+	    // harmless dead check before that.
+	    if(ip->gpupending[1] & (1 << 25)) {
+		miniuartintr();
+	    }
 	}
 
 }
@@ -152,6 +158,11 @@ trap(struct trapframe *tf)
 		timer3intr();
 	    }
 	    if(ip->gpupending[0] & (1 << IRQ_MINIUART)) {
+		miniuartintr();
+	    }
+	    // claude: PL011's real IRQ is 57 (bank 1, bit 25) - see
+	    // handle_irq()'s own identical comment above.
+	    if(ip->gpupending[1] & (1 << 25)) {
 		miniuartintr();
 	    }
 	}

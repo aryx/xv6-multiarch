@@ -10,11 +10,11 @@
 # ./configure, build, then test) - see those files' own header comments
 # for the general reasoning this one reuses. Simpler here: only eight
 # arches are wired up so far (riscv64, i386, amd64-jserv, amd64, riscv32, arm,
-# arm64, mips - build-and-test-plan.md's Phases 1, 2, and Phase 4), not
-# all thirteen forks/ - extend the ARCH case below (both the apt-get and
+# arm-pi1, arm64, mips - build-and-test-plan.md's Phases 1, 2, and Phase 4),
+# not all thirteen forks/ - extend the ARCH case below (both the apt-get and
 # the build/test one) as more arches get their own ./configure
 # detection, matching build.md's own Phase 4 order. loongarch/the other
-# three ARM board ports are already wired into ./configure/the
+# two ARM board ports are already wired into ./configure/the
 # top-level Makefile but not added here yet - simply haven't had this
 # step done yet, nothing blocking it technically (loongarch's own
 # toolchain turned out to be a native arm64 apt package, no binfmt_misc
@@ -87,6 +87,8 @@ RUN case "$ARCH" in \
       riscv32) apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc ;; \
       arm)     apt-get install -y --no-install-recommends \
+                 gcc-arm-linux-gnueabihf qemu-system-arm ;; \
+      arm-pi1) apt-get install -y --no-install-recommends \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       # claude: ipxe-qemu (provides efi-virtio.rom) is only a Recommends
       # of qemu-system-arm, stripped by --no-install-recommends above -
@@ -163,12 +165,12 @@ RUN ./configure
 # Dockerfile's own source of truth for what ARCH=all covers - keep it in
 # lockstep with the apt-get "all" case above, not with build-all/test-all.
 RUN if [ "$ARCH" = all ]; then \
-      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm64 build-mips; \
+      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm64 build-mips; \
     else \
       make "build-$ARCH"; \
     fi
 RUN if [ "$ARCH" = all ]; then \
-      make test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm test-arm64 test-mips; \
+      make test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm test-arm-pi1 test-arm64 test-mips; \
     else \
       make "test-$ARCH"; \
     fi
