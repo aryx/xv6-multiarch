@@ -391,7 +391,7 @@ Verification
   make build-arm (== make build-armv7-rpi)
     -> builds clean, all 12 bugs above fixed
   make test-arm (== forks/armv7-rpi/test-xv6.py, modeled on
-    forks/rv32/test-xv6.py's own QEMU class)
+    forks/riscv32/test-xv6.py's own QEMU class)
     -> boots to "init: starting sh" / "$ ", sends "usertests\n", gets
        "ALL TESTS PASSED" for real (with preempt/sbrktest skipped, see
        Gap 3 resolution above) - the interleaved "allocuvm out of

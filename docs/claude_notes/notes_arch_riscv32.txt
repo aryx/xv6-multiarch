@@ -15,7 +15,7 @@ general techniques this investigation produced.
 
 What this is
 ------------
-forks/rv32 is michaelengel/xv6-rv32 (2020-2021), a 32-bit RISC-V port of
+forks/riscv32 is michaelengel/xv6-rv32 (2020-2021), a 32-bit RISC-V port of
 MIT's kernel/user-split xv6-riscv - structurally much closer to
 forks/riscv64 (rv64) than to the older MIT xv6-public lineage
 (forks/i386/forks/x86_64/forks/amd64): same kernel/user directory split,
@@ -151,7 +151,7 @@ kernel/exec.c lineage - never hits this because it links user programs
 against a dedicated `user/user.ld` that explicitly
 `. = ALIGN(0x1000);` before `.data`. rv32 never had that linker script
 at all. Fixed by copying forks/riscv64/user/user.ld verbatim into
-forks/rv32/user/user.ld and switching the Makefile's generic `_%:` rule
+forks/riscv32/user/user.ld and switching the Makefile's generic `_%:` rule
 from `-N -e main -Ttext 0` to `-T $U/user.ld` (matching forks/riscv64's
 own rule byte-for-byte apart from the ported linker script's path);
 `_forktest`'s own special-cased rule (deliberately kept minimal "to be
@@ -292,7 +292,7 @@ explicit entry symbol, GNU ld falls back to a symbol literally named
 wrapper (`void start(int argc, char **argv) { exit(main(argc, argv)); }`,
 with a comment explaining it's "OK if main() does not call exit()") -
 confirmed empirically: `readelf -h forks/riscv64/user/_sh` reports its
-real entry as `start`'s own address, not 0. forks/rv32/user/ulib.c
+real entry as `start`'s own address, not 0. forks/riscv32/user/ulib.c
 never had this wrapper at all - so ld's fallback goes one level further,
 to the address of the very first byte of `.text`, i.e. whichever
 function the compiler happened to place first in that program's own
@@ -304,7 +304,7 @@ function in source order happens to BE main() (as, apparently, init.c's
 is), the bug is silently harmless for that program.
 
 Fixed by adding the missing `start()` wrapper to
-forks/rv32/user/ulib.c, copied verbatim from forks/riscv64/user/ulib.c
+forks/riscv32/user/ulib.c, copied verbatim from forks/riscv64/user/ulib.c
 (no 32-vs-64-bit adjustment needed - it only shuffles argc/argv through
 a plain C call). `readelf -h user/_sh` afterward reports the entry
 point as `start`'s own address (0xfb4), and the crash is gone entirely.

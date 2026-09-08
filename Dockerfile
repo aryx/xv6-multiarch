@@ -90,7 +90,7 @@ RUN case "$ARCH" in \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       # claude: ipxe-qemu (provides efi-virtio.rom) is only a Recommends
       # of qemu-system-arm, stripped by --no-install-recommends above -
-      # forks/aarch64's own Makefile passes "-device virtio-blk-device"
+      # forks/arm64's own Makefile passes "-device virtio-blk-device"
       # for its disk, and qemu-system-aarch64 needs that ROM to boot a
       # virtio device at all ("failed to find romfile efi-virtio.rom"),
       # even though it's never actually executed (this kernel never runs

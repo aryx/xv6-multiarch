@@ -16,10 +16,10 @@ locally and via `docker build --build-arg ARCH=arm64`.
 
 What this is
 ------------
-forks/aarch64 is k-mrm/xv6-aarch64 (2021-2023) - the newest and most
+forks/arm64 is k-mrm/xv6-aarch64 (2021-2023) - the newest and most
 recently maintained of the remaining Phase 4 ports as of this writing.
 Same kernel/user-split MIT xv6-riscv lineage as forks/riscv64 and
-forks/rv32 (confirmed via `git log --follow` on kernel/exec.c: all three
+forks/riscv32 (confirmed via `git log --follow` on kernel/exec.c: all three
 share the exact same tail commits, a real common ancestor, not just
 structural resemblance), adapted for AArch64/GICv3 instead of RISC-V's
 CLINT/PLIC: kernel/trapasm.S's own vector table (`alltraps`, ARMv8's
@@ -47,8 +47,8 @@ Checked for this BEFORE attempting a single build, on the strength of
 notes_debugging_techniques.txt item 13 ("a linker script gap on one
 sibling fork can be invisible until a later pipeline stage") - this
 fork's kernel/exec.c has the exact same `ph.vaddr % PGSIZE != 0` check
-forks/rv32's does, and its Makefile links user programs with the same
-bare `-N -e main -Ttext 0` forks/rv32 originally had. Copied
+forks/riscv32's does, and its Makefile links user programs with the same
+bare `-N -e main -Ttext 0` forks/riscv32 originally had. Copied
 forks/riscv64/user/user.ld over (adjusted only its `OUTPUT_ARCH` from
 "riscv" to "aarch64" - verified this bfd target name is accepted by
 `aarch64-linux-gnu-ld -V` first) and switched the Makefile's generic
@@ -198,7 +198,7 @@ Not yet tried:
   - A binary search by disabling pieces of sh.c's own getcmd()/main() to
     see whether ANY memset() call of a similar size crashes the same
     way, or whether it's specific to this exact 100-byte buffer/call
-    site - forks/rv32's own bug 4 crash was ALSO inside a memset() call
+    site - forks/riscv32's own bug 4 crash was ALSO inside a memset() call
     from getcmd() (a different immediate symptom - corrupted arguments
     there, vs a literal instruction-fetch trap here - but the same call
     site across two otherwise-unrelated ports is suspicious enough to be
@@ -225,12 +225,12 @@ Fully wired up
 ------------------------------------------------------------------------------
 - `./configure`: TOOLPREFIX_ARM64/QEMU_ARM64 detection (renamed from
   TOOLPREFIX_AARCH64 in a later session - see CLAUDE.md's own naming-
-  convention note: forks/aarch64 keeps its upstream-repo directory name,
+  convention note: forks/arm64 keeps its upstream-repo directory name,
   but the bare-ISA Makefile target/./configure variable is "arm64",
   matching ~/c--'s/~/goken's own convention).
 - Top-level Makefile: build-arm64/run-arm64/test-arm64/clean-arm64/
   kill-arm64, folded into the -all targets.
-- forks/aarch64/test-xv6.py, modeled on forks/rv32's own (same
+- forks/arm64/test-xv6.py, modeled on forks/riscv32's own (same
   usertests-only shape - this fork's own UPROGS list has no crash/log/
   orphan-recovery programs beyond the extra `grind` stress test, which
   usertests.c's own suite already exercises via the existing harness).

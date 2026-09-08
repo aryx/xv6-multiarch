@@ -6,7 +6,7 @@
  * every loaded segment, so the same missing page-alignment between
  * .text and .data would fault the same way at runtime. Added
  * proactively, before hitting the failure, since this fork shares the
- * exact same kernel/exec.c lineage as forks/riscv and forks/rv32. The
+ * exact same kernel/exec.c lineage as forks/riscv and forks/riscv32. The
  * "ALIGN(0x1000)" before .data is the fix - it page-aligns the second
  * PT_LOAD segment. */
 OUTPUT_ARCH( "aarch64" )

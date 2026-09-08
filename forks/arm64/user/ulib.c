@@ -5,7 +5,7 @@
 
 // claude: this fork never had this wrapper at all (forks/riscv64/user/
 // ulib.c does - copied verbatim from there). Exact same bug as
-// forks/rv32's own "bug 4" (see notes_arch_riscv32.txt): the Makefile's
+// forks/riscv32's own "bug 4" (see notes_arch_riscv32.txt): the Makefile's
 // user-program link rule passes no "-e main" and user.ld sets no
 // ENTRY(), so GNU ld falls back to its default entry symbol, "start" -
 // without this function providing that symbol, ld instead defaulted to

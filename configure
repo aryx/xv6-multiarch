@@ -34,15 +34,18 @@ set -eu
 # Naming: arch names here are the bare ISA (riscv64, i386, ...), matching
 # ~/goken/include/arch/ and ~/c--'s CC<ARCH>/RUN_<ARCH> convention. For
 # most ports this still differs from the forks/<name> directory name,
-# which instead names the upstream repo/port (forks/rv32 is the riscv32
-# port; forks/aarch64 is the arm64 one - see the root README's own port
-# table) - those directories are deliberately NOT renamed to match:
+# which instead names the upstream repo/port (forks/armv7-rpi is the
+# upstream repo name, but this port is ALSO reachable as the bare "arm"
+# target - see the root README's own port table, and this script's own
+# "arm" section below for why armv7-rpi specifically earned that bare
+# name) - those directories are deliberately NOT renamed to match:
 # that's the factorization phase's job (docs/claude_notes/
 # factorization-plan.md), not this one's, and renaming them now would
-# break the blame-preserving history that phase depends on. forks/riscv
-# and forks/x86 were the exception: renamed to forks/riscv64/forks/i386
-# outright, since each has exactly one fork (no ambiguity for the rename
-# to lose).
+# break the blame-preserving history that phase depends on. forks/riscv,
+# forks/x86, forks/rv32, and forks/aarch64 were the exception: renamed to
+# forks/riscv64/forks/i386/forks/riscv32/forks/arm64 outright, since
+# (unlike the ARM32 boards) each has exactly one fork per ISA - no
+# ambiguity for the rename to lose.
 #
 # Scope: riscv64, i386, x86_64, amd64, riscv32, arm64, mips, loongarch,
 # armv6-rpi, armv7-rpi, rpi1, and rpi2 so far - Phases 1, 2 and (the
@@ -423,12 +426,12 @@ if ! detect_qemu_system amd64 QEMU_AMD64 qemu-system-x86_64; then
 fi
 
 ###############################################################################
-# riscv32 (forks/rv32, michaelengel/xv6-rv32)
+# riscv32 (forks/riscv32, michaelengel/xv6-rv32)
 ###############################################################################
 # Ubuntu ships no dedicated riscv32-unknown-elf- package at all - the
 # riscv64-unknown-elf- toolchain (already needed for riscv64 above) is
 # multilib and happily targets rv32 given explicit -march/-mabi flags
-# (forks/rv32/Makefile's own CFLAGS already carries these - see
+# (forks/riscv32/Makefile's own CFLAGS already carries these - see
 # docs/claude_notes/notes_arch_riscv32.txt), so it's tried here as a
 # fallback candidate after the (currently nonexistent-on-Debian/Ubuntu)
 # dedicated 32-bit names. Marker is "elf32-littleriscv" specifically,
@@ -439,13 +442,13 @@ fi
 if ! detect_toolprefix riscv32 TOOLPREFIX_RISCV32 elf32-littleriscv \
         riscv32-unknown-elf- riscv32-elf- riscv32-linux-gnu- \
         riscv64-unknown-elf- riscv64-elf- riscv64-linux-gnu-; then
-    echo "configure: warning: no riscv32-capable toolchain on PATH (needed for forks/rv32)" >&2
+    echo "configure: warning: no riscv32-capable toolchain on PATH (needed for forks/riscv32)" >&2
     echo "  install one, e.g. on Debian/Ubuntu (multilib, covers riscv64 too):" >&2
     echo "    sudo apt install gcc-riscv64-unknown-elf" >&2
     note_other_pkgmgr
 fi
 
-# forks/rv32/Makefile enforces no minimum QEMU version of its own.
+# forks/riscv32/Makefile enforces no minimum QEMU version of its own.
 if ! detect_qemu_system riscv32 QEMU_RISCV32 qemu-system-riscv32; then
     echo "configure: warning: no qemu-system-riscv32 on PATH" >&2
     echo "  install it, e.g. on Debian/Ubuntu:" >&2
@@ -454,7 +457,7 @@ if ! detect_qemu_system riscv32 QEMU_RISCV32 qemu-system-riscv32; then
 fi
 
 ###############################################################################
-# arm64 (forks/aarch64, k-mrm/xv6-aarch64)
+# arm64 (forks/arm64, k-mrm/xv6-aarch64)
 ###############################################################################
 # No gaps here - aarch64-linux-gnu-gcc and qemu-system-aarch64 are both
 # already what Ubuntu packages, and the fork's own (copy-pasted, generic)
@@ -465,13 +468,13 @@ fi
 
 if ! detect_toolprefix arm64 TOOLPREFIX_ARM64 elf64-big \
         aarch64-unknown-elf- aarch64-linux-gnu- aarch64-unknown-linux-gnu-; then
-    echo "configure: warning: no arm64 toolchain on PATH (needed for forks/aarch64)" >&2
+    echo "configure: warning: no arm64 toolchain on PATH (needed for forks/arm64)" >&2
     echo "  install one, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install gcc-aarch64-linux-gnu" >&2
     note_other_pkgmgr
 fi
 
-# forks/aarch64/Makefile enforces no minimum QEMU version of its own.
+# forks/arm64/Makefile enforces no minimum QEMU version of its own.
 if ! detect_qemu_system arm64 QEMU_ARM64 qemu-system-aarch64; then
     echo "configure: warning: no qemu-system-aarch64 on PATH" >&2
     echo "  install it, e.g. on Debian/Ubuntu:" >&2
@@ -715,11 +718,11 @@ fi
     echo "export TOOLPREFIX_AMD64=$TOOLPREFIX_AMD64"
     echo "export QEMU_AMD64=$QEMU_AMD64"
     echo
-    echo "# riscv32 (forks/rv32 - michaelengel/xv6-rv32)"
+    echo "# riscv32 (forks/riscv32 - michaelengel/xv6-rv32)"
     echo "export TOOLPREFIX_RISCV32=$TOOLPREFIX_RISCV32"
     echo "export QEMU_RISCV32=$QEMU_RISCV32"
     echo
-    echo "# arm64 (forks/aarch64 - k-mrm/xv6-aarch64)"
+    echo "# arm64 (forks/arm64 - k-mrm/xv6-aarch64)"
     echo "export TOOLPREFIX_ARM64=$TOOLPREFIX_ARM64"
     echo "export QEMU_ARM64=$QEMU_ARM64"
     echo

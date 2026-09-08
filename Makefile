@@ -27,12 +27,12 @@
 # the ARM32 winner among four candidate ports, boots to a real shell,
 # test-arm passes with two known usertests skipped).
 #
-# arm64, not aarch64: forks/aarch64 is still named for its upstream repo
-# (k-mrm/xv6-aarch64), but the Makefile target/./configure variable name
+# arm64, not aarch64: the Makefile target/./configure variable name
 # follows ~/c--'s and ~/goken's own CCARM64/RUN_ARM64/arch/arm64/
-# convention for this ISA - same bare-ISA-name-not-directory-name
-# reasoning as riscv64/i386/riscv32 above, just a different bare name
-# than the directory happens to use.
+# convention for this ISA - forks/aarch64 (upstream repo k-mrm/
+# xv6-aarch64) was renamed to forks/arm64 to match outright, same
+# single-fork-per-ISA exception as riscv64/i386/riscv32 above (see
+# ./configure's own header comment).
 #
 # arm, not armv7-rpi: same reasoning again, resolved once forks/armv7-rpi
 # became the clear winner among this repo's four ARM32 ports (see that
@@ -238,7 +238,7 @@ kill-amd64:
 	-pkill -f '$(QEMU_AMD64)' 2>/dev/null || true
 
 ###############################################################################
-# riscv32 (forks/rv32, michaelengel/xv6-rv32)
+# riscv32 (forks/riscv32, michaelengel/xv6-rv32)
 ###############################################################################
 
 check-riscv32-toolchain:
@@ -248,28 +248,28 @@ check-riscv32-toolchain:
 	fi
 
 # Same "kernel/kernel"+"fs.img", no separate whole-disk image, shape as
-# riscv64 - forks/rv32 boots via QEMU's own "-kernel" loading straight to
+# riscv64 - forks/riscv32 boots via QEMU's own "-kernel" loading straight to
 # 0x80000000, no bootblock stage (see docs/claude_notes/notes_arch_riscv32.txt).
 build-riscv32: check-riscv32-toolchain
-	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
+	$(MAKE) -C forks/riscv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
 
 run-riscv32: check-riscv32-toolchain
-	$(MAKE) -C forks/rv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) qemu
+	$(MAKE) -C forks/riscv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
-# forks/riscv64's/forks/i386's own test-<arch> targets (forks/rv32/Makefile's
+# forks/riscv64's/forks/i386's own test-<arch> targets (forks/riscv32/Makefile's
 # own "QEMU = qemu-system-riscv32 -monitor ..." has no ifndef guard either).
 test-riscv32: check-riscv32-toolchain build-riscv32
-	cd forks/rv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py
+	cd forks/riscv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py
 
 clean-riscv32:
-	$(MAKE) -C forks/rv32 clean
+	$(MAKE) -C forks/riscv32 clean
 
 kill-riscv32:
 	-pkill -f '$(QEMU_RISCV32)' 2>/dev/null || true
 
 ###############################################################################
-# arm64 (forks/aarch64, k-mrm/xv6-aarch64)
+# arm64 (forks/arm64, k-mrm/xv6-aarch64)
 ###############################################################################
 
 check-arm64-toolchain:
@@ -284,20 +284,20 @@ check-arm64-toolchain:
 # test-arm64 below will fail until that's resolved. build-arm64/
 # run-arm64 do work.
 build-arm64: check-arm64-toolchain
-	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) kernel/kernel fs.img
+	$(MAKE) -C forks/arm64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) kernel/kernel fs.img
 
 run-arm64: check-arm64-toolchain
-	$(MAKE) -C forks/aarch64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) qemu
+	$(MAKE) -C forks/arm64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
-# forks/riscv64's/forks/i386's own test-<arch> targets (forks/aarch64/
+# forks/riscv64's/forks/i386's own test-<arch> targets (forks/arm64/
 # Makefile's own "QEMU = $(QEMUPREFIX)qemu-system-aarch64" has no ifndef
 # guard either).
 test-arm64: check-arm64-toolchain build-arm64
-	cd forks/aarch64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
+	cd forks/arm64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
 
 clean-arm64:
-	$(MAKE) -C forks/aarch64 clean
+	$(MAKE) -C forks/arm64 clean
 
 kill-arm64:
 	-pkill -f '$(QEMU_ARM64)' 2>/dev/null || true

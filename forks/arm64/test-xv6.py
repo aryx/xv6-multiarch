@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Minimal usertests-only smoke test for this port, modeled on
-# forks/rv32/test-xv6.py's own shape (same "make qemu" boot mechanism,
+# forks/riscv32/test-xv6.py's own shape (same "make qemu" boot mechanism,
 # same kernel/user-split lineage). This fork's own UPROGS list adds
 # `grind` (a stress test) beyond what rv32 has, but usertests.c's own
 # suite is still the whole test here - grind is not separately driven.

@@ -18,7 +18,7 @@ forks/loongarch is SKT-CPUOS/xv6-loongarch-exp (2022-2023) - a Chinese
 university course project ("龙芯-xv6操作系统实验" - "Loongson xv6 OS
 experiment", PPT/PDF materials included in the tree) porting MIT xv6 to
 LoongArch, Loongson's own RISC ISA (see README's own fork-point table:
-forked from forks/riscv64). Structurally close to forks/riscv64/forks/rv32 -
+forked from forks/riscv64). Structurally close to forks/riscv64/forks/riscv32 -
 same kernel/user split, same syscall/file-system code - with LoongArch-
 specific replacements: kernel/apic.c/extioi.c for interrupt controller
 (LoongArch's own APIC-like scheme, not RISC-V's CLINT/PLIC),

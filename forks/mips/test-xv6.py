@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Minimal usertests-only smoke test for this port, modeled on
-# forks/rv32/test-xv6.py's own QEMU class. This fork has no crash/log/
+# forks/riscv32/test-xv6.py's own QEMU class. This fork has no crash/log/
 # orphan-recovery test programs either, so a usertests run is the whole
 # test.
 #

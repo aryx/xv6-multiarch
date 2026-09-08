@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Minimal usertests-only smoke test for this port, modeled directly on
-# forks/rv32/test-xv6.py's own QEMU class (see that file's own header
+# forks/riscv32/test-xv6.py's own QEMU class (see that file's own header
 # comment for the general shape/reasoning this one reuses). This fork
 # has no crash/log/orphan-recovery test programs either, so a usertests
 # run is the whole test.
@@ -19,9 +19,9 @@
 # and boots via "-kernel xv6.img" (a raw binary, not the ELF - see
 # notes_arch_armv7_rpi.txt for why), so "make qemu" (not "make
 # qemu-nox" - no such target here) is what this script drives over a
-# pipe, same as forks/rv32.
+# pipe, same as forks/riscv32.
 #
-# claude: unlike forks/rv32's own TOOLPREFIX (which has a runtime
+# claude: unlike forks/riscv32's own TOOLPREFIX (which has a runtime
 # auto-detect fallback in its Makefile that happens to land on the right
 # toolchain even without an external override), this fork's makefile.inc
 # hardcodes "CROSSCOMPILE := arm-none-eabi-" with no such fallback - a

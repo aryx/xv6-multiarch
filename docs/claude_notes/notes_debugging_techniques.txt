@@ -159,7 +159,7 @@ tested from - but `clear` exits non-zero with no `TERM` set, which is
 exactly the environment a Docker build runs in, and a plain `@` on a
 make recipe line silences echoing the command, not its exit-status
 handling, so the whole recipe aborted before QEMU ever started. A
-fourth, `ARCH=arm64` (forks/aarch64): `qemu-system-aarch64` refused to
+fourth, `ARCH=arm64` (forks/arm64): `qemu-system-aarch64` refused to
 boot at all - "failed to find romfile efi-virtio.rom" - because
 `ipxe-qemu` (which ships that ROM, needed for the `virtio-blk-device`
 this fork's own Makefile passes, even though no firmware/EFI code ever
@@ -309,7 +309,7 @@ correct ELF32 layout all along).
 ------------------------------------------------------------------------------------------------
 forks/riscv64 (rv64) links user programs with a dedicated `user/user.ld`
 that explicitly page-aligns `.data` after `.text`
-(`. = ALIGN(0x1000);`); forks/rv32 instead used a bare `-N -e main
+(`. = ALIGN(0x1000);`); forks/riscv32 instead used a bare `-N -e main
 -Ttext 0`, which packs sections with no such alignment. Both link
 *successfully* - the gap only became visible three steps later, at
 runtime, when this kernel's own `exec()` rejected the resulting
@@ -513,7 +513,7 @@ reasoning about ARM/MMU semantics from the architecture manual alone.
 
 20. A breakpoint that should fire but never does is itself the finding - it means the assumed code path is wrong, not that the breakpoint is broken
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-forks/rv32's bug 4 (see notes_arch_riscv32.txt) looked, from the crash
+forks/riscv32's bug 4 (see notes_arch_riscv32.txt) looked, from the crash
 alone, like register corruption: a shell's memset() call received
 completely wrong arguments, and every register-preservation path that
 could plausibly explain it (the trapframe struct's field layout, the
