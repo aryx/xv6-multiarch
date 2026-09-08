@@ -1,0 +1,361 @@
+notes_arch_arm_pi3.txt
+=======================
+
+Written: 2026-09-08, during the arm-pi3 bring-up itself, in a session
+that also renamed forks/pi_mp -> forks/arm64-pi3 -> forks/arm-pi3 (see
+"What this is" below for why it landed on the second name). Not part of
+the original Phase 4 list in build-and-test-plan.md - added later,
+alongside forks/rpi4, purely for provenance/history reasons - so this
+is bonus bring-up work, not filling in a planned gap. Status: NOT fully
+working yet - boots all 4 cores under QEMU, all the way through
+userinit(), by far the furthest of the four real-board ARM32 ports in
+this repo (only forks/arm, an unrelated codebase with no real hardware
+of its own, has gone further) - but a real SMP page-table race crashes
+a secondary core before reaching a shell. Ten real bugs found and fixed
+along the way; the eleventh (the open one) was deliberately left for a
+future session per the user's own explicit choice to stop here.
+
+What this is, and the naming correction
+----------------------------------------
+forks/arm-pi3 is patha454/xv6_pi_mp (Harley Paterson, University of
+Otago SRG, 2019) - a *verified* real git fork partway down
+forks/arm-pi2's own history (see docs/provenance.md). Real Raspberry Pi
+3 hardware, with genuine multiprocessing support (the "MP" in pi_mp) -
+this is the whole point of the port, unlike the other ARM32 forks here.
+
+Its own upstream README says "AArch64 MP" and the root README's port
+table originally described it that way too - but its Makefile only
+ever builds 32-bit ARM code (arm-none-eabi- toolchain, -mcpu=cortex-a7/
+cortex-a9, -mfloat-abi=hard). This was caught mid-session: an initial
+rename to forks/arm64-pi3 (grouping it with the genuinely-AArch64
+forks/arm64-pi4) was corrected the same day to forks/arm-pi3 once the
+Makefile evidence was actually checked, not just the upstream
+description. "AArch64 MP" describes running on the Pi 3's ARMv8 chip in
+its AArch32 compatibility mode, with real multiprocessing added on top
+- not a 64-bit kernel. See CLAUDE.md's own naming-convention section
+and docs/provenance.md for the corrected mapping.
+
+Build system: same "hw=" parameterized Makefile as forks/arm-pi2
+--------------------------------------------------------------------
+Same fvp/rpi1/rpi2 "hw=" selector, same PHYSTART/PHYSIZE/KERNBASE/
+MMIO_PA/MMIO_VA/PERIPHBASE --defsym parameterization as forks/arm-pi2
+(both zhiyihuang/xv6_rpi_port descendants) - hw=rpi2 (MMIO_PA=
+0x3F000000, real Pi 2/3 BCM2836/2837 peripheral base) is what this
+bring-up used throughout, matching the real Pi 3 hardware this fork
+targets. Also carries real USB support (uspi_*.c, a full DesignWare
+Hi-Speed USB Host controller driver, Chadderz/Rene Stange's USPI
+library) that forks/arm-pi1/forks/arm-pi2 don't have at all.
+
+Bug 1 (real, fixed): -fcommon needed for include/proc.h's "struct cpu cpus[NCPU];"
+------------------------------------------------------------------------------------
+Same class of bug documented in every other fork brought up in this
+repo by now (GCC 10 flipped the -fcommon default). Fixed by adding
+-fcommon to CFLAGS (all three hw= branches, for consistency).
+
+Bug 2 (real, fixed): missing -marm let the linker emit a Thumb-switching call, sending execution off into uninitialized memory
+------------------------------------------------------------------------------------------------------------------------------------
+The same class of bug as the sibling forks/arm-pi1-bis fork's own Bug 4
+(notes_arch_arm_pi1_bis.txt) - without an explicit ARM/Thumb choice in
+CFLAGS, gcc's default codegen mode left room for the linker to emit a
+Thumb-switching "blx" for some call (into memmove-family code, as far
+as this session dug - not root-caused to the exact call site, just the
+mechanism). Confirmed via the QEMU monitor's "info registers": PSR
+showed Thumb mode active ("T" flag set) with an odd (bit0-set) LR value
+- the unmistakable interworking-switch signature - and PC then visibly
+wandering through unrelated, uninitialized memory over successive
+polls, instead of executing real code. Fixed the same way as the
+sibling fork: added "-marm" to CFLAGS (all three hw= branches) to force
+plain ARM code generation outright, removing the state-switch question
+entirely. Verified this doesn't affect the real-hardware build in any
+way that could matter (same fix category as forks/arm-pi1's own Bug 3
+- a universal correctness fix, not a QEMU-only workaround) - a clean
+"make hw=rpi2" (the real-hardware "all"/kernel7.bin target) was run
+after every change in this session specifically to confirm this.
+
+Bug 3 (real, fixed): delay()'s exact-equality busy-wait
+----------------------------------------------------------
+Identical to forks/arm-pi1's own Bug 4 and forks/arm-pi2's own Bug 1 -
+source/timer.c's delay() used "while(t != getsystemtime());", which can
+spin forever if QEMU's emulated timer counter advances by more than 1
+between two reads and skips the exact target value. Same fix: a signed
+"target reached or passed" comparison
+("while((long long)(getsystemtime() - t) < 0);") instead of exact
+match - strictly safer on real hardware too, not a QEMU-only patch.
+Found via the QEMU monitor: PC parked at a fixed address inside
+getsystemtime() (called from delay()) across repeated polls, once the
+Thumb bug above was fixed and PC finally became reproducible instead of
+wandering.
+
+Bug 4 (real, fixed): VFP/NEON access never enabled - gcc's own -O2 codegen emitted a trapped instruction
+-------------------------------------------------------------------------------------------------------------
+A genuinely new bug class for this repo (none of the other ARM32 forks
+hit it). Once the Thumb bug was fixed, boot progressed further and then
+took an "Undefined Instruction" exception (confirmed via "-d int": ESR
+0x1fe00000, EC field = 0x7 - "trapped access to SIMD/FP functionality")
+- something in this kernel's own C code triggered a VFP or NEON
+instruction (almost certainly gcc's own -O2 auto-vectorizing a
+struct-copy or similar, not anything the C source intentionally does
+with floating point - this kernel is a freestanding OS with no
+legitimate use for float/double), and with no coprocessor access
+enabled at all (grepped the whole tree - no CPACR/VFP/FPEXC setup
+anywhere), the very first such instruction trapped. Real Cortex-A7/A53
+silicon would hit the exact same trap - this isn't a QEMU-only gap.
+Fixed by adding a standard VFP/NEON enable sequence to entry.S's
+boot_reset (CPACR cp10/cp11 = full access, then FPEXC.EN) - added
+early, right after the "Update ARM vector address" block, on every
+core's own boot path (before the primary/secondary split), so all 4
+cores get it.
+
+Bug 5 (real, fixed): Monitor mode setup crashes under QEMU's Non-Secure boot - and is genuinely dead code either way
+--------------------------------------------------------------------------------------------------------------------------
+trap.c's tvinit() calls set_mode_sp(ptr+4096, 0xD6) to set up a stack
+for Monitor mode, among five other exception modes. Monitor mode only
+exists in Secure state - a direct CPSR mode-switch into it from
+Non-Secure state is architecturally undefined and traps ("unexpected
+trap 1" data abort on every core, confirmed via the kernel's own trap
+handler output, right at this call). QEMU's raspi3b board-setup ROM
+(see Bug 8/armstub64.S below) drops the CPU to Non-Secure before this
+kernel ever gets control, so this call was guaranteed to fault under
+QEMU. But it's genuinely dead code independent of that: grepped the
+whole tree for "smc"/monitor-mode usage - nothing else in this kernel
+ever executes an "smc" instruction or enters Monitor mode at all. This
+was precautionary SP setup for a mode never actually used, so it was
+commented out (not gated behind a runtime Secure/Non-Secure check,
+which would only ever have protected dead code) rather than worked
+around.
+
+Bug 6 (real, fixed): secondary cores never actually reached this kernel's own entry point at all
+-------------------------------------------------------------------------------------------------------
+The deepest and most interesting bug this session found. Confirmed via
+the QEMU monitor's "info roms": only CPU0 is jumped to "-kernel"'s own
+load address directly - cores 1-3 start executing QEMU's own
+"raspi_smpboot" ROM instead (a small stub at physical 0x300, matching
+what real Pi firmware's own secondary-core release mechanism looks
+like), which polls the REAL hardware spintable release-address slots
+(physical 0xe0/0xe8/0xf0 for cores 1-3 respectively - core 0 has none
+of its own) - the same protocol real Raspberry Pi firmware uses on
+actual silicon. Nothing was writing to those slots, so cores 1-3 waited
+forever, and this kernel's own multiprocessing support (startothers()/
+wait_on_cores() in main.c) never saw them start. Fixed in armstub64.S
+(see Bug 8 below) - the stub writes its own base address into all
+three slots before doing its own EL2->AArch32-EL1 drop, releasing the
+cores into the SAME stub, so each independently repeats that drop and
+lands at this kernel's own entry point alongside CPU0 - where
+entry.S's existing MPIDR-based primary/secondary gating (the
+"cmp r0,#0; wfene; bne mp_continue" near its own top) takes over
+exactly as it would following real firmware's own release. Confirmed
+working: "CPU 1: Booted" / "CPU 2: Booted" / "CPU 3: Booted" and all
+the way through "CPU N: Handing off to scheduler" for all three,
+matching CPU0's own boot trace.
+
+Bugs 7-8 (real, fixed): QEMU's raspi3b needs a real firmware step this kernel never had to supply before
+-------------------------------------------------------------------------------------------------------------
+Two related, non-obvious findings, both new to this repo (the other
+ARM32 forks target raspi2b, a pure-AArch32 CPU with none of this):
+
+Bug 7 - wrong QEMU machine, wrong load address, twice: qemu-system-
+aarch64's "-M raspi3b" places a raw "-kernel"/"-device loader" image at
+physical 0x80000 (confirmed via the monitor's "info roms" - different
+from raspi2b's own 0x10000, which the sibling forks/arm-pi1/forks/
+arm-pi2 already established). A naive PHYSOFFSET=0x200000 choice built
+and looked like it should work, but crashed with a Prefetch Abort
+(IFSR 0x5, translation fault) deep inside entry.S's own mp_continue -
+root cause: this fork's page-table setup (entry.S's mmu_phase1/
+map_kernel_pages) only ever builds an IDENTITY (physical=physical)
+mapping for the FIRST 1MB of physical memory (the block handling
+PHYSTART's own section, done once before the main loop) - every other
+1MB section only gets its KERNBASE-relative VIRTUAL mapping, not an
+identity one. The real-hardware default PHYSOFFSET (0x8000) happens to
+sit inside that first-MB window, so this was never an issue before;
+0x200000 (2MB) sits well outside it, so the pre-MMU/post-MMU-transition
+code physically living there (the .init section, and specifically the
+"mov pc, r1" jump to _pagingstart mid-transition) had no valid physical
+mapping to keep executing from once the MMU turned on. Fixed by picking
+QEMU_ARM_ENTRY=0x90000 instead - clear of the armstub's own tiny
+footprint at 0x80000, but still comfortably under 0x100000, so the
+(very small, ~1KB) .init section stays inside the identity-mapped
+window while the REST of the ~600KB kernel physically extends well
+past it - which is fine, since everything past .init is only ever
+fetched via its virtual (KERNBASE-relative) alias once the MMU is on,
+and that side of the mapping the loop DOES build correctly across the
+full 256MB PHYSIZE regardless of where PHYSOFFSET sits.
+
+Bug 8 - the real missing piece: an EL3/EL2/AArch32 firmware stub this
+kernel needs but never had to write. Even at the right load address,
+"-M raspi3b" hung silently (no exceptions logged at all via "-d int" -
+genuinely stuck, not crashing). Root cause: the Cortex-A53 QEMU
+emulates for raspi3b always resets in AArch64 (confirmed via
+gdb-multiarch - the initial gdbstub connection negotiates a 268-byte
+AArch64 register set, not AArch32's 168-byte one) - real hardware's GPU
+firmware drops the CPU from AArch64 down to AArch32 before jumping to a
+32-bit kernel7.img, but QEMU's raw "-kernel"/"-device loader" loaders
+skip that whole firmware stage and just jump straight into the loaded
+image in whatever state the CPU already has. Tried working around this
+with a "-cpu cortex-a53,aarch64=off" property - QEMU refuses outright
+("'aarch64' feature cannot be disabled unless KVM is enabled and 32-bit
+EL1 is supported"), and KVM itself separately refuses raspi3b ("Cannot
+enable KVM when guest CPU has EL3 enabled") - not fixable from the
+command line at all on this TCG-only setup. Fixed by writing
+armstub64.S - a small (~40 instruction) AArch64 firmware stub,
+this repo's own equivalent of real Pi 4/3 firmware's "armstub8-32.bin"
+- built with the aarch64-linux-gnu- toolchain (reusing whatever
+TOOLPREFIX_ARM64 already found - see configure's own arm-pi3 section),
+loaded via "-kernel" (so it's what every core's own reset vector
+lands on first), and doing the actual EL-level drop.
+
+Getting that drop right took real trial and error, and is worth a
+longer note since the EL0-3/Secure model is genuinely subtle (see the
+next section).
+
+The EL0-EL3 / Secure-Non-Secure model, and what actually tripped this session up
+------------------------------------------------------------------------------------
+ARMv8-A's privilege model has FOUR exception levels (EL0 user, EL1
+kernel, EL2 hypervisor, EL3 "secure monitor" - the highest, most
+trusted level, roughly where real firmware and TrustZone live) and,
+orthogonally, a Secure/Non-Secure split that exists at every level
+below EL3 (EL3 is always Secure). A boot chain typically starts at EL3
+and drops through EL2 to EL1 before handing off to an OS kernel -
+"dropping" here means: EL3 code writes SCR_EL3 (deciding Non-Secure
+world and the execution state - AArch64 vs AArch32 - lower levels will
+use), sets up SPSR_EL3/ELR_EL3 to describe the exact target level/mode/
+address, and executes "eret", which atomically switches to that lower
+level and jumps to ELR_EL3 - all in one instruction, with no way to
+inspect or single-step through the transition itself.
+
+Two things made this genuinely hard to get right here, both confirmed
+empirically rather than assumed from the architecture manual alone:
+
+1. This session's FIRST armstub attempt assumed it was running at EL3
+(the CPU's true hardware reset state) and wrote SCR_EL3/SPSR_EL3/
+ELR_EL3 directly - and got an immediate fault. Root cause, found via
+gdb-multiarch stepping the real reset sequence (not the stub - the
+board's OWN pre-kernel ROM, "board-setup" at physical 0x400-0x44c, per
+"info roms"): QEMU's raspi3b board-setup ROM ALREADY does the EL3->EL2
+half of this drop itself before ever jumping to "-kernel" - it issues
+its own "smc 0" call as part of that (visible in that ROM's own
+disassembly), matching what real ARM Trusted Firmware does before
+handing off to a next-stage bootloader. So this stub's own entry point
+is EL2, not EL3 - writing "scr_el3" from EL2 is an EL3-only register
+access from a lower level, itself undefined and trapped (landing back
+at EL2's OWN synchronous-exception vector, VBAR_EL2+0x200 - confirmed
+via gdb reading CPSR's mode field directly, not inferred). Fixed by
+rewriting the stub to use SPSR_EL2/ELR_EL2 and "eret" from EL2 instead
+of EL3 - matching the level the CPU is ACTUALLY at, not the level the
+architecture manual's "typical" boot chain describes starting from.
+Lesson: don't assume which EL you start at from documentation about
+"how real firmware boots" - a board model can (and this one does)
+already have done part of that job before your own code gets control;
+confirm the actual starting EL via a debugger (gdb-multiarch's own
+initial connection register-set width, or by reading CPSR/PSTATE's
+mode field directly) before writing any level-specific system register.
+
+2. Even after fixing that, "eret"-ing from EL2 straight to AArch32 EL1
+(SCR_EL3.RW=0-equivalent reasoning applied one level down) STILL landed
+back in EL2 AArch64, not EL1 AArch32 - a second, genuinely
+counter-intuitive architecture subtlety: when EL2 is implemented (true
+on every real ARMv8-A core, and on this CPU model), EL1's ACTUAL
+execution state (AArch32 vs AArch64) is governed by HCR_EL2.RW, not by
+whatever SCR_EL3.RW said - and this is true even when eret-ing directly
+from EL3 (or, here, EL2) straight to EL1, skipping EL2 execution
+entirely. HCR_EL2 is "in effect" architecturally the moment EL2 exists
+in the implementation, regardless of whether any EL2 code actually
+ever runs. Left at its own reset value (unknown/unspecified in general
+- happened to still read back as "AArch64" here), the eret kept landing
+back in EL2. Fixed by explicitly zeroing HCR_EL2 (RW=0, meaning AArch32
+for EL1) before the SPSR_EL2/ELR_EL2/eret sequence. Lesson: when
+dropping to EL1 and EL2 is implemented, HCR_EL2.RW needs to be set
+explicitly regardless of whether you're eret-ing FROM EL2 or skipping
+past it FROM EL3 - it is not enough to only configure the level you are
+eret-ing FROM.
+
+Both of these were root-caused the same way: read gdb-multiarch's own
+CPSR mode-field decode directly (M[4] for AArch32 vs AArch64, M[3:2]
+for the EL when in AArch64, M[3:0] for the specific AArch32 mode when
+M[4]=1) rather than guessing from where execution SHOULD be based on
+the code just written - the actual state after an eret is exactly what
+CPSR/PSTATE's mode bits say it is, nothing more, nothing less.
+
+Verification so far
+---------------------
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf-
+    -> builds clean, real-hardware kernel7.bin unaffected by any QEMU-
+       only change (verified after every fix in this session, not just
+       at the end)
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- kernel7-qemu.bin armstub64.bin
+    -> builds clean
+  qemu-system-aarch64 -M raspi3b -smp 4 -nographic -kernel armstub64.bin \
+      -device loader,file=kernel7-qemu.bin,addr=0x90000,force-raw=on
+    -> all 4 cores boot ("CPU 1/2/3: Booted" / "tvinit Ok" / "aux_mmu_init:
+       Ok" / "Handing off to scheduler" for each), primary core reaches
+       "Hello World from xv6", kinit1/mailboxinit/gpuinit/mmuinit1 all
+       OK, USB gracefully fails (QEMU's dwc2 reports vendor 0x4F54294A -
+       the SAME QEMU-vs-real dwc2 signature ~/principia/kernel/COMPILE/9/
+       bcm/usbdwc.c's own "emulating()" uses for this exact SoC family -
+       "unknown vendor", so USB init fails cleanly instead of hanging),
+       userinit() succeeds - then a secondary core (CPU 1 or 2,
+       non-deterministic which) takes a real Data Abort (DFSR 0x5,
+       translation fault) inside memmove() (called from balloc()/
+       bfree() in the FS layer), reading from an address its own page
+       table apparently doesn't have mapped, and the whole system
+       panics.
+  make build-arm-pi3 / make run-arm-pi3 (top-level Makefile)
+    -> reproduces the exact same boot trace via the wired command
+
+Open gap: secondary-core page-table race in balloc()/bfree()'s memmove()
+-----------------------------------------------------------------------------
+NOT fixed this session, left open per the user's own explicit choice
+after ten real bugs had already been found and fixed reaching this
+point. A secondary core (not CPU0) faults reading memory inside a
+memmove() call from the block-allocation code, well after "userinit:
+OK" prints - meaning the crash happens once secondary cores are
+legitimately running kernel code (post-scheduler-handoff), not during
+early boot. Genuinely plausible causes not yet investigated: a stale/
+per-core TTBR0 snapshot that doesn't see a page CPU0 mapped after that
+snapshot was taken (this kernel's own mmuinit1()/"signal_event()" dance
+for propagating the shared page table to secondary cores runs BEFORE
+startothers() has fully synchronized, per main.c's own ordering - worth
+checking first), a genuine buffer-cache race between cores (two cores
+touching the same block), or a stack-corruption bug unrelated to paging
+that merely LOOKS like a translation fault. This is squarely a
+concurrency bug in the original 2019 pi_mp code's own SMP design - not
+a QEMU-specific artifact (nothing about the fault pattern suggests
+otherwise) - and would need real cross-core state inspection (which
+core's TTBR0 points where, when) to pin down, not just single-core
+single-stepping.
+
+Dynamic QEMU-vs-real-hardware detection: considered, deliberately deferred
+-------------------------------------------------------------------------------
+The user asked whether the -DRPI3_QEMU compile-time split (used to
+select PL011 vs Mini-UART in source/uart.c - see the Makefile/uart.c's
+own comments) could instead be a runtime check, so the SAME binary
+works on both targets - matching ~/principia/kernel/COMPILE/9/bcm/
+usbdwc.c's own emulating() pattern (a cached, one-time read of the
+dwc2 controller's GSNPSID register, comparing against the known
+QEMU-vs-real signature this session's own boot log also observed:
+0x4F54294A). This is the right general pattern and the SAME signature
+IS present and readable in this kernel's own USB code - but uartinit()
+runs very early in cmain() (right after machinit()), well BEFORE
+usbinit() does whatever real power-on sequence real Pi 3 hardware's USB
+block might need before its ID register reads back a reliable, real
+value - reading it that early was not verified safe on real hardware in
+this session, and getting it wrong risks silently breaking the
+already-working real-hardware Mini-UART path for a cosmetic win. Left
+as -DRPI3_QEMU (a second, additive compile of the same sources into
+build-qemu/, not touching the real-hardware build/ directory at all -
+see the Makefile's own comment) rather than risk that regression right
+after getting this far. A real fix, if wanted later: confirm (on the
+user's own real Pi 3 hardware, or from Broadcom's own documentation)
+whether the USB core's ID register is safely readable before any
+power-on sequence runs, or find a DIFFERENT always-safe-to-read
+QEMU-vs-real signature reachable that early in boot.
+
+Wired up in ./configure and the top-level Makefile as build-arm-pi3/
+run-arm-pi3 only (the QEMU-only target - the fork's own Makefile's
+"armstub64.bin"/"kernel7-qemu.bin"/"qemu" targets, never touching the
+real-hardware "kernel7.bin"/"all" ones) - no test-arm-pi3/clean-arm-pi3/
+kill-arm-pi3 yet, and not folded into build-all/run-all/test-all, since
+there is no reliable pass/fail console signal to build a scripted test
+around while the open crash remains. QEMU_AARCH64_TOOLPREFIX (for
+armstub64.bin's own build step) reuses TOOLPREFIX_ARM64, already
+detected by the arm64/AArch64 section - no second toolchain detection
+added. Not added to Docker/CI for the same reason.

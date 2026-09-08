@@ -63,7 +63,7 @@ set -eu
 # 32-bit ARM code (arm-none-eabi-), real Pi 3 MP hardware in AArch32
 # compatibility mode on its ARMv8 chip, not a 64-bit kernel (caught and
 # corrected 2026-09-08 from an initial, wrong forks/arm64-pi3 rename).
-# See docs/PROVENANCE.md for the upstream-repo -> current-forks-path
+# See docs/provenance.md for the upstream-repo -> current-forks-path
 # mapping table.
 #
 # Scope: riscv64, i386, amd64-jserv, amd64, riscv32, arm64, mips,
@@ -100,6 +100,8 @@ TOOLPREFIX_ARM_PI1=${TOOLPREFIX_ARM_PI1:-}
 QEMU_ARM_PI1=${QEMU_ARM_PI1:-}
 TOOLPREFIX_ARM_PI2=${TOOLPREFIX_ARM_PI2:-}
 QEMU_ARM_PI2=${QEMU_ARM_PI2:-}
+TOOLPREFIX_ARM_PI3=${TOOLPREFIX_ARM_PI3:-}
+QEMU_ARM_PI3=${QEMU_ARM_PI3:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -128,6 +130,8 @@ for arg in "$@"; do
         --qemu-arm-pi1=*)       QEMU_ARM_PI1="${arg#--qemu-arm-pi1=}" ;;
         --toolprefix-arm-pi2=*) TOOLPREFIX_ARM_PI2="${arg#--toolprefix-arm-pi2=}" ;;
         --qemu-arm-pi2=*)       QEMU_ARM_PI2="${arg#--qemu-arm-pi2=}" ;;
+        --toolprefix-arm-pi3=*) TOOLPREFIX_ARM_PI3="${arg#--toolprefix-arm-pi3=}" ;;
+        --qemu-arm-pi3=*)       QEMU_ARM_PI3="${arg#--qemu-arm-pi3=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -169,6 +173,11 @@ for arg in "$@"; do
             echo "  --toolprefix-arm-pi2=PREFIX  override the arm-pi2 cross-toolchain prefix"
             echo "                               (e.g. arm-linux-gnueabihf-)"
             echo "  --qemu-arm-pi2=CMD           override the arm-pi2 qemu-system binary"
+            echo "  --toolprefix-arm-pi3=PREFIX  override the arm-pi3 cross-toolchain prefix"
+            echo "                               (e.g. arm-linux-gnueabihf-)"
+            echo "  --qemu-arm-pi3=CMD           override the arm-pi3 qemu-system binary"
+            echo "                               (qemu-system-aarch64 - this fork's own"
+            echo "                               Makefile targets -M raspi3b, not raspi2b)"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -689,6 +698,45 @@ if ! detect_qemu_system arm-pi2 QEMU_ARM_PI2 qemu-system-arm; then
 fi
 
 ###############################################################################
+# arm-pi3 (forks/arm-pi3, patha454/xv6_pi_mp - renamed from forks/pi_mp)
+###############################################################################
+# claude: real Raspberry Pi 3 MP hardware (32-bit ARM despite the
+# upstream README's "AArch64" description - see this repo's own
+# CLAUDE.md). Unlike arm-pi1/arm-pi2, this fork's QEMU path needed a
+# genuine, separate armstub (armstub64.S) and targets qemu-system-
+# aarch64 -M raspi3b (not qemu-system-arm) - raspi3b's Cortex-A53 always
+# resets in AArch64, and QEMU's raw "-kernel"/"-device loader" loaders
+# skip the AArch64->AArch32 firmware step real GPU firmware normally
+# does, so this fork's own Makefile supplies it (see that Makefile's
+# and armstub64.S's own comments for the full story, and
+# notes_arch_arm_pi3.txt for everything found getting here). Still not
+# fully working (a real SMP page-table race crashes a secondary core
+# deep into boot - see that notes file) - TOOLPREFIX_ARM_PI3/
+# QEMU_ARM_PI3 only feed the ADDITIVE QEMU-only "kernel7-qemu.bin"/
+# "armstub64.bin"/"qemu" Makefile targets, never the real-hardware
+# "kernel7.bin"/"all" ones.
+
+if ! detect_toolprefix arm-pi3 TOOLPREFIX_ARM_PI3 elf32-littlearm \
+        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
+    echo "configure: warning: no arm toolchain on PATH (needed for forks/arm-pi3)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
+    note_other_pkgmgr
+fi
+
+# forks/arm-pi3/Makefile's own armstub64.bin rule needs an AArch64
+# toolchain too (QEMU_AARCH64_TOOLPREFIX, defaulted to
+# aarch64-linux-gnu- in that Makefile already) - reuses whatever the
+# arm64 section above already found (TOOLPREFIX_ARM64) rather than
+# detecting it a second time.
+if ! detect_qemu_system arm-pi3 QEMU_ARM_PI3 qemu-system-aarch64; then
+    echo "configure: warning: no qemu-system-aarch64 on PATH" >&2
+    echo "  install it, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install qemu-system-arm" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -747,6 +795,10 @@ fi
     echo "# arm-pi2 (forks/arm-pi2 - zhiyihuang/xv6_rpi_port, extended to rpi2, renamed from forks/rpi2)"
     echo "export TOOLPREFIX_ARM_PI2=$TOOLPREFIX_ARM_PI2"
     echo "export QEMU_ARM_PI2=$QEMU_ARM_PI2"
+    echo
+    echo "# arm-pi3 (forks/arm-pi3 - patha454/xv6_pi_mp, renamed from forks/pi_mp)"
+    echo "export TOOLPREFIX_ARM_PI3=$TOOLPREFIX_ARM_PI3"
+    echo "export QEMU_ARM_PI3=$QEMU_ARM_PI3"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -775,6 +827,8 @@ echo "  TOOLPREFIX_ARM_PI1   = $TOOLPREFIX_ARM_PI1"
 echo "  QEMU_ARM_PI1         = $QEMU_ARM_PI1"
 echo "  TOOLPREFIX_ARM_PI2   = $TOOLPREFIX_ARM_PI2"
 echo "  QEMU_ARM_PI2         = $QEMU_ARM_PI2"
+echo "  TOOLPREFIX_ARM_PI3   = $TOOLPREFIX_ARM_PI3"
+echo "  QEMU_ARM_PI3         = $QEMU_ARM_PI3"
 echo
 echo "Next: make build-riscv64 && make run-riscv64"
 echo "  or: make build-i386 && make run-i386"
@@ -791,3 +845,6 @@ echo "  or: make build-arm-pi1 && make run-arm-pi1 (does not boot to a shell yet
 echo "      real-hardware kernel.img is unaffected, build via forks/arm-pi1's own Makefile)"
 echo "  or: make build-arm-pi2 && make run-arm-pi2 (does not boot to a shell yet under QEMU;"
 echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi2's own Makefile)"
+echo "  or: make build-arm-pi3 && make run-arm-pi3 (boots to userinit under QEMU, all 4"
+echo "      cores; a secondary-core page-table race crashes it before reaching a shell -"
+echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi3's own Makefile)"

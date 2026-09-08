@@ -80,6 +80,22 @@ boot_reset:
 	ldr	r0, =_start
 	mcr	p15, 0, r0, c12, c0, 0	// VBAR
 
+	// claude: enable VFP/NEON coprocessor access (CPACR cp10/cp11 = full
+	// access) and the VFP unit itself (FPEXC.EN) - found missing via
+	// QEMU: gcc's own -O2 codegen emitted a VFP/NEON instruction
+	// somewhere (likely an auto-vectorized struct copy, not anything
+	// this kernel's C source intentionally does with floating point),
+	// and with no coprocessor access enabled that trapped as a genuine
+	// "Undefined Instruction" (ESR EC=0x7, confirmed via "-d int") the
+	// first time it executed - real Cortex-A7/A53 silicon would hit the
+	// exact same trap, this isn't a QEMU-only gap.
+	mrc	p15, 0, r0, c1, c0, 2
+	orr	r0, r0, #(0xf << 20)
+	mcr	p15, 0, r0, c1, c0, 2
+	isb
+	mov	r0, #0x40000000
+	vmsr	fpexc, r0
+
 	// Cache invalidation for older Cortex-A
 	// Note: Cortex-A7 (RPI2) does not need this part.
 	// Invalidate l1 instruction cache

@@ -546,3 +546,125 @@ about what actually runs. Here that pointed straight at `readelf -h`/
 was a completely different, unexpected function - a two-command
 diagnosis that a register-corruption theory would never have reached,
 however carefully pursued.
+
+21. A gdbstub connection negotiated for the wrong architecture doesn't just fail to break - it can corrupt the guest and mislead you into thinking the code is looping
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi3's bring-up (notes_arch_arm_pi3.txt) needed to debug a
+32-bit ARM kernel running under `qemu-system-aarch64`, whose gdbstub
+negotiates its INITIAL register-set width (AArch64's 268-byte one, on
+this mixed-mode CPU) at connect time, before the guest has even
+executed its first instruction - regardless of what state the guest
+CPU is ACTUALLY in or later transitions to. Forcing `set architecture
+arm` before connecting caused an outright `Remote 'g' packet reply is
+too long` failure. Connecting with the (wrong, but negotiated) default
+AArch64 architecture and setting a software breakpoint at a real
+32-bit-code address produced something worse than a clean failure: the
+SAME "SIGTRAP at a fixed, unrelated address" on every subsequent
+`continue`, which briefly looked like a genuine infinite loop in the
+kernel itself. It wasn't - gdb had inserted its breakpoint's opcode
+bytes using the wrong instruction width/encoding for the actual
+(AArch32) code at that address, corrupting the instruction stream it
+was trying to observe. The tell was polling the SAME state through a
+channel gdb wasn't involved in at all - the QEMU monitor's own `info
+registers` (real hardware state, no software-breakpoint insertion) -
+and seeing PC genuinely change between polls, proving the "loop" was a
+debugging-mechanism artifact, not a real hang. General lesson: on a
+mixed-mode/mixed-architecture target, cross-check ANY gdb-reported
+"stuck" or "looping" state against a gdbstub-independent view (the
+monitor's own register/memory reads, or `-d int`/`-d in_asm` logging)
+before trusting it - and prefer QEMU's OWN monitor over software
+breakpoints entirely when the guest's current execution state/width is
+uncertain or actively transitioning (here: mid EL3/EL2/EL1 drop).
+
+22. Which privilege/exception level code is ACTUALLY running at must be read from the CPU directly - never assumed from what a "typical" boot chain does
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Also from forks/arm-pi3 (notes_arch_arm_pi3.txt's own long EL0-EL3
+writeup has the full story). An AArch64 firmware stub was written
+assuming it ran at EL3 - the CPU's true hardware reset state, and where
+architecture-manual descriptions of "how a boot chain works" typically
+start - and its very first system-register write (to an EL3-only
+register) faulted immediately. The board model being emulated
+(QEMU's "-M raspi3b") had already run its OWN internal firmware ROM
+before ever handing control to the code under test, and that ROM had
+already dropped the CPU from EL3 to EL2 as part of its own job - so the
+stub's real starting level was EL2, not EL3, and every register it
+should have touched was one level down from what was written. This was
+only knowable by reading the CPU's actual current state directly - here
+via gdb-multiarch's own CPSR/PSTATE mode-field decode (M[4] for
+AArch32-vs-AArch64, M[3:2] for the EL when in AArch64) at the exact
+instruction where the code was about to run - not by re-reading the
+architecture manual harder or assuming the "textbook" boot sequence
+applies. General lesson: for ANY code that configures privilege-level
+transitions (EL3/EL2/EL1, Secure/Non-Secure, supervisor/hypervisor on
+other architectures), confirm the actual starting state via a debugger
+before writing a single level-specific register - a board/platform
+model is free to have already done part of a real firmware's job before
+your own code gets control, and there is no way to know how much of
+that job remains from source code alone.
+
+23. A privilege-transition register can be "in effect" even when the level it configures is never actually entered
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+A second ARM EL subtlety from the same forks/arm-pi3 stub (see
+notes_arch_arm_pi3.txt): even after correctly targeting an eret FROM
+EL2 straight TO EL1 (skipping EL2 execution entirely, a normal and
+architecturally-legal transition), the target level's actual execution
+state (AArch32 vs AArch64) was governed by a register belonging to the
+level being SKIPPED (HCR_EL2.RW) - left at its unconfigured reset
+value, the eret kept landing back in EL2 AArch64 instead of the
+intended EL1 AArch32, even though every register belonging to the
+transition's own source and destination levels was set correctly. This
+is not intuitive from "eret transitions from level A to level B,
+therefore configure A's and B's own registers" - a level's control
+registers can constrain behavior even when that level's own code never
+runs. General lesson, useful beyond ARM: when a privilege/mode
+transition skips over an intermediate level, don't assume that level's
+own configuration registers are irrelevant just because its code path
+is never entered - check the architecture manual specifically for
+"registers that remain in effect regardless of whether this level's
+software executes," not just "registers this level's software would
+set for itself."
+
+24. A raw "-kernel"/"-device loader" image's actual load address is a fact to look up per machine model, not a value to copy from a sibling port
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Three different QEMU Raspberry Pi board models were involved across
+this repo's various ARM32 bring-ups (`-M raspi1ap`/`raspi2b`/
+`raspi3b`), and each one places a raw binary passed via `-kernel` (or
+`-device loader,...,force-raw=on`) at a DIFFERENT physical address -
+0x10000 for raspi2b (forks/arm-pi1/forks/arm-pi2/forks/arm's own prior
+findings), 0x80000 for raspi3b (forks/arm-pi3, this session) - despite
+all three being "the same family" of board and superficially similar
+machine definitions. Guessing or reusing a sibling port's own value
+without checking cost real time in this session (a first attempt
+assumed raspi3b would also use 0x10000; it doesn't). The QEMU monitor's
+`info roms` command is authoritative and cheap to check directly:
+launch with `-monitor telnet:127.0.0.1:PORT,server,nowait`, connect
+with `nc`, and read the `addr=`/`name=` line for the loaded image -
+takes seconds and removes the guesswork entirely, including for
+multi-file boots (both the firmware stub and the real kernel showed up
+as separate named entries in this session's own arm-pi3 investigation,
+confirming both landed where intended).
+
+25. A page table built to cover N megabytes of RAM may not IDENTITY-map all N of them - re-verify a load-address choice against the actual mapping-construction code, not just against "is it below the RAM size"
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi3's entry.S (notes_arch_arm_pi3.txt bug 7) builds two
+DIFFERENT kinds of page-table entries for physical memory: a real
+identity (physical=physical) mapping, but only for the FIRST 1MB
+section, and a KERNBASE-relative VIRTUAL-only mapping for every other
+section across the full configured RAM size. A load address comfortably
+inside the total RAM size (a naive "PHYSOFFSET=2MB, RAM is 256MB, so
+2MB is nowhere near the edge" check) still crashed, because the
+CODE THAT RUNS BEFORE THE MMU IS FULLY TRANSITIONED - the small
+pre-to-post-MMU handoff sequence every one of these ARM32 ports has -
+needs to keep executing via its PHYSICAL address specifically through
+that transition, and only the first-megabyte identity mapping ever
+covers that. The fix wasn't "pick any address below the RAM size" but
+"read the actual page-table-construction loop, find exactly which
+addresses get a real identity mapping (as opposed to only a virtual
+one), and pick a load address inside THAT specific, usually much
+smaller window." General lesson: when relinking a kernel at a new
+physical load address for QEMU (or any second boot target), don't just
+check the new address against the total RAM/PHYSIZE the kernel is
+configured for - read the actual bootstrap page-table code and
+determine which SPECIFIC sub-range it treats specially (usually a much
+smaller "just enough to get the MMU-transition code running" window
+than the full RAM size), and place the load address inside that.

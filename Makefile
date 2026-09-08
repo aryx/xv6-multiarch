@@ -1,7 +1,7 @@
 # Top-level Makefile for xv6-multiarch.
 #
 # Each forks/<name>/ is a self-contained xv6 port with its own Makefile
-# (see docs/PROVENANCE.md and the root README for what each one is). This
+# (see docs/provenance.md and the root README for what each one is). This
 # file does not replace those - it drives them with the toolchain and QEMU
 # binary ./configure detected for this host (Makefile.config, generated -
 # do not edit by hand, re-run ./configure instead), and gives every port
@@ -63,7 +63,7 @@
 # forks/arm64-pi4. forks/amd64-jserv is jserv's independent,
 # fully-working x86-64 port, grouped under the "amd64" ISA prefix
 # alongside MIT's own forks/amd64 rather than left under its old
-# upstream-repo name. See docs/PROVENANCE.md for the upstream-repo ->
+# upstream-repo name. See docs/provenance.md for the upstream-repo ->
 # current-forks-path mapping table.
 
 -include Makefile.config
@@ -91,6 +91,8 @@ TOOLPREFIX_ARM_PI1 ?=
 QEMU_ARM_PI1 ?= qemu-system-arm
 TOOLPREFIX_ARM_PI2 ?=
 QEMU_ARM_PI2 ?= qemu-system-arm
+TOOLPREFIX_ARM_PI3 ?=
+QEMU_ARM_PI3 ?= qemu-system-aarch64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
@@ -104,6 +106,7 @@ QEMU_ARM_PI2 ?= qemu-system-arm
         build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
         build-arm-pi1 run-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
+        build-arm-pi3 run-arm-pi3 check-arm-pi3-toolchain \
         build-all test-all clean-all kill-all build-docker
 
 ###############################################################################
@@ -416,7 +419,7 @@ kill-loongarch:
 ###############################################################################
 # Targets the literal same real board as forks/arm-pi1 below (ARMv6
 # Raspberry Pi 1/Model B) - inaciose's independent implementation, not a
-# fork of zhiyihuang's (see docs/PROVENANCE.md). Grouped under the
+# fork of zhiyihuang's (see docs/provenance.md). Grouped under the
 # shared "arm" ISA prefix, "-bis" marking it as the second, independent
 # port of that same board (see this Makefile's own header comment on
 # this rename).
@@ -558,6 +561,40 @@ build-arm-pi2: check-arm-pi2-toolchain
 
 run-arm-pi2: check-arm-pi2-toolchain
 	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) qemu
+
+###############################################################################
+# arm-pi3 (forks/arm-pi3, patha454/xv6_pi_mp - renamed from forks/pi_mp)
+###############################################################################
+# claude: real Raspberry Pi 3 MP hardware, 32-bit ARM despite the
+# upstream README's "AArch64" description (see CLAUDE.md). Unlike
+# arm-pi1/arm-pi2, this fork's own QEMU target is genuinely different
+# from the real-hardware one, not just at LINK time - it needs a
+# separate armstub64.bin (an AArch64 firmware stub - see that fork's
+# own Makefile/armstub64.S comments for why: qemu-system-aarch64's
+# raspi3b always resets in AArch64, and QEMU's raw loaders skip the
+# firmware step that would drop it to AArch32 for this 32-bit kernel)
+# and targets qemu-system-aarch64 -M raspi3b (not qemu-system-arm -M
+# raspi2b like the sibling forks/arm-pi2). QEMU_AARCH64_TOOLPREFIX
+# reuses whatever TOOLPREFIX_ARM64 above already found, rather than
+# detecting a second aarch64 toolchain.
+#
+# No test-arm-pi3/clean-arm-pi3/kill-arm-pi3 yet, not folded into
+# build-all/run-all/test-all: boots all 4 cores under QEMU, all the way
+# through userinit - by far the furthest of the four ARM32 real-board
+# ports - but a real SMP page-table race crashes a secondary core
+# before reaching a shell. See notes_arch_arm_pi3.txt for the ten real
+# bugs found and fixed getting this far, and the open one left behind.
+check-arm-pi3-toolchain:
+	@if [ "$(TOOLPREFIX_ARM_PI3)" = NONE ] || [ "$(QEMU_ARM_PI3)" = NONE ]; then \
+		echo "Makefile: arm-pi3 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+build-arm-pi3: check-arm-pi3-toolchain
+	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) kernel7-qemu.bin armstub64.bin
+
+run-arm-pi3: check-arm-pi3-toolchain
+	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) qemu
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is

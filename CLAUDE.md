@@ -25,10 +25,15 @@ Two sequential efforts, in order:
    original ten-port list is done too** (`forks/d1`, the eleventh item on
    that list, was evaluated and then removed - build-only, no QEMU
    target, no logic `forks/riscv64` didn't already have). Two more ports
-   surfaced after Phase 4 was scoped - `arm-pi3` and `arm64-pi4` - and
-   are still being wired up; see "Adding a new arch" below for the
-   recipe, and `docs/claude_notes/notes_arch_*.txt` for what's been
-   verified about each arch so far.
+   surfaced after Phase 4 was scoped - `arm-pi3` and `arm64-pi4`.
+   `arm-pi3` is now wired up (`build-arm-pi3`/`run-arm-pi3`) and boots
+   all 4 cores deep into userinit under QEMU - ten real bugs found and
+   fixed, one open (a secondary-core page-table race) - see
+   `notes_arch_arm_pi3.txt`. `arm64-pi4` still needs QEMU 9.1+ for
+   `-M raspi4b` (not packaged on this host) and hasn't been started; see
+   "Adding a new arch" below for the recipe, and
+   `docs/claude_notes/notes_arch_*.txt` for what's been verified about
+   each arch so far.
 2. **`docs/claude_notes/factorization-plan.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).

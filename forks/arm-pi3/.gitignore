@@ -1,0 +1,18 @@
+# claude: this fork never had a .gitignore at all - same gap as the
+# sibling forks/arm-pi1/forks/arm-pi2 forks. Covers both the
+# real-hardware build outputs (kernel7.bin/kernel.list/kernel.map/
+# build/) and the additive QEMU-only ones this repo's own bring-up
+# added (kernel7-qemu.bin/kernel-qemu.map/build-qemu//armstub64.bin).
+# Root-anchored (leading "/") and by exact name, deliberately NOT a
+# broad "*.bin"/"*.img" glob - source/fs.img and source/font.bin/
+# font1.bin are pre-built binaries .incbin'd directly into the kernel
+# image and are meant to be checked in, and a recursive glob would have
+# caught them too.
+/build/
+/build-qemu/
+/kernel7.bin
+/kernel7-qemu.bin
+/armstub64.bin
+/kernel.list
+/kernel.map
+/kernel-qemu.map

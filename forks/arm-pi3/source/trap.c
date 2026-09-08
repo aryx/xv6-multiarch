@@ -109,9 +109,21 @@ void tvinit(void)
 	ptr = kalloc();
 	memset(ptr, 0, PGSIZE);
 	set_mode_sp(ptr+4096, 0xD7);/*  abort mode, fiq and irq are disabled */
-	ptr = kalloc();
-	memset(ptr, 0, PGSIZE);
-	set_mode_sp(ptr+4096, 0xD6);/* secure monitor mode, fiq and irq are disabled */
+	// claude: Monitor mode (0xD6) only exists in Secure state - a direct
+	// CPSR mode-switch into it from Non-Secure state is architecturally
+	// undefined and traps (confirmed under QEMU: "unexpected trap 1" data
+	// abort on every core, right at this call's own set_mode_sp(), once
+	// QEMU's board-setup ROM drops the CPU to Non-Secure before handing
+	// off - see armstub64.S's own comment). Genuinely dead either way,
+	// not just under emulation: nothing in this kernel ever executes an
+	// "smc" instruction or enters Monitor mode at all (grepped the whole
+	// tree), so this was precautionary SP setup for a mode never
+	// actually used - safe to drop outright rather than gate behind a
+	// runtime Secure/Non-Secure check that would only ever protect dead
+	// code.
+	//ptr = kalloc();
+	//memset(ptr, 0, PGSIZE);
+	//set_mode_sp(ptr+4096, 0xD6);/* secure monitor mode, fiq and irq are disabled */
 	ptr = kalloc();
 	memset(ptr, 0, PGSIZE);
 	set_mode_sp(ptr+4096, 0xDF);/* system mode, fiq and irq are disabled */
@@ -195,6 +207,13 @@ trap(struct trapframe *tf)
 led25_on();
             if(!(*udp)) miniuartintr();
 led25_off();
+        }
+        // claude: PL011's real IRQ is 57 (bank 1, bit 25) - only ever
+        // set when uart.c's RPI3_QEMU build enables it (see that file's
+        // own enableirqminiuart()); harmless dead check otherwise, since
+        // gpuenable[1] bit 25 is never set on the real-hardware build.
+        if(ip->gpupending[1] & (1 << 25)) {
+            if(!(*udp)) miniuartintr();
         }
 
 	}
