@@ -174,6 +174,44 @@ ARM Raspberry Pi ports, then `d1` build-only):
    caught a real missing-dependency bug and a too-tight test timeout
    that would otherwise have only shown up as a confusing CI failure).
 
+## Real hardware vs. QEMU: never break the board, prefer runtime detection over `#ifdef`
+
+Several ports here (`arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`,
+`arm64-pi4`) target real physical Raspberry Pi boards, not just QEMU -
+the user owns some of this hardware and can still flash and boot a
+`kernel.img` on it. That real-hardware boot path is more important than
+the QEMU one (which only exists to make this port testable without the
+board in hand) and must never regress:
+
+- **Never remove or weaken code that real hardware needs** to fix a
+  QEMU-only symptom. If a real value/response only comes back correctly
+  on real firmware (e.g. a mailbox response in a different address
+  space, or a hardware register bit real silicon sets but an emulated
+  device doesn't), add a case for the OTHER form rather than replacing
+  the original.
+- **Prefer a runtime/dynamic check over a compile-time `#ifdef`** to
+  tell real hardware and QEMU apart, so the exact same binary works on
+  both - `#ifdef` is a last resort, not a default. The two patterns
+  used repeatedly across these ports:
+  - Read a real hardware-identity register that genuinely differs (a
+    core/controller revision ID, a returned pointer's address range)
+    and cache the result - see `forks/arm-pi1/csud/source/hcd/dwc/
+    designware20.c`'s `HcdEmulating()` (keys off the dwc2 controller's
+    own `VendorId`: QEMU reports a different revision than real
+    Broadcom silicon) and `~/principia/kernel/COMPILE/9/bcm/usbdwc.c`'s
+    own `emulating()` (same technique, independently used for a
+    different kernel).
+  - Bounds-check a value against where it's SUPPOSED to live rather
+    than trusting a status code - see `forks/arm-pi1/source/console.c`'s
+    `fb_ready` (the mailbox call reports "success" either way; only a
+    real range check on the returned framebuffer pointer tells you
+    whether it's actually usable).
+- Every fix should keep working, unmodified, if the user boots the same
+  `kernel.img` on real hardware next - and ideally get VERIFIED there
+  eventually, not just assumed safe. See `docs/claude_notes/
+  notes_arch_arm_pi1.txt` for the fullest worked example of this
+  pattern applied repeatedly across one port's bring-up.
+
 ## Testing conventions
 
 Every wired-up arch's `test-<arch>` target boots the real kernel under
