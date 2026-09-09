@@ -228,6 +228,69 @@ build outputs (`_cat`, `cat.o`, `cat.asm`, `cat.sym`, …) across the fork root,
 because the `_%` rule writes `$*.o` there. All ignored and all removed by
 `clean`; a separate tidy if it's ever worth doing.
 
+### riscv64, the second fork (2026-09-10, DONE)
+
+Two commits, no third needed: `2437049` (15 files, all R100) and `13b78e1`.
+`make test-riscv64` - this port's own harness, the one with the
+crash/log/orphan-recovery tiers rather than just usertests - reports ALL
+TESTS PASSED, and `make test-all` is green.
+
+Its `user/` split into `user/` (the eleven programs plus `user.h`),
+`ulib/` (`printf.c`, `ulib.c`, `umalloc.c`, `usys.pl`, `user.ld`) and
+`tests/` (the standard four plus `grind`, plus this port's own
+`logstress`, `forphan`, `dorphan`, `sync` - it is the only fork that has
+those at all); `mkfs/` became `tools/`.
+
+**Two things made it much cheaper than mips, and both hold for the four
+forks that share its shape.** Includes needed *no* change: this port spells
+them fork-root-relative already (`"kernel/types.h"`, `"user/user.h"`)
+against a single `-I.`, so which directory a `.c` sits in is invisible to
+it - where mips needed `-Ikernel -Iuser` precisely because its includes are
+bare. And its `_%: %.o` pattern rule is not directory-anchored, so one rule
+builds `user/_cat` and `tests/_usertests` alike; mips's was `_%: usr/%.o`
+and had to be split in two.
+
+**Gotcha 4, and this one is a source fix, not a build fix.** `mkfs.c`
+derived each file's in-image name by hardcoding a `strncmp` against the
+literal prefix `"user/"`, then asserting no `/` survived:
+
+```
+mkfs: tools/mkfs.c:142: main: Assertion `index(shortname, '/') == 0' failed.
+```
+
+`tests/_usertests` keeps its slash and aborts the build. Fix it *generally*
+- take the basename, stripping to the last `/` - rather than adding
+`"tests/"` as a second special case, so the coupling to directory names
+goes away for good. **`riscv32`, `arm64`, `loongarch` and `arm64-pi4` each
+carry their own copy of this same `mkfs.c` and will each need the same
+fix.**
+
+### Suggested order for the remaining twelve
+
+Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
+second. It is not: it is a *nested sub-build* whose `usr/` has its own
+Makefile, produces `fs.img` itself, and carries its own copy of sixteen
+kernel headers - of which 8 are byte-identical but **8 genuinely differ**
+(`types.h` by 97 diff lines, `arm.h` 85, `mmu.h` 72, `defs.h` 59). That is
+a real userland header set, not a stale copy, and merging it is Tier 2
+work, not Phase 0's. Its root Makefile also already works around gotcha 3
+by hand, copying `build/initcode` to a bare root name before linking and
+deleting it after - do not disturb that.
+
+So, cheapest first:
+
+1. **`riscv32`, `arm64`, `loongarch`, `arm64-pi4`** - same shape as
+   `riscv64`, so the same recipe plus the `mkfs.c` basename fix. `arm64`,
+   `loongarch` and `arm64-pi4` also need the gotcha-1 `.gitignore` prep
+   (bare `mkfs`); `arm64-pi4` additionally embeds a blob via `ld -b binary`
+   (gotcha 3).
+2. **`i386`, `amd64`** - flat MIT-classic, structurally mips's own
+   ancestors, so the mips recipe transfers almost directly. Both hit
+   gotchas 1, 2 and 3 together.
+3. **`arm`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`,
+   `amd64-jserv`** - nested sub-builds and/or duplicated header sets. Real
+   design work; leave until the recipe is boring.
+
 **Decide the residue rule once, not per fork.** Some files fit none of the five
 buckets: `arm/device/` (`gic.c`, `timer.c`, `uart.c`), the Pi ports'
 `entry.s`/`exception.s`/`csud_glue.c`/`font.bin`, and the linker scripts
