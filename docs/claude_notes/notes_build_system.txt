@@ -70,7 +70,49 @@ forks/arm-pi1-bis route every compile through makefile.inc's
 name at all, so a grep for "gcc" reports zero and looks like success.
 
 
-2. A directory must be an order-only prerequisite
+
+2. -MD alone is a loaded gun: pair it with -MP
+-----------------------------------------------
+A .d file is a generated Make rule listing every header the object really
+includes - which means every one of those headers becomes a prerequisite
+that Make insists on being able to build:
+
+    build/proc.o: source/proc.c \
+     /usr/arm-linux-gnueabihf/include/stdc-predef.h include/types.h ...
+
+If one of those paths later does not exist, and no rule can create it,
+Make does not shrug and recompile - it stops:
+
+    make[1]: *** No rule to make target
+      '/usr/arm-linux-gnueabihf/include/stdc-predef.h',
+      needed by 'build/proc.o'.  Stop.
+
+The tree is then wedged in a way that looks nothing like its cause, and
+the "obvious" fix (delete the .d files, or `make clean`) is exactly the
+thing wiring up dependencies was supposed to make unnecessary. Three
+ordinary events trigger it: renaming or deleting a header, switching to
+a toolchain that keeps its headers somewhere else, and copying a built
+tree to another machine - which is how it actually surfaced here (see
+section 5).
+
+The fix is `-MP`, always, wherever `-MD` appears. It makes gcc emit an
+extra phony target for each header:
+
+    /usr/arm-linux-gnueabihf/include/stdc-predef.h:
+    include/types.h:
+
+A rule with no prerequisites and no recipe is one Make can always
+"build", so a header that has vanished stops being an error and becomes
+what it should have been all along: a reason to recompile the object,
+which then regenerates the .d without the stale entry. Linux gets the
+same property from `fixdep` rather than `-MP`, which is why its
+generated .cmd files do not need this flag.
+
+Every port here that passes `-MD` now also passes `-MP`. Treat them as a
+single flag; `-MD` on its own is a latent breakage, not a smaller
+feature.
+
+3. A directory must be an order-only prerequisite
 --------------------------------------------------
 forks/arm-pi1 and forks/arm-pi2 rebuilt themselves completely on *every*
 make, even two `make build-all` runs back to back with no edit in
@@ -91,7 +133,7 @@ against it". forks/arm-pi3 already had it right, which is what made the
 other two identifiable as bugs rather than as a house style.
 
 
-3. A phony target must not be a prerequisite of a real file
+4. A phony target must not be a prerequisite of a real file
 ------------------------------------------------------------
 Also in forks/arm-pi2, and the second half of why it never stopped
 rebuilding. Its filesystem image is built by a recursive make, and the
@@ -125,7 +167,7 @@ General rule: if a real file depends on it, it cannot be phony. If you
 want "always run the check, rarely touch the file", separate the two.
 
 
-4. What test-<arch> legitimately needs to redo, and what it does not
+5. What test-<arch> legitimately needs to redo, and what it does not
 --------------------------------------------------------------------
 Worth keeping straight when touching any test-xv6.py, because the two
 groups look similar and are not:
@@ -148,3 +190,42 @@ Effect of getting this right: `make test-all` went from recompiling
 eight ports from scratch to recompiling nothing, and from a bit over a
 minute to 21 seconds, with the six mkfs runs above as the only work it
 repeats.
+
+
+6. The build context is not the build: .dockerignore and stale artifacts
+-------------------------------------------------------------------------
+The Dockerfile does "COPY . ." into /src, and .dockerignore listed only
+".git" and "Makefile.config". So a container build inherited every object
+file, kernel image and .d dependency file the developer happened to have
+lying around - and then, because the .d files name host absolute paths
+for toolchain headers, died on the "No rule to make target" above before
+compiling anything.
+
+Two things about this are worth remembering beyond the fix:
+
+- It was always broken; it was being MASKED. The eight ports whose
+  test-xv6.py ran "make clean" first wiped the inherited artifacts inside
+  the container before any rule read them. Removing that clean (section
+  5) did not introduce the bug, it revealed one - which is the useful
+  kind of regression, the same shape as notes_arch_arm64_pi4.txt's own
+  bug 4 being unmasked by fixing bug 3. A workaround that is silently
+  covering a second defect is the normal reason a cleanup "causes" a
+  failure.
+
+- A container build should compile from SOURCE. Inheriting host output is
+  wrong even when it works: it makes the image depend on the developer's
+  machine state, so CI and a local run can build different things from
+  the same commit, and it bloats the build context. Excluding build
+  output is the fix; -MP (section 2) is what stops the same class of
+  failure locally, where there is no COPY to control.
+
+Care is needed writing the exclusions: most of these patterns are safe to
+apply wholesale (no *.o, *.d, *.a, *.elf, *.asm, *.sym, *.map or *.dis is
+tracked in git - check with "git ls-files | grep -E ..." before trusting
+that), but a few files that LOOK generated are checked in and are real
+build inputs: forks/arm-pi1/source/fs.img and forks/arm-pi3/source/fs.img,
+plus the font.bin/font1.bin tables several Pi ports embed. Those are
+negated back in with "!" after the broad "**/*.img"/"**/*.bin" lines.
+Excluding a build input fails later and more confusingly than not
+excluding a build output, so verify with a real "make build-docker
+ARCH=<name>" rather than by reading the patterns.
