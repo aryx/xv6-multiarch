@@ -73,7 +73,44 @@ void DWHCIFrameSchedulerNoSplitWaitForFrame (TDWHCIFrameScheduler *pBase)
 
 	if (!pThis->m_bIsPeriodic)
 	{
-		while ((DWHCI_HOST_FRM_NUM_NUMBER (DWHCIRegisterRead (&FrameNumber)) & DWHCI_MAX_FRAME_NUMBER) != pThis->m_nNextFrame)
+		/* claude: this was an exact-equality wait -
+		 *
+		 *   while ((FRM_NUM(read) & MAX) != m_nNextFrame) ;
+		 *
+		 * - which assumes the host frame counter is observed at EVERY
+		 * value it passes through. That holds on real silicon polled by
+		 * a CPU running at bus speed; it does NOT hold under QEMU,
+		 * where the counter advances from a timer while TCG executes
+		 * the spin loop in blocks, so the one value being waited for
+		 * can be stepped straight over. Miss it and the wait becomes
+		 * a full 14-bit wraparound - 0x4000 frames, ~16s - and can miss
+		 * again, which is exactly how USB enumeration hung here: the
+		 * loop was measured spinning 3.4 MILLION times for a single
+		 * frame, then never matching at all on a later transfer.
+		 *
+		 * Same class of bug, and same fix, as forks/arm-pi2's own Bug 1
+		 * and forks/arm-pi1's own Bug 4 (both exact-equality busy-waits
+		 * on a free-running counter). Wait for "has reached or passed
+		 * m_nNextFrame" instead, computed as a wraparound-safe modular
+		 * difference: while the counter is still BEHIND the target the
+		 * difference lands in the upper half of the 14-bit space, and
+		 * anywhere at-or-past it lands in the lower half.
+		 *
+		 * Correct on real hardware too, and strictly better there: it
+		 * exits at exactly the same frame the old code did when the
+		 * frame is observed, and no longer stalls for 16 seconds when a
+		 * slow poll happens to miss it. Only the NoSplit scheduler is
+		 * touched, and only its non-periodic branch - a plain pacing
+		 * delay to the next frame boundary. The equivalent loop in
+		 * uspi_dwhciframeschedper.c is deliberately left alone: it runs
+		 * only on the split path (real hardware, devices behind the
+		 * board's built-in hub), and there landing on one SPECIFIC
+		 * microframe is a real scheduling requirement, not just pacing.
+		 */
+		while (((  (DWHCI_HOST_FRM_NUM_NUMBER (DWHCIRegisterRead (&FrameNumber))
+			   & DWHCI_MAX_FRAME_NUMBER)
+			 - pThis->m_nNextFrame) & DWHCI_MAX_FRAME_NUMBER)
+		       > (DWHCI_MAX_FRAME_NUMBER / 2))
 		{
 			// do nothing
 		}

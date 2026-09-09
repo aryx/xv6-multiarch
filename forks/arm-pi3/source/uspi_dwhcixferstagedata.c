@@ -22,6 +22,7 @@
 #include <uspi/dwhciframeschednper.h>
 #include <uspi/dwhciframeschednsplit.h>
 #include <uspi/dwhci.h>
+#include <uspi/dwhciregister.h>
 #include <uspios.h>
 #include <uspi/assert.h>
 
@@ -51,8 +52,15 @@ void DWHCITransferStageData (TDWHCITransferStageData *pThis, unsigned nChannel, 
 	pThis->m_Speed = USBDeviceGetSpeed (pThis->m_pDevice);
 	pThis->m_nMaxPacketSize = USBEndpointGetMaxPacketSize (pThis->m_pEndpoint);
 	
+	/* claude: "&& !DWHCIDeviceEmulating()" - see that function's own
+	 * comment in uspi_dwhcidevice.c. Real hardware still takes the
+	 * unmodified path (every full/low-speed device is behind the
+	 * board's built-in hub and splits are mandatory there); under
+	 * QEMU, whose dwc2 model has no split state machine, leaving this
+	 * FALSE routes the transfer directly instead of timing out. */
 	pThis->m_bSplitTransaction =    USBDeviceGetHubAddress (pThis->m_pDevice) != 0
-				     && pThis->m_Speed != USBSpeedHigh;
+				     && pThis->m_Speed != USBSpeedHigh
+				     && !DWHCIDeviceEmulating ();
 
 	if (!bStatusStage)
 	{

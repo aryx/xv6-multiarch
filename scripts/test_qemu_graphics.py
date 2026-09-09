@@ -2,7 +2,7 @@
 # test_qemu_graphics.py
 #
 # Regression test for every "-qemu-graphics" capable arch (i386, amd64,
-# amd64-jserv, arm-pi1, arm-pi1-bis - see the top-level Makefile's own
+# amd64-jserv, arm-pi1, arm-pi1-bis, arm-pi3 - see the top-level Makefile's own
 # "run-<arch>-qemu-graphics" targets): boots a real GTK window (no
 # -nographic), waits for a shell, types a command via a QMP-injected
 # keyboard, and asserts real visible output appeared - not just that
@@ -60,6 +60,16 @@ ARCHES = {
     "arm-pi1-bis": {
         "build_target": "build-arm-pi1-bis",
         "run_target": "run-arm-pi1-bis-qemu-graphics",
+    },
+    # claude: added 2026-09-09, once this port grew a framebuffer console
+    # and a working emulated USB keyboard under QEMU - see
+    # notes_arch_arm_pi3.txt's Bugs 17-20. Same shape as the two arm-pi1
+    # entries above; it is the only one whose QEMU is
+    # qemu-system-aarch64 (raspi3b), which matters to nothing here since
+    # the run_target hides that.
+    "arm-pi3": {
+        "build_target": "build-arm-pi3",
+        "run_target": "run-arm-pi3-qemu-graphics",
     },
 }
 

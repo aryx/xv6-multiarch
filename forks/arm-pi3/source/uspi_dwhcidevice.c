@@ -109,6 +109,39 @@ void _DWHCIDevice (TDWHCIDevice *pThis)
 	_DWHCIRootPort (&pThis->m_RootPort);
 }
 
+/* claude: real Broadcom silicon vs QEMU's dwc2 model, decided at RUNTIME
+ * from a hardware register rather than a compile-time #ifdef, so one
+ * binary is correct on both (see CLAUDE.md's own "prefer runtime
+ * detection" rule). Cached on first call.
+ *
+ * The one behavioural difference this gates is split transactions - see
+ * DWHCITransferStageData's own constructor. On a real Pi every
+ * full/low-speed device sits behind the board's built-in LAN9514 hub, so
+ * split transactions are mandatory; QEMU's dwc2 model does not implement
+ * the split state machine at all (HCSPLT is stored but never
+ * interpreted), so a device attached with "-device usb-kbd" is reached
+ * directly and enabling splits there just makes every transfer time out.
+ * Identical finding, and identical fix, to csud's own HcdEmulating()
+ * (forks/arm-pi1, forks/arm-pi1-bis) and ~/principia's bcm/usbdwc.c.
+ *
+ * Safe to call from DWHCIDeviceInitialize() onwards: that function has
+ * already read this very register by then, so the DWHCI window is
+ * mapped and the core is readable. */
+boolean DWHCIDeviceEmulating (void)
+{
+	static int cached = -1;
+
+	if (cached < 0)
+	{
+		TDWHCIRegister VendorId;
+		DWHCIRegister (&VendorId, DWHCI_CORE_VENDOR_ID);
+		cached = DWHCIRegisterRead (&VendorId) == DWHCI_VENDOR_ID_QEMU;
+		_DWHCIRegister (&VendorId);
+	}
+
+	return cached ? TRUE : FALSE;
+}
+
 boolean DWHCIDeviceInitialize (TDWHCIDevice *pThis)
 {
 	assert (pThis != 0);
@@ -117,7 +150,18 @@ boolean DWHCIDeviceInitialize (TDWHCIDevice *pThis)
 
 	TDWHCIRegister VendorId;
 	DWHCIRegister (&VendorId, DWHCI_CORE_VENDOR_ID);
-	if (DWHCIRegisterRead (&VendorId) != 0x4F54280A)
+	/* claude: was an exact-equality test against 0x4F54280A (real
+	 * BCM283x silicon, Synopsys revision 2.80a) alone, so the whole USB
+	 * stack bailed out with "Unknown vendor 0x4F54294A" under QEMU,
+	 * whose dwc2 model reports 2.94a - no keyboard, no USB at all. Now
+	 * accepts either. Purely additive: the real-hardware ID is still
+	 * accepted exactly as before, and anything OTHER than these two is
+	 * still rejected, so this does not turn into "trust whatever is
+	 * there". See DWHCIDeviceEmulating() below for the one place the
+	 * distinction actually changes behaviour. */
+	u32 nVendorId = DWHCIRegisterRead (&VendorId);
+	if (   nVendorId != DWHCI_VENDOR_ID_BCM283X
+	    && nVendorId != DWHCI_VENDOR_ID_QEMU)
 	{
 		LogWrite (FromDWHCI, LOG_ERROR, "Unknown vendor 0x%0X", DWHCIRegisterGet (&VendorId));
 		_DWHCIRegister (&VendorId);

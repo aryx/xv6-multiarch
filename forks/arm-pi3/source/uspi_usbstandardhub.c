@@ -89,9 +89,23 @@ boolean USBStandardHubConfigure (TUSBDevice *pUSBDevice)
 	const TUSBDeviceDescriptor *pDeviceDesc = USBDeviceGetDeviceDescriptor (&pThis->m_USBDevice);
 	assert (pDeviceDesc != 0);
 
+	/* claude: the protocol test was "!= 2" (high-speed hub with multiple
+	 * transaction translators), matching a real Pi's on-board LAN9514
+	 * exactly and rejecting everything else - including QEMU's own
+	 * raspi3b root-port hub, which reports protocol 0. Widened to the
+	 * three protocol values USB 2.0 spec 11.23.1 actually defines for
+	 * class 9 / subclass 0: 0 = full/low-speed hub (no TT), 1 =
+	 * high-speed with a single TT, 2 = high-speed with multiple TTs.
+	 * Nothing below this point consults the TT - that only matters to
+	 * the DWHCI layer's split-transaction setup, which keys off device
+	 * SPEED, not this byte - so all three drive identically here. Purely
+	 * additive: protocol 2 is still accepted on exactly the same terms
+	 * it always was, and a non-hub or multi-configuration device is
+	 * still rejected. See uspi_usbdevicefactory.c's own matching comment
+	 * for the other half of this fix. */
 	if (   pDeviceDesc->bDeviceClass       != USB_DEVICE_CLASS_HUB
 	    || pDeviceDesc->bDeviceSubClass    != 0
-	    || pDeviceDesc->bDeviceProtocol    != 2		// hub with multiple TTs
+	    || pDeviceDesc->bDeviceProtocol     > 2		// 0/1/2: no TT, single TT, multiple TTs
 	    || pDeviceDesc->bNumConfigurations != 1)
 	{
 		LogWrite (FromHub, LOG_ERROR, "Unsupported hub (proto %u)",
@@ -113,9 +127,17 @@ boolean USBStandardHubConfigure (TUSBDevice *pUSBDevice)
 	const TUSBInterfaceDescriptor *pInterfaceDesc;
 	while ((pInterfaceDesc = (TUSBInterfaceDescriptor *) USBDeviceGetDescriptor (&pThis->m_USBDevice, DESCRIPTOR_INTERFACE)) != 0)
 	{
+		/* claude: same widening as the bDeviceProtocol test above, and
+		 * needed for the same reason - a hub's INTERFACE descriptor
+		 * repeats the class/subclass/protocol triple, so QEMU's hub
+		 * reports "int9-0-0" here just as it reports "dev9-0-0" there.
+		 * With "!= 2" this loop skipped the only interface the hub has,
+		 * fell out with pInterfaceDesc == 0, and failed as "Invalid
+		 * configuration descriptor". Real hardware's protocol-2
+		 * interface is still matched identically. */
 		if (   pInterfaceDesc->bInterfaceClass    != USB_DEVICE_CLASS_HUB
 		    || pInterfaceDesc->bInterfaceSubClass != 0
-		    || pInterfaceDesc->bInterfaceProtocol != 2)
+		    || pInterfaceDesc->bInterfaceProtocol  > 2)
 		{
 			continue;
 		}

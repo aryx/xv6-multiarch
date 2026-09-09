@@ -197,6 +197,47 @@ qemu: kernel7-qemu.bin armstub64.bin
 	$(QEMU) -M raspi3b -smp 4 -nographic -kernel armstub64.bin \
 		-device loader,file=kernel7-qemu.bin,addr=$(QEMU_ARM_ENTRY),force-raw=on
 
+# claude: same build and same board, but WITHOUT -nographic, so QEMU opens
+# a real GTK window backed by the emulated bcm2835 framebuffer this
+# kernel's own gpuinit()/gpuputc() (source/console.c) draw into - cprintf
+# writes every character to BOTH the framebuffer and the UART, so the
+# window and the serial console show the same session. "-serial mon:stdio"
+# keeps that serial console (and the QEMU monitor) on the invoking
+# terminal rather than moving it into the window. "-device usb-kbd"
+# attaches a real emulated USB HID keyboard for the uspi stack to
+# enumerate - same shape as forks/arm-pi1's and forks/arm-pi1-bis's own
+# qemu-graphics targets. Needs $DISPLAY; deliberately not part of any
+# test/-all target (nothing headless can assert against a real window -
+# scripts/test_qemu_graphics.py is what drives it automatically, via the
+# optional QMP_SOCK below).
+#
+# claude: "comma"/QMP_OPTS is the standard Make idiom for getting a
+# literal "," into an "$(if ...)" call, which cannot contain an
+# unescaped one - copied verbatim from forks/arm-pi1/Makefile.
+comma := ,
+QMP_OPTS := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)nowait)
+
+# claude: this kernel asks the firmware for a 1280x1024 framebuffer
+# (source/console.c's own gpuinit()), which is what a real Pi 3 on a real
+# monitor gets - so the resolution itself is NOT the thing to change; a
+# smaller one would only be right for QEMU and wrong on the board.
+# Without "zoom-to-fit" the GTK window opens at the guest's full
+# 1280x1024 and REFUSES to shrink below it, so on a smaller desktop the
+# bottom of the console ends up off-screen with no way to get at it.
+# "zoom-to-fit=on" lets the window be resized freely and scales the guest
+# display into whatever size it is - the whole console stays visible.
+# Override on the command line (GTK_DISPLAY=gtk) for an unscaled,
+# pixel-exact window.
+GTK_DISPLAY ?= gtk$(comma)zoom-to-fit=on
+
+qemu-graphics: kernel7-qemu.bin armstub64.bin
+	@echo "Serial console + QEMU monitor share this terminal - Ctrl-A C to switch to the monitor (try: screendump /tmp/fb.ppm), Ctrl-A C again to switch back"
+	@echo "Ctrl-A X (from the monitor side) to terminate"
+	@echo "Click the QEMU window and type there for a real USB-keyboard test - the terminal keeps working as the serial console too"
+	$(QEMU) -M raspi3b -smp 4 -kernel armstub64.bin \
+		-device loader,file=kernel7-qemu.bin,addr=$(QEMU_ARM_ENTRY),force-raw=on \
+		-serial mon:stdio -device usb-kbd -display $(GTK_DISPLAY) $(QMP_OPTS)
+
 $(BUILD_QEMU)%.o: $(SOURCE)%.S | $(BUILD_QEMU)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(QEMU_CC_OPTIONS) -I source $< -o $@
 

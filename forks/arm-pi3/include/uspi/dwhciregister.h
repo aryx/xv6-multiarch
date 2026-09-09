@@ -23,6 +23,24 @@
 #include <uspi/dwhci.h>
 #include <uspi/types.h>
 
+/* claude: the two DWHCI core VendorId (GSNPSID) values this repo has to
+ * cope with. Real BCM2835/6/7 silicon reports Synopsys revision 2.80a;
+ * QEMU's own dwc2 model (hw/usb/hcd-dwc2.c) reports 2.94a. This is a
+ * genuine hardware capability read, not a board-name string or a build
+ * flag - which is exactly why it can tell the two apart at RUNTIME, so
+ * one kernel7.bin is correct on both. Same technique, same two
+ * constants, as csud/source/hcd/dwc/designware20.c's own HcdEmulating()
+ * (used by forks/arm-pi1/arm-pi1-bis) and ~/principia's own
+ * bcm/usbdwc.c emulating(). */
+#define DWHCI_VENDOR_ID_BCM283X	0x4F54280A
+#define DWHCI_VENDOR_ID_QEMU	0x4F54294A
+
+/* claude: TRUE when running against QEMU's dwc2 model rather than real
+ * Broadcom silicon. Cached after the first call; only valid once the
+ * DWHCI register window is mapped, which it is from
+ * DWHCIDeviceInitialize() onwards. Defined in uspi_dwhcidevice.c. */
+boolean DWHCIDeviceEmulating (void);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

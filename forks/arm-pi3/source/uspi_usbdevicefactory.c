@@ -57,7 +57,26 @@ TUSBDevice *GetDevice (TUSBDevice *pParent, TString *pName)
 	
 	TUSBDevice *pResult = 0;
 
-	if (StringCompare (pName, "dev9-0-2") == 0)
+	/* claude: was "dev9-0-2" alone - class 9 (hub), subclass 0, protocol
+	 * 2, i.e. a high-speed hub with MULTIPLE transaction translators,
+	 * which is what a real Pi's on-board LAN9514 reports. QEMU's raspi3b
+	 * puts its own hub (0409:55aa) on the dwc2 root port and that one
+	 * reports protocol 0, so nothing matched and the whole tree below it
+	 * - including any "-device usb-kbd" - was dropped with "Device is
+	 * not supported".
+	 *
+	 * All three defined hub protocols are the same standard USB hub as
+	 * far as this driver is concerned; the protocol byte only describes
+	 * how the hub bridges high-speed to full/low-speed downstream
+	 * (USB 2.0 spec 11.23.1): 0 = full/low-speed hub (no TT at all),
+	 * 1 = high-speed, single TT, 2 = high-speed, multiple TTs. Nothing
+	 * in TUSBStandardHub touches a TT - split-transaction setup lives in
+	 * the DWHCI layer, keyed off device speed, not off this byte. So
+	 * accepting all three is additive: the real-hardware LAN9514 still
+	 * matches exactly as before via "dev9-0-2". */
+	if (   StringCompare (pName, "dev9-0-0") == 0
+	    || StringCompare (pName, "dev9-0-1") == 0
+	    || StringCompare (pName, "dev9-0-2") == 0)
 	{
 		TUSBStandardHub *pDevice = (TUSBStandardHub *) malloc (sizeof (TUSBStandardHub));
 		assert (pDevice != 0);

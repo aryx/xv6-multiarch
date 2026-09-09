@@ -5,6 +5,7 @@
 #include <mailbox.h>
 #include <uspi/string.h>
 #include <uspienv/timer.h>
+#include <uspi/dwhciregister.h>	// claude: DWHCIDeviceEmulating()
 
 #define MAILBOX_FULL  0x80000000
 #define MAILBOX_EMPTY 0x40000000
@@ -90,10 +91,39 @@ void CancelKernelTimer (unsigned hTimer) {
 	TimerCancelKernelTimer (TimerGet (), hTimer);
 }
 
+/* claude: split out purely to keep SetPowerStateOn()'s own real-hardware
+ * body untouched below - see the comment at its call site. */
+static int SetPowerStateOn_emulated_ok (unsigned nDeviceId) {
+	if (!DWHCIDeviceEmulating ())
+		return 0;
+	cprintf("usb: Device %d: emulated dwc2, no power sequencing needed\n", nDeviceId);
+	return 1;
+}
+
 // returns 0 on failure
 int SetPowerStateOn (unsigned nDeviceId) {	// "set power state" to "on", wait until completed
 	//cprintf("usb: Entering SetPowerStateOn\n");
 	cprintf("usb: Powering DeviceId: %d\n", nDeviceId);
+
+	/* claude: the mailbox handshake below is the LEGACY channel-0 power
+	 * interface. QEMU's raspi3b does not model that channel at all: the
+	 * write is accepted, but MAIL0 STATUS stays 0x40000000 (EMPTY)
+	 * forever, so the "wait until completed" loop never completes and
+	 * the whole kernel hangs here - confirmed directly by instrumenting
+	 * both loops (the FULL wait passes on spin 0; the EMPTY wait spun
+	 * 20,000,000 times with the status unchanged). QEMU's dwc2 model
+	 * needs no power sequencing anyway - it is always on.
+	 *
+	 * Deliberately a runtime check, not an #ifdef, and deliberately an
+	 * added early-return rather than an edit to the sequence below: the
+	 * real-hardware path is byte-for-byte what it was, so a real Pi 3
+	 * still performs the exact same firmware handshake it always did.
+	 * See DWHCIDeviceEmulating() in uspi_dwhcidevice.c. Safe to call
+	 * here: the only caller is DWHCIDeviceInitialize(), which has
+	 * already read the DWHCI VendorId register by this point. */
+	if (SetPowerStateOn_emulated_ok (nDeviceId))
+		return 1;
+
 	volatile unsigned int *mailbox = (unsigned int*) MAILBOX_BASE;
 	unsigned int result = 0;
 	while ( mailbox[6] & MAILBOX_FULL );

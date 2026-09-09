@@ -49,7 +49,11 @@ arm-pi1-bis/arm-pi2. A third real bug (Bug 15: .bss was never zeroed -
 the same bug all three siblings had) was found and fixed alongside it.
 Now fully wired up: build/run/test/quick-test/clean/kill-arm-pi3, folded
 into every "-all" umbrella target, plus a Dockerfile ARCH case and a CI
-matrix entry. See Bug 14 and Bug 15, and note that the whole "Open gap"
+matrix entry. Later the same day it also gained
+"make run-arm-pi3-qemu-graphics" - a real GTK window showing the
+emulated bcm2835 framebuffer console, with a working emulated USB
+keyboard driving the shell - which took four more real bugs in its own
+uspi USB stack (Bugs 17-20). See Bug 14 and Bug 15, and note that the whole "Open gap"
 section further down is retained deliberately as a record of two
 sessions' worth of wrong-tree barking - read Bug 14 first for what the
 evidence actually meant.
@@ -589,6 +593,158 @@ honoured where before only a pipe's LF was.
 forks/arm-pi3/test-xv6.py now sends "usertests\r" rather than
 "usertests\n" - both work after this fix, but "\r" is the ending a real
 Return key produces, so it keeps the human-facing path under test.
+
+Bugs 17-20: getting a real GTK window and a working USB keyboard (make run-arm-pi3-qemu-graphics)
+--------------------------------------------------------------------------------------------------------
+Added 2026-09-09, at the user's suggestion, once this port had a shell:
+it was a good candidate for the "-qemu-graphics" treatment
+forks/arm-pi1/arm-pi1-bis already had, because unlike them it ships a
+FULL USB stack of its own (uspi - Rene Stange's USPi library, vendored
+into source/uspi_*.c) rather than csud, and its cprintf() already writes
+every character to the emulated bcm2835 framebuffer via gpuputc() as
+well as to the UART.
+
+The framebuffer half needed no kernel changes at all: dropping
+"-nographic" (see forks/arm-pi3/Makefile's own "qemu-graphics" target)
+produced a real 1280x1024 window with the boot log legibly rendered on
+it, first try. The USB keyboard half needed four real fixes, each one
+uncovered only by getting past the previous.
+
+Bug 17 (real, fixed): uspi rejected QEMU's dwc2 controller outright
+  DWHCIDeviceInitialize() tested the DWHCI core VendorId (GSNPSID) for
+  exact equality with 0x4F54280A - Synopsys revision 2.80a, what real
+  BCM283x silicon reports. QEMU's dwc2 model reports 2.94a
+  (0x4F54294A), so the very first thing the USB stack did was log
+  "Unknown vendor 0x4F54294A" and give up ("Cannot initialize USB host
+  controller interface" in every boot transcript in this file, including
+  the ones from sessions 1-3 - it had been there all along).
+
+  Fixed by accepting either ID, and by adding DWHCIDeviceEmulating() - a
+  cached read of that same register, TRUE only for the QEMU value. This
+  is exactly the technique csud's own HcdEmulating() uses for
+  forks/arm-pi1/arm-pi1-bis, and ~/principia's bcm/usbdwc.c emulating()
+  uses independently for a different kernel: a genuine hardware
+  capability read, so ONE binary is correct on both targets and no
+  #ifdef is involved (CLAUDE.md's "prefer runtime detection" rule).
+  Note this is the same register the earlier "deliberately deferred"
+  note at the end of this file discusses for UART selection - the
+  objection there was that uartinit() runs far too early to trust it;
+  inside the USB driver, which has just read it, that objection does not
+  apply.
+
+  The first use of DWHCIDeviceEmulating() is in
+  DWHCITransferStageData's own constructor: split transactions are now
+  skipped under emulation. Real hardware needs them for every
+  full/low-speed device (all of them sit behind the board's built-in
+  LAN9514 hub); QEMU's dwc2 model has no split state machine at all, so
+  enabling splits there only makes transfers time out. Same finding, and
+  same one-line shape, as csud's own "&& !HcdEmulating()".
+
+Bug 18 (real, fixed): SetPowerStateOn() hung forever on the legacy mailbox power channel
+  With Bug 17 fixed, boot stopped dead at "usb: Powering DeviceId: 3".
+  source/usb.c's SetPowerStateOn() uses the LEGACY channel-0 mailbox
+  power interface (write 0x80 to MAIL1, spin until MAIL0 replies), not
+  the property-tag interface on channel 8 that this kernel's own
+  mailboxinit()/getpmsize() use successfully. QEMU's raspi3b does not
+  model channel 0: instrumenting both loops showed the FULL wait passes
+  on spin 0, then the EMPTY wait spins 20,000,000 times with MAIL0
+  STATUS stuck at 0x40000000 (EMPTY) and never changing.
+
+  Fixed with an early return when DWHCIDeviceEmulating() - QEMU's dwc2
+  is always powered, there is nothing to sequence. Deliberately an added
+  early return rather than an edit to the handshake below it, so a real
+  Pi 3 still performs the exact same firmware conversation it always
+  did, byte for byte.
+
+Bug 19 (real, fixed): an exact-equality busy-wait on the wrapping USB frame counter
+  Next stop: USB enumeration reached the second control transfer and
+  hung. The culprit was DWHCIFrameSchedulerNoSplitWaitForFrame():
+
+      m_nNextFrame = (FRM_NUM(read) + 1) & 0x3FFF;
+      while ((FRM_NUM(read) & 0x3FFF) != m_nNextFrame) ;
+
+  which assumes the host frame counter is OBSERVED at every value it
+  passes through. True for a CPU polling real silicon; false under QEMU,
+  where the counter is advanced by a timer while TCG runs the spin loop
+  in blocks, so the single value being waited for can be stepped
+  straight over. Instrumentation caught both halves of this: one wait
+  that did match took 3,409,702 spins, and a later one never matched at
+  all (a miss costs a full 14-bit wraparound - 0x4000 frames, ~16s - and
+  can then miss again).
+
+  This is the same bug class as forks/arm-pi2's own Bug 1 and
+  forks/arm-pi1's own Bug 4, both exact-equality busy-waits on
+  free-running counters, and it got the same fix: wait for "has reached
+  or passed", computed as a wraparound-safe modular difference
+  (still-behind lands in the upper half of the 14-bit space, at-or-past
+  in the lower half). Correct on real hardware too, and strictly better
+  there - it exits at exactly the same frame when that frame is
+  observed, and no longer stalls 16 seconds when a slow poll misses it.
+
+  Only the NoSplit scheduler's non-periodic branch was touched (a plain
+  pacing delay to the next frame boundary). The equivalent loop in
+  uspi_dwhciframeschedper.c is deliberately LEFT ALONE: it runs only on
+  the split path, i.e. only on real hardware, and there landing on one
+  specific microframe is a real scheduling requirement rather than
+  pacing.
+
+Bug 20 (real, fixed): the hub protocol byte was hardcoded to "multiple TTs" in three places
+  With Bug 19 fixed, enumeration completed and found a device on the
+  root port - "ven409-55aa, dev9-0-0, int9-0-0", QEMU's own USB hub,
+  which raspi3b puts between the dwc2 root port and anything attached
+  with "-device usb-kbd". uspi rejected it three times over, each
+  rejection hidden behind the previous one:
+
+    1. uspi_usbdevicefactory.c matched the string "dev9-0-2" only, so no
+       driver was constructed at all ("Device is not supported").
+    2. USBStandardHubConfigure() tested bDeviceProtocol != 2
+       ("Unsupported hub (proto 0)").
+    3. the same function's interface-descriptor loop tested
+       bInterfaceProtocol != 2 and "continue"d past the hub's only
+       interface, falling out with pInterfaceDesc == 0 ("Invalid
+       configuration descriptor (offset 0x9)").
+
+  All three are the same assumption: that a hub is always a HIGH-SPEED
+  hub with MULTIPLE transaction translators, which is what a real Pi's
+  LAN9514 reports. USB 2.0 spec 11.23.1 defines three protocol values
+  for class 9 / subclass 0 - 0 = full/low-speed hub (no TT), 1 =
+  high-speed with a single TT, 2 = high-speed with multiple TTs - and
+  nothing in TUSBStandardHub consults the TT at all (split setup lives
+  in the DWHCI layer and keys off device SPEED, not this byte). All
+  three tests now accept 0/1/2. Purely additive: the real LAN9514 still
+  matches on exactly the terms it did before, and non-hubs and
+  multi-configuration devices are still rejected.
+
+Result: "usb: keyboard OK", and a keystroke typed into the GTK window
+runs a real shell command, with the output appearing on BOTH the
+emulated framebuffer and the serial console. Verified end to end by
+scripts/test_qemu_graphics.py (which arm-pi3 is now a member of):
+1280x1024 screen, 16313 non-black pixels at the prompt, 21408 after
+typing "ls", and the command's own output on the serial log.
+
+Window sizing (reported by the user, fixed in the Makefile only)
+  The GTK window opened at the guest's full 1280x1024 and refused to
+  shrink below it, so on a smaller desktop the bottom of the console sat
+  off-screen with no way to reach it. NOT fixed by lowering the
+  resolution: source/console.c's gpuinit() asks for 1280x1024, which is
+  what a real Pi 3 on a real monitor gets, so a smaller value would be
+  right for QEMU and wrong on the board. Fixed purely in the
+  "qemu-graphics" target with "-display gtk,zoom-to-fit=on", which lets
+  the window be resized freely and scales the guest display into it.
+  Overridable as "GTK_DISPLAY=gtk" for an unscaled, pixel-exact window.
+  Worth knowing for the sibling graphics ports: forks/arm-pi1 and
+  forks/arm-pi1-bis ask for 1024x768, so they generally fit and have not
+  needed this - the same one-line option would work there if they ever
+  do.
+
+Real-hardware safety, all four: every change is additive or strictly
+more permissive, none removes or reorders anything a real Pi 3 needs,
+and the two QEMU-vs-real decisions are runtime register reads rather
+than #ifdefs, so one kernel7.bin remains correct on both. Bug 19's fix
+is the only one that changes real-hardware behaviour at all, and it
+changes it for the better. Still worth VERIFYING on the user's own
+hardware eventually, per CLAUDE.md - in particular that the LAN9514
+still enumerates through the widened hub tests.
 
 CLOSED (was: "Open gap") - the session-1/2 investigation, kept as a record of what the evidence looked like before Bug 14
 ------------------------------------------------------------------------------------------------------------------------------
