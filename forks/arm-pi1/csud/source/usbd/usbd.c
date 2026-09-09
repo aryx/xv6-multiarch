@@ -67,6 +67,29 @@ Result UsbInitialise() {
 		goto errorStop;
 	}
 
+	/* claude: RootHubDeviceNumber (hcd/dwc/designware20.c's own
+	 * HcdSumbitControlMessage()) is declared but never assigned
+	 * anywhere in upstream CSUD - a real, pre-existing bug (not
+	 * introduced by vendoring), confirmed by grepping the entire
+	 * source tree for every write to it: there are none. Left at its
+	 * zero-initialized default, HcdSumbitControlMessage's own
+	 * "pipe.Device == RootHubDeviceNumber" dispatch check to the
+	 * virtual root-hub handler only actually matches while the virtual
+	 * root hub device itself still has address 0 - true only for the
+	 * FIRST couple of requests during its own enumeration (which is why
+	 * HubGetStatus succeeds once, during HubAttach()). Once
+	 * UsbAttachRootHub() finishes and the root hub has been assigned a
+	 * real address (always 1 - it is unconditionally the very first
+	 * device enumerated), every SUBSEQUENT request the Hub driver makes
+	 * to it - specifically HubCheckForChange()'s own repeated
+	 * HubPortGetStatus() polls - silently falls through to a REAL bus
+	 * transfer instead of the virtual root-hub short-circuit, and
+	 * silently fails (no real device answers "address 1" on the wire).
+	 * Fixed by setting it here, once, to whatever address the root hub
+	 * actually ended up with - real hardware and QEMU alike, since
+	 * nothing about this bug is QEMU-specific. */
+	RootHubDeviceNumber = Devices[0]->Number;
+
 	return result;
 errorStop:
 	HcdStop();

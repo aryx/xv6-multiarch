@@ -16,9 +16,37 @@
 #include "mailbox.h"
 
 extern char end[]; // first address after kernel loaded from ELF file
+extern char bss_start[]; // first address of .bss - see kernel.ld/kernel-qemu.ld
 extern pde_t *kpgdir;
 extern FBI fbinfo;
 extern volatile uint *mailbuffer;
+
+// claude: added 2026-09-09 while wiring up csud/ (the vendored USB
+// driver). This kernel never zeroes .bss anywhere - proven by
+// console.c's own pre-existing "panicked = 0; // must initialize in
+// code since the compiler does not" comment/workaround, and confirmed
+// as a REAL, currently-live bug by CSUD: its internal device-count
+// globals (source/usbd/usbd.c's own zero-initialized statics) came up
+// as leftover nonzero garbage left over in RAM from the bootloader/
+// firmware/prior boot stage, which made KeyboardCount() appear
+// nonzero from the very first call - permanently short-circuiting
+// keyboard.s's own "no keyboard yet, poll for one" path (see
+// notes_arch_arm_pi1.txt). A C runtime is entitled to assume a
+// zero-initialized global really is zero at startup; every other
+// file-scope "= 0" global in this kernel and every future one placed
+// in .bss had exactly the same latent bug, just not yet triggered by
+// visible behavior - this is a universal correctness fix, identical on
+// real hardware and QEMU (memory contents predating a fresh boot are
+// unpredictable on real hardware too, just less consistently
+// reproducible than under emulation), not a QEMU-only workaround.
+static void
+bsszero(void)
+{
+  char *p;
+
+  for(p = bss_start; p < end; p++)
+    *p = 0;
+}
 
 void OkLoop()
 {
@@ -53,6 +81,7 @@ void enableirqminiuart(void);
 int cmain()
 {
 
+  bsszero();
   mmuinit1();
   machinit();
   uartinit();
@@ -81,6 +110,15 @@ cprintf("it is ok after fileinit\n");
 cprintf("it is ok after iinit\n");
   ideinit();
 cprintf("it is ok after ideinit\n");
+  // claude: USB keyboard, wired up 2026-09-09 - see csud/ (the
+  // vendored CSUD driver, previously an unused prebuilt libcsud.a with
+  // no caller anywhere in this tree) and notes_arch_arm_pi1.txt. Not
+  // gated like the framebuffer's fb_ready: a failed/absent USB
+  // controller (or no keyboard plugged in, real hardware's own normal
+  // case) is not an error - the UART/serial console keeps working
+  // exactly as before either way, so this only prints, never loops.
+  if(UsbInitialise() != 0)
+    cprintf("USB: not available (continuing on UART console only)\n");
   timer3init();
   kinit2(P2V(8*1024*1024), P2V(PHYSTOP));
 cprintf("it is ok after kinit2\n");

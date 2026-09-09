@@ -46,6 +46,9 @@ SECTIONS {
 		*.c.o(*)
 	}
 
+	/* claude: marks the start of .bss so cmain() can zero it explicitly
+	 * - see main.c's own "bsszero()"/its call site comment. */
+	PROVIDE(bss_start = .);
 	.bss : {
 		*(.bss)
 	}

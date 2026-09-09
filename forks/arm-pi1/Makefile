@@ -30,6 +30,47 @@ LINKER = kernel.ld
 # The names of libraries to use.
 LIBRARIES := csud
 
+# claude: csud/ is Alex Chadwick's CSUD ("Chadderz's Simple USB Driver",
+# MIT, github.com/Chadderz121/csud @ e13b935), vendored 2026-09-09 to
+# replace the libcsud.a BINARY BLOB this fork used to ship with no
+# source. Confirmed to be that blob's own source first: built from this
+# tree it exports the same 141 symbols (plus LogPrintF), same object
+# names. Vendoring it makes the USB stack patchable - specifically so
+# QEMU's dwc2 model can be accommodated at RUNTIME (see designware20.c's
+# own HcdEmulating(), and notes_arch_arm_pi1.txt) rather than being
+# stuck with whatever the prebuilt .a happened to do.
+#
+# Built here rather than by csud/makefile so it gets the SAME real
+# codegen flags as the rest of this kernel ("-mcpu=arm1176jzf-s -marm",
+# see CFLAGS below). csud's own makefile only passes "-Wa,-march=armv6
+# -Wa,-mcpu=arm1176jzf-s", which constrains the assembler but NOT gcc's
+# code generation - the exact trap documented for this fork's own CFLAGS
+# below, and a real (not theoretical) source of ARMv7/Thumb-interworking
+# instructions inside a library linked into an ARMv6 kernel.
+CSUDDIR := csud/
+CSUD_SRCS := $(wildcard $(CSUDDIR)source/*.c) $(wildcard $(CSUDDIR)source/*/*.c) \
+             $(wildcard $(CSUDDIR)source/*/*/*.c)
+CSUD_OBJS := $(patsubst $(CSUDDIR)source/%.c,$(BUILD)csud/%.o,$(CSUD_SRCS))
+CSUD_CFLAGS := -std=c99 -fpack-struct -Wno-packed-bitfield-compat -fshort-wchar \
+               -O2 -Wno-strict-aliasing -fno-pic -static -fno-stack-protector \
+               -mcpu=arm1176jzf-s -marm \
+               -DFINAL -DTYPE_LOWLEVEL -DTARGET_RPI \
+               -DLIB_HUB -DLIB_HID -DLIB_KBD -DLIB_MOUSE
+
+# claude: "rcs", not csud's own makefile's "rc" - the "s" writes the
+# archive symbol index. Without it ld cannot tell which members define
+# what, pulls in members nothing references, and then fails
+# --no-undefined on CSUD's own unresolved LogPrint/LogPrintF (which the
+# host application is expected to supply only if it actually uses the
+# logging build). The shipped prebuilt libcsud.a carries an index too.
+$(CSUDDIR)libcsud.a: $(CSUD_OBJS)
+	-rm -f $@
+	$(ARMGNU)-ar rcs $@ $(CSUD_OBJS)
+
+$(BUILD)csud/%.o: $(CSUDDIR)source/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CSUD_CFLAGS) -I $(CSUDDIR)include -c $< -o $@
+
 #CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -nostdinc -nostdlib -fno-stack-protector
 # claude: two build-correctness fixes, safe for real hardware AND QEMU
 # alike (neither changes any runtime behavior, just what gcc is actually
@@ -86,8 +127,8 @@ $(TARGET) : $(BUILD)output.elf
 	$(ARMGNU)-objcopy $(BUILD)output.elf -O binary $(TARGET) 
 
 # Rule to make the elf file.
-$(BUILD)output.elf : $(OBJECTS) $(C_OBJS) $(LINKER)
-	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L. $(patsubst %,-l %,$(LIBRARIES)) -Map $(MAP) -o $(BUILD)output.elf -T $(LINKER)
+$(BUILD)output.elf : $(OBJECTS) $(C_OBJS) $(LINKER) $(CSUDDIR)libcsud.a
+	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L$(CSUDDIR) $(patsubst %,-l %,$(LIBRARIES)) -Map $(MAP) -o $(BUILD)output.elf -T $(LINKER)
 
 # Rule to make the object files.
 $(BUILD)%.o: $(SOURCE)%.s $(BUILD)
@@ -107,8 +148,8 @@ $(BUILD)%.o: $(SOURCE)%.c $(BUILD)
 # and notes_arch_rpi1.txt).
 QEMU ?= qemu-system-arm
 
-build/output-qemu.elf: $(OBJECTS) $(C_OBJS) kernel-qemu.ld
-	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L. $(patsubst %,-l %,$(LIBRARIES)) -Map kernel-qemu.map -o build/output-qemu.elf -T kernel-qemu.ld
+build/output-qemu.elf: $(OBJECTS) $(C_OBJS) kernel-qemu.ld $(CSUDDIR)libcsud.a
+	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L$(CSUDDIR) $(patsubst %,-l %,$(LIBRARIES)) -Map kernel-qemu.map -o build/output-qemu.elf -T kernel-qemu.ld
 
 kernel-qemu.img: build/output-qemu.elf
 	$(ARMGNU)-objcopy build/output-qemu.elf -O binary kernel-qemu.img

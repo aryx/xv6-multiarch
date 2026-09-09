@@ -327,9 +327,9 @@ void HubDeallocate(struct UsbDevice *device) {
 
 void HubCheckForChange(struct UsbDevice *device) {
 	struct HubDevice *data;
-	
+
 	data = (struct HubDevice*)device->DriverData;
-	
+
 	for (u32 i = 0; i < data->MaxChildren; i++) {
 		if (HubCheckConnection(device, i) != OK)
 			continue;
@@ -543,9 +543,33 @@ Result HubAttach(struct UsbDevice *device, u32 interfaceNumber) {
 	else LOG_DEBUG("HUB: Hub over current condition: Yes.\n");
 
 	LOG_DEBUGF("HUB: %s status %x:%x.\n", UsbGetDescription(device), *(u16*)&status->Status, *(u16*)&status->Change);
-	
+
+	/* claude: HubCheckConnection() only acts on the STICKY "connection
+	 * changed" bit - correct for its OWN normal job (this is also the
+	 * per-tick polling path, see timer.c's own KeyboardUpdate()/
+	 * consoleintr() hookup), but wrong for what THIS particular call is
+	 * for: a one-time, post-power-on scan meant to pick up whatever is
+	 * ALREADY connected. On real hardware those normally coincide - the
+	 * controller/port reset that HcdStart() performs just before this
+	 * runs is itself the "connection" event a freshly-plugged-in device
+	 * produces, so the changed bit is reliably still set here. Under
+	 * QEMU, a device given on the command line (a persistent part of
+	 * the machine's own config, not something the guest ever "plugs
+	 * in") is simply always Connected from t=0 - there is no transition
+	 * for the guest to ever observe, so the changed bit legitimately
+	 * never latches (confirmed directly: HubCheckConnection's own
+	 * status read shows Connected=1, Changed=0, unconditionally, even
+	 * on this very first call). So also force the attach directly
+	 * whenever a port already reads Connected with nothing attached to
+	 * it yet - this is what a real hub driver's own initial power-on
+	 * scan is supposed to do regardless of platform (Linux's own
+	 * hub_port_init() behaves the same way), it just happens to be
+	 * unreachable via the changed-bit path alone in this specific
+	 * "always-present" QEMU scenario. */
 	for (u8 port = 0; port < data->MaxChildren; port++) {
 		HubCheckConnection(device, port);
+		if (data->Children[port] == NULL && data->PortStatus[port].Status.Connected)
+			HubPortConnectionChanged(device, port);
 	}
 
 	return OK;

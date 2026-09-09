@@ -25,6 +25,33 @@ volatile struct CoreGlobalRegs *CorePhysical, *Core = NULL;
 volatile struct HostGlobalRegs *HostPhysical, *Host = NULL;
 volatile struct PowerReg *PowerPhysical, *Power = NULL;
 bool PhyInitialised = false;
+
+/* claude: runtime QEMU-vs-real-hardware detection, not an #ifdef - see
+ * notes_arch_arm_pi1.txt. Same technique and same underlying fact as
+ * ~/principia/kernel/COMPILE/9/bcm/usbdwc.c's own emulating(): this
+ * core's VendorId register is a hardware revision string ("OT2.xxx"),
+ * and QEMU's own dwc2 model (hw/usb/hcd-dwc2.c) reports a DIFFERENT
+ * revision than any real BCM2835 - 2.94a (0x4f54294a) versus real
+ * hardware's 2.80a (0x4f54280a) - so this is a genuine hardware
+ * capability read, not a guess or a board-name string. Cached after
+ * first call; Core must already be mapped (call only after
+ * HcdInitialise() has read Core->VendorId at least once). Used to skip
+ * the split-transaction protocol below: real hardware reaches this
+ * board's own full/low-speed devices through the built-in LAN9514 hub
+ * and split transactions are mandatory there, but QEMU's dwc2 model
+ * does not implement the split state machine at all (HCSPLT is stored,
+ * never interpreted) - driving it anyway just adds the ~1s
+ * sofwait/chanwait timeout documented below per transfer, and, worse,
+ * with a QEMU HID device's own SET_IDLE gap (see usbdwc.c's own
+ * writeup), can turn a single missed key-up into a runaway key-repeat.
+ */
+bool HcdEmulating() {
+	static int cached = -1;
+
+	if (cached < 0)
+		cached = (Core != NULL && Core->VendorId == 0x4f54294a) ? 1 : 0;
+	return (bool)cached;
+}
 u8* databuffer = NULL;
 
 void DwcLoad() 
@@ -247,10 +274,15 @@ Result HcdPrepareChannel(struct UsbDevice *device, u8 channel,
 
 	// Clear split control.
 	ClearReg(&Host->Channel[channel].SplitControl);
-	if (pipe->Speed != High) {
+	/* claude: "&& !HcdEmulating()" - see HcdEmulating()'s own comment.
+	 * Real hardware needs this for any full/low-speed device (it always
+	 * sits behind the on-board hub); QEMU's dwc2 model has no split
+	 * state machine, so leaving SplitEnable clear there routes the
+	 * transfer directly, exactly like Principia's own usbdwc.c fix. */
+	if (pipe->Speed != High && !HcdEmulating()) {
 		Host->Channel[channel].SplitControl.SplitEnable = true;
 		Host->Channel[channel].SplitControl.HubAddress = device->Parent->Number;
-		Host->Channel[channel].SplitControl.PortAddress = device->PortNumber;			
+		Host->Channel[channel].SplitControl.PortAddress = device->PortNumber;
 	}
 	WriteThroughReg(&Host->Channel[channel].SplitControl);
 
@@ -640,7 +672,17 @@ Result HcdInitialise() {
 		goto deallocate;
 	}
 	LOG_DEBUG("HCD: Internal DMA mode.\n");
-	if (Core->Hardware.HighSpeedPhysical == NotSupported) {
+	/* claude: "&& !HcdEmulating()" - QEMU's own dwc2 model (hw/usb/
+	 * hcd-dwc2.c) does not fully populate GHWCFG2, and reports
+	 * HighSpeedPhysical as NotSupported even though the controller
+	 * otherwise enumerates and drives full/low-speed devices (the
+	 * keyboard/mouse this board actually has) correctly - a genuine
+	 * emulation model gap, not a real incompatibility, so this specific
+	 * check is skipped only where HcdEmulating() has already confirmed
+	 * (via the VendorId read above) that this IS QEMU. Real hardware
+	 * always reports a real value here and this check still applies to
+	 * it unchanged. */
+	if (Core->Hardware.HighSpeedPhysical == NotSupported && !HcdEmulating()) {
 		LOG("HCD: High speed physical unsupported. Driver incompatible.\n");
 		result = ErrorIncompatible;
 		goto deallocate;

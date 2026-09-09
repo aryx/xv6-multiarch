@@ -51,7 +51,24 @@ uint v;
 	ticks = 0;
 }
 
-void 
+// claude: CSUD (csud/) is a polling driver, not interrupt-driven - the
+// Baking Pi tutorial code it comes from expects its own caller to poll
+// KeyboardUpdate() from a main loop. This kernel has no such loop (it
+// goes straight into the scheduler after boot), so the periodic timer
+// interrupt - already firing 100 times/sec for the scheduler tick - is
+// the natural place instead. usbkbdgetc() adapts KeyboardGetChar()'s
+// "0 means nothing typed" convention to consoleintr()'s own "-1 means
+// nothing available" one (see uart.c's own uartgetc() for the same
+// shape), so keyboard input is fed into the exact same input-buffer
+// path as UART input, indistinguishably from the shell's point of view.
+static int
+usbkbdgetc(void)
+{
+  char c = KeyboardGetChar();
+  return c ? (int)(uchar)c : -1;
+}
+
+void
 timer3intr(void)
 {
 uint v;
@@ -60,6 +77,9 @@ uint v;
 
 	ticks++;
 	wakeup(&ticks);
+
+	KeyboardUpdate();
+	consoleintr(usbkbdgetc);
 
 	// reset the value of compare3
 	v=inw(TIMER_REGS_BASE+COUNTER_LO);

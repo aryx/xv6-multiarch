@@ -14,3 +14,4 @@ kernel.list
 kernel.map
 kernel-qemu.img
 kernel-qemu.map
+csud/libcsud.a

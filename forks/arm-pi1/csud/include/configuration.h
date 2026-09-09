@@ -36,7 +36,20 @@
 #	define ENDIAN_LITTLE
 #	define BROADCOM_2835
 #	define HCD_DESIGNWARE_20
-#	define HCD_DESIGNWARE_BASE ((void*)0x20980000)
+	/* claude: was "((void*)0x20980000)" - the RAW ARM PHYSICAL address
+	 * (0x20000000 + the dwc2 controller's 0x980000 offset). This
+	 * kernel's own page tables never identity-map that range - all
+	 * peripherals are reached through DEVSPACE (0xFE000000), a virtual
+	 * alias for physical PHYSIO (0x20000000) built once in mmu.c
+	 * (source/mmu.c's own "map IO region" loop) - the same convention
+	 * uart.c's own PL011 registers already use (UART0_DR is
+	 * DEVSPACE+0x201000 for the same physical 0x20201000). Left as the
+	 * upstream raw-physical value, MicroDelay/HcdInitialise/etc would
+	 * dereference an address with no page-table entry at all and fault
+	 * on the very first register read - not a QEMU-specific fix, this
+	 * base address is wrong on real hardware too under this fork's own
+	 * memory map. */
+#	define HCD_DESIGNWARE_BASE ((void*)(0xFE000000 + 0x980000))
 #elif defined TARGET_NONE
 	// Compiling for no target architecture. This will rapidly run into errors.
 #elif defined TARGET_ERROR
