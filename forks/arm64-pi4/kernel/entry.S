@@ -7,12 +7,42 @@
 .section ".text"
 .global _entry
 
-#ifdef RPI4_QEMU
+        // claude: which exception level this kernel is entered at depends on
+        // WHO loaded it, and that is a runtime fact, not a build-time one:
+        //
+        //   real Pi 4  - the GPU firmware runs armstub8.bin first, which
+        //                handles the EL3 (secure monitor) step itself and
+        //                hands the kernel over already at EL2.
+        //   QEMU       - "-kernel" on -M raspi4b* has no firmware in front
+        //                of it, so the cores come out of reset at EL3 with
+        //                that step still to do.
+        //
+        // Upstream picked between the two with a "-DRPI4_QEMU" #ifdef in
+        // ASFLAGS, which is why its own README told you to go delete that
+        // line by hand before building for the board - one source tree, two
+        // incompatible kernel8.img. Reading CurrentEL instead makes the one
+        // binary correct in both places, per this repo's CLAUDE.md ("Real
+        // hardware vs. QEMU: prefer runtime detection over #ifdef").
+        //
+        // Entered at EL2 the code below falls straight through to
+        // swtch_el1_*, which is exactly what the old !RPI4_QEMU build did.
 _entry:
         mrs x1, mpidr_el1
-        and x1, x1, #3
+        and x1, x1, #3            // x1 = cpuid, 0 = primary
+
+        mrs x0, CurrentEL         // CurrentEL[3:2] holds the EL
+        and x0, x0, #0xc
+        cmp x0, #(3 << 2)
+        b.ne entry_el2            // already at EL2 - real Pi 4 firmware
+
+        // reset at EL3 (QEMU): do the monitor step ourselves, then land
+        // in the same swtch_el1_* code the EL2 path uses.
         cbz x1, swtch_el2
         b swtch_el2_secondary
+
+entry_el2:
+        cbz x1, swtch_el1_primary
+        b swtch_el1_secondary
 
         // switch EL3 to EL2
 swtch_el2:
@@ -36,13 +66,6 @@ swtch_el2_secondary:
         mov x2, #0x9      // EL2H
         msr spsr_el3, x2
         eret
-#else /* !RPI4_QEMU */
-_entry:
-        mrs x1, mpidr_el1
-        and x1, x1, #3
-        cbz x1, swtch_el1_primary   // primary
-        b swtch_el1_secondary
-#endif
 
         // switch EL2 to EL1
 swtch_el1_primary:

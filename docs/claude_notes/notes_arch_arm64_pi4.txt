@@ -1,0 +1,212 @@
+notes_arch_arm64_pi4.txt
+========================
+
+Written: 2026-09-09, against commit 30e7888 (the arm-pi3 trapframe/-fno-pic
+session), during the arm64-pi4 bring-up itself. Phase 4 of
+docs/claude_notes/plan_build_and_test.md - the fourteenth and last fork in
+the repo to be looked at, and the only one so far wired up BUILD-ONLY.
+
+Status: BUILDS CLEAN, NOT BOOTED. `make build-arm64-pi4` produces both
+kernel/kernel (the ELF qemu's -kernel loads) and kernel8.img (the raw
+image a real Pi 4's firmware loads off the SD card), from a clean tree,
+with two narrow -Wno- flags and no other source changes. It has never
+been run: this host's qemu is 8.2.2, and qemu did not gain a Raspberry
+Pi 4 board at all until 9.1. There is nothing here to boot it on. See
+"Open gap" at the end for exactly what to do the day a newer qemu is
+available.
+
+What this is
+------------
+forks/arm64-pi4 is k-mrm/xv6-rpi4 (2022, ~30 commits), renamed from
+forks/rpi4. Same author as forks/arm64 (k-mrm/xv6-aarch64) and a
+verified real git fork partway down THAT port's history - see
+docs/provenance.md's fork-point table, where `2c8131bd` turns out to be
+a byte-identical commit object already present in this repo under
+`arm64`, so no re-parenting was needed at all. So: a real Pi 4
+follow-up to k-mrm's own QEMU-targeted aarch64 port, and genuinely
+64-bit, unlike forks/arm-pi3 (whose upstream README says "AArch64" but
+which only ever builds 32-bit code - see CLAUDE.md). Upstream's README
+says it is "confirmed on an actual Raspberry Pi 4B"; it also says the
+micro SD driver is not implemented, so the filesystem is the
+kernel-linked ramdisk (kernel/ramdisk.c, fs.img linked in via
+`ld -r -b binary`), same trick forks/arm64 uses.
+
+Structurally it is MIT xv6-riscv's kernel/user split, like its parent:
+kernel/gicv2.c (a Pi 4 has a GICv2, where forks/arm64's -M virt target
+has a GICv3), kernel/uart.c on the Pi's PL011 UART0 at 115200, four
+cores brought up through the ARM spin table.
+
+Toolchain: no gaps
+------------------
+aarch64-linux-gnu-gcc 13.3.0, already on this box for forks/arm64 and
+forks/arm-pi3's armstub. The fork's own TOOLPREFIX auto-detect (the
+same "elf64-big" probe template every fork here carries) already lists
+aarch64-linux-gnu- among its candidates and finds it unaided;
+./configure's own block detects the same thing up front, with a longer
+candidate list, the way every other arch's does.
+
+GCC false positive 1: -Warray-bounds on the spin-table mailboxes
+----------------------------------------------------------------
+kernel/start.c's cpu1_wakeup()/cpu2_wakeup()/cpu3_wakeup() each do
+
+    *(volatile uint64 *)0xe0 = entry;      // and 0xe8, 0xf0
+
+which GCC 13 rejects under -Wall -Werror:
+
+    error: array subscript 0 is outside array bounds of
+           'volatile uint64[0]' [-Werror=array-bounds=]
+    note: source object is likely at address zero
+
+Those three addresses are the ARM spin-table release slots where the Pi
+4 firmware parks cores 1-3 waiting for an entry address - deliberate,
+correct, and the only way to start a secondary core on this board. GCC
+just sees a store through a small integer constant cast to a pointer
+and assumes a null-pointer bug. Triaged as a false positive (per
+notes_debugging_techniques.txt item 1) and fixed with a named
+-Wno-array-bounds in the fork's Makefile, exactly the same
+false-positive class and the same fix as forks/i386/Makefile's own
+(mp.c's BIOS-memory pointer casts).
+
+GCC false positive 2: -Winfinite-recursion on user/sh.c's runcmd()
+------------------------------------------------------------------
+The usual one. Every MIT-lineage fork in this repo has hit it; see
+forks/i386/Makefile's own comment. -Wno-infinite-recursion.
+
+Those two flags are the ONLY compile fixes needed. Nothing else in the
+port tripped a modern-GCC warning, which is unsurprising for a 2022
+port - the older forks are the ones that fight the toolchain.
+
+Real fix: -DRPI4_QEMU replaced by a runtime CurrentEL check
+-----------------------------------------------------------
+This one is not a warning, it is the reason the port could not be
+honestly called "built" before.
+
+As checked in, forks/arm64-pi4/Makefile had `ASFLAGS += -DRPI4_QEMU`,
+and kernel/entry.S had a #ifdef on it choosing between two different
+_entry sequences; upstream's README correspondingly told you, as step 1
+of "run on raspberry pi 4B", to go delete that line from the Makefile
+by hand. So the checked-in default built a QEMU-only kernel8.img, and
+the real-hardware image was a different build of the same tree.
+
+What the flag actually selects is which exception level the kernel is
+entered at, which is a property of WHO LOADED IT:
+
+  real Pi 4 - the GPU firmware runs armstub8.bin first, which does the
+              EL3/secure-monitor step itself and hands the kernel over
+              already at EL2.
+  QEMU      - "-kernel" has no firmware in front of it, so the cores
+              come out of reset at EL3 with that step still to do.
+
+That is exactly the situation CLAUDE.md's "Real hardware vs. QEMU"
+section is about, and exactly the case its rule covers: prefer a
+runtime check over an #ifdef so one binary is right in both places.
+AArch64 makes it a two-instruction check - CurrentEL[3:2] literally
+holds the current EL. kernel/entry.S now reads it and branches:
+
+    _entry:
+            mrs x1, mpidr_el1
+            and x1, x1, #3            // cpuid
+            mrs x0, CurrentEL
+            and x0, x0, #0xc
+            cmp x0, #(3 << 2)
+            b.ne entry_el2            // real Pi 4 firmware: already EL2
+            cbz x1, swtch_el2         // QEMU: do the EL3 step first
+            b   swtch_el2_secondary
+    entry_el2:
+            cbz x1, swtch_el1_primary
+            b   swtch_el1_secondary
+
+Entered at EL2 that is instruction-for-instruction what the old
+!RPI4_QEMU build did; entered at EL3 it is what the old RPI4_QEMU build
+did, and the EL3 path then falls into the same swtch_el1_* code rather
+than a duplicate of it. Verified in kernel/kernel.asm that the emitted
+code is what is written above. The Makefile's -DRPI4_QEMU is gone and
+the README's "delete this line" step with it.
+
+Worth being explicit about the risk, since the user cannot test this
+one on hardware (this repo's Pi boards are a Pi 1 and a Pi 2, not a
+Pi 4): the change is strictly a superset of the old real-hardware path.
+At EL2 the new code reaches swtch_el1_primary/swtch_el1_secondary with
+the same register state the old code did. The only way it could regress
+the board is if real Pi 4 firmware entered the kernel at EL3 - in which
+case upstream's own non-QEMU build was already broken, since that build
+had no EL3 handling at all.
+
+Makefile: QEMU config made overridable
+--------------------------------------
+Upstream hardcoded `QEMUPREFIX = ~/project/qemu-patch-raspberry4/build/`
+(the author's own machine) and `-machine raspi4b1g -m 1G`. Those are now
+`?=` variables - QEMUPREFIX, QEMU, QEMUMACHINE, QEMUMEM - with the
+upstream values kept as the defaults, so `make qemu` in that directory
+still means what it always meant, and the top-level Makefile can pass
+its own. Nothing else in that Makefile changed except the two -Wno-
+flags and the -DRPI4_QEMU removal.
+
+Wiring: build-only, deliberately
+--------------------------------
+./configure gets a TOOLPREFIX_ARM64_PI4/QEMU_ARM64_PI4 pair like every
+other arch, but with a `detect_qemu_system ... 9 1` version floor - and
+on this host that floor is not a nicety, it is the whole story:
+qemu 8.2.2's newest raspi board is raspi3b, so QEMU_ARM64_PI4 comes out
+NONE and says why.
+
+The top-level Makefile therefore splits what is normally one
+check-<arch>-toolchain prerequisite into two:
+
+  check-arm64-pi4-toolchain   TOOLPREFIX only -> build-arm64-pi4 works
+  check-arm64-pi4-qemu        QEMU too        -> run-arm64-pi4 does not
+
+so `make build-arm64-pi4` is a real, useful target today and
+`make run-arm64-pi4` fails with a message naming 9.1 rather than
+something cryptic from inside qemu. clean-arm64-pi4 and kill-arm64-pi4
+exist too; there is deliberately NO test-arm64-pi4/quick-test-arm64-pi4
+and no forks/arm64-pi4/test-xv6.py, and none of these targets are folded
+into build-all/test-all/stress-test-all or into the Dockerfile/CI matrix.
+A test harness that has never once been run against a booting kernel is
+a liability rather than coverage - write it in the session that first
+gets a Pi 4 board to come up, where it can actually be checked.
+
+Open gap: needs qemu >= 9.1, and two guesses to confirm
+-------------------------------------------------------
+Nothing here has been booted. When a qemu-system-aarch64 >= 9.1 is
+available on this host (not packaged for this Ubuntu as of 2026-09-09 -
+8.2.2 is current), re-run ./configure and then `make run-arm64-pi4`,
+and expect to fix these two UNVERIFIED guesses first:
+
+ 1. The machine name. forks/arm64-pi4/Makefile still defaults to
+    "raspi4b1g", which is k-mrm's own qemu fork's spelling
+    (github.com/k-mrm/qemu-patch-raspberry4, what upstream developed
+    against). Upstream qemu's own Pi 4 board is believed to be spelled
+    "raspi4b", and run-arm64-pi4 passes QEMUMACHINE=raspi4b on that
+    basis. Check `qemu-system-aarch64 -machine help | grep raspi`
+    first - that one command settles it.
+ 2. The memory size. run-arm64-pi4 passes QEMUMEM=2G, since upstream
+    qemu's raspi4b is believed to model the 2GB board revision, where
+    the patched fork's raspi4b1g is the 1GB one. The raspi machines
+    reject a -m that does not match the board revision, so a wrong
+    guess here fails loudly and immediately, not subtly.
+
+Both are one-word Makefile fixes. The interesting question is what
+happens after that, and there is no evidence either way yet - upstream
+only ever claimed the port works on real hardware and under its own
+patched qemu, never under mainline. Two things to look at first if it
+does not come up:
+
+ - The EL3-vs-EL2 entry path (above) is now taken at runtime. If
+    mainline qemu's raspi4b starts -kernel at a different EL than the
+    patched fork did, that is handled - but confirm which branch is
+    actually taken (a breakpoint on entry_el2 vs swtch_el2) before
+    debugging anything downstream of it.
+ - Secondary-core startup goes through the spin table at 0xe0/0xe8/
+    0xf0. Whether mainline qemu's raspi4b implements the same
+    spin-table release protocol as the patched fork is worth checking
+    early; forks/arm-pi3 needed a hand-written armstub64.S for exactly
+    this class of "qemu's raw -kernel loader skips the firmware step"
+    problem on raspi3b, and notes_arch_arm_pi3.txt has the worked
+    example if the same is needed here.
+
+The real-hardware path is unaffected by all of this and is the one that
+was already known to work: `make -C forks/arm64-pi4 rpi4` (after
+pointing SDPATH at an SD card) still produces a kernel8.img, and after
+the CurrentEL change it is now the SAME kernel8.img `make
+build-arm64-pi4` produces.

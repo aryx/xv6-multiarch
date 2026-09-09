@@ -35,11 +35,24 @@ Two sequential efforts, in order:
    session - now known to happen as early as right after `tvinit()`,
    not only in the later `memmove()`/`balloc()` path session 1 first
    found - see `notes_arch_arm_pi3.txt`'s own "Open gap" for the full
-   diagnosis and the concrete next lead. `arm64-pi4` still needs QEMU 9.1+ for
-   `-M raspi4b` (not packaged on this host, still 8.2.2 as of
-   2026-09-09) and hasn't been started; see "Adding a new arch" below
-   for the recipe, and `docs/claude_notes/notes_arch_*.txt` for what's
-   been verified about each arch so far.
+   diagnosis and the concrete next lead. `arm64-pi4` is now wired up
+   **build-only** - the only arch here that is - and builds clean
+   (`make build-arm64-pi4` produces both `kernel/kernel` and the
+   real-hardware `kernel8.img`): two narrow `-Wno-` flags for
+   modern-GCC false positives, plus a real fix replacing its
+   `-DRPI4_QEMU` compile-time switch with a runtime `CurrentEL` check,
+   so one `kernel8.img` is now correct on both a real Pi 4 (entered at
+   EL2 by the firmware's armstub) and under QEMU (entered at EL3), per
+   the "prefer runtime detection over `#ifdef`" rule below. It has
+   never been booted: QEMU only gained a Pi 4 board (`-M raspi4b`) in
+   9.1 and this host is still on 8.2.2 as of 2026-09-09, so
+   `run-arm64-pi4` exists but refuses with that explanation, and there
+   is deliberately no `test-arm64-pi4`/`test-xv6.py` and no CI entry
+   yet. See `notes_arch_arm64_pi4.txt`'s own "Open gap" for the two
+   unverified guesses (machine name, `-m` size) to settle first the day
+   a newer QEMU lands. See "Adding a new arch" below for the recipe,
+   and `docs/claude_notes/notes_arch_*.txt` for what's been verified
+   about each arch so far.
 
    Beyond Phase 4's own "build and boot" bar: `arm-pi1` was taken all
    the way to a genuinely interactive shell under QEMU, with a real

@@ -104,6 +104,8 @@ TOOLPREFIX_ARM_PI2=${TOOLPREFIX_ARM_PI2:-}
 QEMU_ARM_PI2=${QEMU_ARM_PI2:-}
 TOOLPREFIX_ARM_PI3=${TOOLPREFIX_ARM_PI3:-}
 QEMU_ARM_PI3=${QEMU_ARM_PI3:-}
+TOOLPREFIX_ARM64_PI4=${TOOLPREFIX_ARM64_PI4:-}
+QEMU_ARM64_PI4=${QEMU_ARM64_PI4:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -134,6 +136,8 @@ for arg in "$@"; do
         --qemu-arm-pi2=*)       QEMU_ARM_PI2="${arg#--qemu-arm-pi2=}" ;;
         --toolprefix-arm-pi3=*) TOOLPREFIX_ARM_PI3="${arg#--toolprefix-arm-pi3=}" ;;
         --qemu-arm-pi3=*)       QEMU_ARM_PI3="${arg#--qemu-arm-pi3=}" ;;
+        --toolprefix-arm64-pi4=*) TOOLPREFIX_ARM64_PI4="${arg#--toolprefix-arm64-pi4=}" ;;
+        --qemu-arm64-pi4=*)     QEMU_ARM64_PI4="${arg#--qemu-arm64-pi4=}" ;;
         --help|-h)
             echo "Usage: ./configure [options]"
             echo "  --toolprefix-riscv64=PREFIX  override the riscv64 cross-toolchain prefix"
@@ -180,6 +184,11 @@ for arg in "$@"; do
             echo "  --qemu-arm-pi3=CMD           override the arm-pi3 qemu-system binary"
             echo "                               (qemu-system-aarch64 - this fork's own"
             echo "                               Makefile targets -M raspi3b, not raspi2b)"
+            echo "  --toolprefix-arm64-pi4=PREFIX override the arm64-pi4 cross-toolchain"
+            echo "                               prefix (e.g. aarch64-linux-gnu-)"
+            echo "  --qemu-arm64-pi4=CMD         override the arm64-pi4 qemu-system binary"
+            echo "                               (qemu-system-aarch64 >= 9.1, the first"
+            echo "                               release with a -M raspi4b board at all)"
             echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
             exit 0
             ;;
@@ -739,6 +748,51 @@ if ! detect_qemu_system arm-pi3 QEMU_ARM_PI3 qemu-system-aarch64; then
 fi
 
 ###############################################################################
+# arm64-pi4 (forks/arm64-pi4, k-mrm/xv6-rpi4 - renamed from forks/rpi4)
+###############################################################################
+# claude: real Raspberry Pi 4B AArch64 hardware - upstream's own README
+# says the port is "confirmed on an actual Raspberry Pi 4B", and unlike
+# forks/arm-pi3 (32-bit despite its own README) this one really is a
+# 64-bit kernel, hence the "arm64" prefix.
+#
+# The asymmetry worth knowing here: the TOOLCHAIN is fine on this host,
+# the EMULATOR is not. forks/arm64-pi4 builds cleanly today (two narrow
+# -Wno- flags, see notes_arch_arm64_pi4.txt), but qemu only grew a
+# Raspberry Pi 4 board at all in 9.1 ("-M raspi4b"); this host is on
+# 8.2.2, whose newest raspi board is raspi3b. So the version floor below
+# is not a nice-to-have - below 9.1 there is simply nothing to boot on.
+# That is why the top-level Makefile splits this arch's checks in two:
+# "build-arm64-pi4" needs only TOOLPREFIX_ARM64_PI4 and works now,
+# "run-arm64-pi4" additionally needs QEMU_ARM64_PI4 and does not.
+#
+# (Upstream developed the port against k-mrm's own qemu fork,
+# qemu-patch-raspberry4, whose board is spelled "raspi4b1g" - still the
+# default in forks/arm64-pi4/Makefile. It is not detected here: it is a
+# hand-built tree at an arbitrary path, not something on PATH. Point
+# this at it by hand with --qemu-arm64-pi4=<path>/qemu-system-aarch64
+# plus QEMUMACHINE=raspi4b1g if you have one.)
+
+if ! detect_toolprefix arm64-pi4 TOOLPREFIX_ARM64_PI4 elf64-big \
+        aarch64-linux-gnu- aarch64-unknown-elf- aarch64-none-elf- \
+        aarch64-elf- aarch64-unknown-linux-gnu-; then
+    echo "configure: warning: no aarch64 toolchain on PATH (needed for forks/arm64-pi4)" >&2
+    echo "  install one, e.g. on Debian/Ubuntu:" >&2
+    echo "    sudo apt install gcc-aarch64-linux-gnu" >&2
+    note_other_pkgmgr
+fi
+
+if ! detect_qemu_system arm64-pi4 QEMU_ARM64_PI4 qemu-system-aarch64 9 1; then
+    echo "configure: warning: no qemu-system-aarch64 >= 9.1 on PATH" >&2
+    echo "  9.1 is the first release with a Raspberry Pi 4 board (-M raspi4b)" >&2
+    echo "  at all - older ones stop at raspi3b, so there is no machine for" >&2
+    echo "  forks/arm64-pi4's kernel to boot on. 'make build-arm64-pi4' still" >&2
+    echo "  works without it; 'make run-arm64-pi4' does not." >&2
+    echo "  on Debian/Ubuntu that means a distro new enough to package it:" >&2
+    echo "    sudo apt install qemu-system-arm" >&2
+    note_other_pkgmgr
+fi
+
+###############################################################################
 # Write Makefile.config
 ###############################################################################
 # "export VAR=value", not a plain assignment: the top-level Makefile
@@ -801,6 +855,10 @@ fi
     echo "# arm-pi3 (forks/arm-pi3 - patha454/xv6_pi_mp, renamed from forks/pi_mp)"
     echo "export TOOLPREFIX_ARM_PI3=$TOOLPREFIX_ARM_PI3"
     echo "export QEMU_ARM_PI3=$QEMU_ARM_PI3"
+    echo
+    echo "# arm64-pi4 (forks/arm64-pi4 - k-mrm/xv6-rpi4, renamed from forks/rpi4)"
+    echo "export TOOLPREFIX_ARM64_PI4=$TOOLPREFIX_ARM64_PI4"
+    echo "export QEMU_ARM64_PI4=$QEMU_ARM64_PI4"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -831,6 +889,8 @@ echo "  TOOLPREFIX_ARM_PI2      = $TOOLPREFIX_ARM_PI2"
 echo "  QEMU_ARM_PI2            = $QEMU_ARM_PI2"
 echo "  TOOLPREFIX_ARM_PI3      = $TOOLPREFIX_ARM_PI3"
 echo "  QEMU_ARM_PI3            = $QEMU_ARM_PI3"
+echo "  TOOLPREFIX_ARM64_PI4    = $TOOLPREFIX_ARM64_PI4"
+echo "  QEMU_ARM64_PI4          = $QEMU_ARM64_PI4"
 echo
 echo "Next: make build-i386             && make run-i386"
 echo "  or: make build-amd64            && make run-amd64"
@@ -849,3 +909,5 @@ echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi2's o
 echo "  or: make build-arm-pi3 && make run-arm-pi3 (boots to userinit under QEMU, all 4"
 echo "      cores; a secondary-core page-table race crashes it before reaching a shell -"
 echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi3's own Makefile)"
+echo "  or: make build-arm64-pi4 (builds; no run-arm64-pi4 on this host - needs a"
+echo "      qemu-system-aarch64 >= 9.1 for its -M raspi4b board)"

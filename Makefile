@@ -78,6 +78,12 @@
 # upstream-repo name. See docs/provenance.md for the upstream-repo ->
 # current-forks-path mapping table.
 
+# forks/arm64-pi4 (k-mrm/xv6-rpi4) is wired up BUILD-ONLY, the only arch
+# here that is: it compiles cleanly, but qemu did not gain a Raspberry Pi 4
+# board ("-M raspi4b") until 9.1 and this host is on 8.2.2, so there is
+# nothing to boot it on. See its own section below, and
+# notes_arch_arm64_pi4.txt.
+
 # claude: "default" (below) is the first real TARGET RULE in this file
 # (everything above it is comments/blank lines - variable assignments
 # don't count), so it's already Make's own implicit default goal; the
@@ -100,7 +106,9 @@ default:
 	@echo "  make kill-all         clean up any orphaned qemu-system-* left running"
 	@echo ""
 	@echo "  make build-<arch>        build one arch (riscv64, i386, amd64, amd64-jserv, riscv32,"
-	@echo "                           arm64, mips, loongarch, arm, arm-pi1, arm-pi1-bis, arm-pi2)"
+	@echo "                           arm64, mips, loongarch, arm, arm-pi1, arm-pi1-bis, arm-pi2;"
+	@echo "                           partly-wired: arm-pi3 (build/run only),"
+	@echo "                           arm64-pi4 (build only - qemu 9.1+ needed to run it))"
 	@echo "  make run-<arch>          build + boot that arch interactively (-nographic; Ctrl-A X to quit)"
 	@echo "  make quick-test-<arch>   build + boot headless + assert a shell prompt, that arch"
 	@echo "  make test-<arch>         build + boot headless + assert ALL TESTS PASSED, that arch"
@@ -142,6 +150,8 @@ TOOLPREFIX_ARM_PI2 ?=
 QEMU_ARM_PI2 ?= qemu-system-arm
 TOOLPREFIX_ARM_PI3 ?=
 QEMU_ARM_PI3 ?= qemu-system-aarch64
+TOOLPREFIX_ARM64_PI4 ?=
+QEMU_ARM64_PI4 ?= qemu-system-aarch64
 
 # claude: QMP_SOCK (optional, unset by default) forwards a QMP socket
 # path into whichever "run-<arch>-qemu-graphics" target is invoked, for
@@ -169,6 +179,8 @@ QMP_QEMUEXTRA := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)now
         build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 quick-test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 test-arm-pi2 quick-test-arm-pi2 clean-arm-pi2 kill-arm-pi2 check-arm-pi2-toolchain \
         build-arm-pi3 run-arm-pi3 check-arm-pi3-toolchain \
+        build-arm64-pi4 run-arm64-pi4 clean-arm64-pi4 kill-arm64-pi4 \
+        check-arm64-pi4-toolchain check-arm64-pi4-qemu \
         build-all test-all stress-test-all clean-all kill-all test-all-graphics build-docker \
         default all clean
 
@@ -765,6 +777,77 @@ build-arm-pi3: check-arm-pi3-toolchain
 
 run-arm-pi3: check-arm-pi3-toolchain
 	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) qemu
+
+###############################################################################
+# arm64-pi4 (forks/arm64-pi4, k-mrm/xv6-rpi4 - renamed from forks/rpi4)
+###############################################################################
+# claude: real Raspberry Pi 4B hardware, and genuinely AArch64 (unlike
+# forks/arm-pi3, whose own README says "AArch64" but whose Makefile only
+# ever builds 32-bit code). Upstream says the port is confirmed on a real
+# board.
+#
+# This is the first arch here wired up BUILD-ONLY, and the reason is the
+# emulator, not the port: qemu only grew a Raspberry Pi 4 board at all in
+# 9.1 ("-M raspi4b"), and this host is on 8.2.2, whose newest raspi board
+# is raspi3b. Nothing can boot this kernel here yet. So the usual single
+# "check-<arch>-toolchain" prerequisite is split in two - build-arm64-pi4
+# needs only the toolchain (and works today), run-arm64-pi4 additionally
+# needs the qemu ./configure's own >= 9.1 floor rejected. No
+# test-arm64-pi4/quick-test-arm64-pi4 and no forks/arm64-pi4/test-xv6.py
+# yet for the same reason: a test harness that has never once been run
+# against a booting kernel is a liability, not coverage - write it in the
+# session that first gets -M raspi4b to come up. Not folded into
+# build-all/test-all/stress-test-all either, so CI (which pins qemu via
+# the Dockerfile) doesn't start depending on any of this.
+#
+# QEMUMACHINE/QEMUMEM: forks/arm64-pi4/Makefile still defaults to
+# "raspi4b1g" and "-m 1G", the board name in k-mrm's own
+# qemu-patch-raspberry4 fork that upstream developed against. Upstream
+# qemu names its Pi 4 board "raspi4b", so run-arm64-pi4 selects that
+# instead. UNVERIFIED on this host - both the name and whether that board
+# accepts "-m 2G" need confirming the first time a >= 9.1 qemu is
+# available here; see notes_arch_arm64_pi4.txt's own "Open gap".
+check-arm64-pi4-toolchain:
+	@if [ "$(TOOLPREFIX_ARM64_PI4)" = NONE ]; then \
+		echo "Makefile: arm64-pi4 toolchain not found - run ./configure to see what's missing" >&2; \
+		exit 1; \
+	fi
+
+check-arm64-pi4-qemu:
+	@if [ "$(QEMU_ARM64_PI4)" = NONE ]; then \
+		echo "Makefile: no qemu-system-aarch64 >= 9.1 - 9.1 is the first release with a" >&2; \
+		echo "  Raspberry Pi 4 board (-M raspi4b) at all, so forks/arm64-pi4's kernel has" >&2; \
+		echo "  nothing to boot on here. 'make build-arm64-pi4' still works." >&2; \
+		exit 1; \
+	fi
+
+# kernel/kernel is the ELF qemu's "-kernel" loads; kernel8.img is the raw
+# binary a real Pi 4's firmware loads off the SD card. Both are built, so
+# the real-hardware artifact stays covered by this target even while the
+# qemu one can't be booted here - see CLAUDE.md's "never break the board".
+build-arm64-pi4: check-arm64-pi4-toolchain
+	$(MAKE) -C forks/arm64-pi4 TOOLPREFIX=$(TOOLPREFIX_ARM64_PI4) kernel/kernel kernel8.img
+
+run-arm64-pi4: check-arm64-pi4-toolchain check-arm64-pi4-qemu
+	$(MAKE) -C forks/arm64-pi4 TOOLPREFIX=$(TOOLPREFIX_ARM64_PI4) QEMU=$(QEMU_ARM64_PI4) \
+		QEMUMACHINE=raspi4b QEMUMEM=2G qemu
+
+clean-arm64-pi4:
+	$(MAKE) -C forks/arm64-pi4 clean
+
+# claude: guarded on NONE, unlike the other kill-<arch> targets above.
+# For every other arch ./configure normally finds a real qemu path, so
+# their unguarded "pkill -f '$(QEMU_<ARCH>)'" is fine in practice; here
+# NONE is the EXPECTED value on this host, and "pkill -f NONE" matches
+# any process whose command line merely contains the string "NONE" -
+# including this recipe's own shell, which is exactly what it killed
+# before this guard (make reported "Terminated (ignored)").
+kill-arm64-pi4:
+	@if [ "$(QEMU_ARM64_PI4)" = NONE ]; then \
+		echo "kill-arm64-pi4: no qemu configured for arm64-pi4, nothing to kill"; \
+	else \
+		pkill -f '$(QEMU_ARM64_PI4)' 2>/dev/null || true; \
+	fi
 
 ###############################################################################
 # Umbrella targets - each grows a per-arch prerequisite as a new port is
