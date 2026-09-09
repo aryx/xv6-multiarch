@@ -263,6 +263,41 @@ $(BUILD)%.o: $(SOURCE)%.S | $(BUILD)
 $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) $<  -o $@
 
+# claude: source/fs.img is GENERATED, not checked in - the output of uprogs/'s
+# own build (mkfs plus every UPROGS binary). It used to be a committed 512KB
+# blob, which is precisely how uprogs/ here came to be unbuildable without
+# anyone noticing: bringing it up needed three real fixes (CFLAGS that asked
+# for an FPU-less -march while the toolchain defaulted to hard-float, fs.h's
+# NDIRECT too small for a modern-toolchain usertests, and mkfs.c's own block
+# budget rebalanced to match). A checked-in image hides that kind of bit-rot
+# indefinitely and can silently drift from the uprogs/*.c it represents.
+# Same treatment and rule shape as the sibling forks/arm-pi2/Makefile.
+#
+# The phony target is "uprogs-fs-img", NOT "source/fs.img": a phony
+# prerequisite of a REAL file makes that file's recipe run unconditionally
+# (GNU make treats it as always newer), which would re-assemble entry.S and
+# re-link the kernel on every build. This way the recursive make still runs
+# every time and does its own up-to-date checking, while source/fs.img's
+# timestamp only moves when the image content actually changed.
+.PHONY: uprogs-fs-img
+uprogs-fs-img:
+	$(MAKE) -C uprogs TOOLPREFIX=$(TOOLCHAIN) fs.img
+
+source/fs.img: uprogs-fs-img
+	cmp -s uprogs/fs.img $@ || cp uprogs/fs.img $@
+
+# entry.S is the only source file that embeds the image (its own
+# .incbin "fs.img"), so only ITS object needs the dependency - but this fork
+# builds entry.S TWICE, into two separate object trees: build/ for the real
+# Raspberry Pi 3 target and build-qemu/ (see BUILD_QEMU above) for the
+# kernel7-qemu.bin that "make qemu"/test-xv6.py actually boot. Both need it.
+# Naming only $(BUILD)entry.o leaves the QEMU kernel embedding a STALE image
+# while the rest of the kernel is compiled against the current fs.h - which
+# boots as far as the scheduler and then hangs with no shell and no panic,
+# because mkfs wrote one on-disk layout and the kernel reads another.
+$(BUILD)entry.o: source/fs.img
+$(BUILD_QEMU)entry.o: source/fs.img
+
 loader: loader.S kernel7.bin
 	$(TOOLCHAIN)gcc -c loader.S -o loader.elf -fpic -ffreestanding -nostdlib -nostartfiles -O0 -Wall -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -o loader.o
 	$(TOOLCHAIN)ld loader.o -o loader.elf -T loader.ld

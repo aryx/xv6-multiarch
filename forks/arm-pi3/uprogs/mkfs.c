@@ -16,7 +16,16 @@
 int nblocks = 985;
 int nlog = LOGSIZE;
 int ninodes = 200;
-int size = 1024;
+// claude: size was 1024 (nblocks(985) + usedblocks(29) + nlog(10), this
+// file's own main() asserts they sum exactly). fs.h's NDIRECT 12->60 bump
+// (see that file's own comment) grew dinode from 64 to 256 bytes, so IPB
+// fell from 8 to 2 and usedblocks' own "ninodes/IPB" term grew from 25 to
+// 100 blocks (+75) - bumped size by the same +75 to keep main()'s balance
+// assertion true. nblocks, the actual DATA block budget, is untouched.
+// There is no FSSIZE constant on the kernel side to keep in step: the
+// kernel reads this value back out of the superblock. Identical fix to the
+// sibling forks/arm-pi2/uprogs/mkfs.c.
+int size = 1099;
 
 int fsfd;
 struct superblock sb;

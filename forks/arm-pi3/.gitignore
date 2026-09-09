@@ -4,10 +4,23 @@
 # build/) and the additive QEMU-only ones this repo's own bring-up
 # added (kernel7-qemu.bin/kernel-qemu.map/build-qemu//armstub64.bin).
 # Root-anchored (leading "/") and by exact name, deliberately NOT a
-# broad "*.bin"/"*.img" glob - source/fs.img and source/font.bin/
-# font1.bin are pre-built binaries .incbin'd directly into the kernel
-# image and are meant to be checked in, and a recursive glob would have
-# caught them too.
+# broad "*.bin"/"*.img" glob - source/font.bin/font1.bin are genuine
+# checked-in binary assets (font bitmap data, not build output) and a
+# recursive glob would have caught those too.
+#
+# source/fs.img WAS checked in here too, until 2026-09-09: it is the
+# OUTPUT of uprogs/'s own build (mkfs plus every UPROGS binary), and the
+# Makefile now regenerates it on every build (see its
+# "source/fs.img: uprogs-fs-img" rule) rather than trusting a committed
+# blob to stay in step with uprogs/*.c. Same treatment as the siblings
+# forks/arm-pi1 and forks/arm-pi2. What the committed copy was hiding
+# here was worse than a stale build: uprogs/ did not compile at all
+# (CFLAGS asked for an FPU-less -march against a hard-float toolchain
+# default), and once it did, the current usertests binary no longer FIT
+# the filesystem - so the blob had been supplying an older, smaller
+# usertests than uprogs/*.c would produce, and every "ALL TESTS PASSED"
+# for this port was testing that stale binary. See include/fs.h's own
+# NDIRECT comment.
 /build/
 /build-qemu/
 /kernel7.bin
@@ -16,3 +29,4 @@
 /kernel.list
 /kernel.map
 /kernel-qemu.map
+/source/fs.img

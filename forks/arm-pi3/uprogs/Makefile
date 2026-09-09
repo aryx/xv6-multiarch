@@ -13,7 +13,16 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 #CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -march=armv7-a
+# claude: was "-march=armv7-a", which drops the implied FPU extension back
+# out while this toolchain's own -mfloat-abi default stays "hard" - gcc then
+# refuses outright ("selected architecture lacks an FPU"). uprogs/ had never
+# been built here, so it kept the broken form; the kernel side of this same
+# fork already builds with -mcpu=cortex-a7 -mfloat-abi=hard, and the sibling
+# forks/arm-pi2/uprogs/Makefile already carries the identical line. Same bug
+# class as forks/arm/makefile.inc's own -mfloat-abi comment.
+# -MP joins -MD so a vanished header is a rebuild, not a hard error;
+# -Wno-infinite-recursion is the GCC 12+ false positive on sh.c's runcmd().
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard
 
 all: mkfs initcode fs.img
 

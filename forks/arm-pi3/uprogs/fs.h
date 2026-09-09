@@ -19,7 +19,27 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
-#define NDIRECT 12
+// claude: kept in lockstep with ../include/fs.h - a SEPARATE, duplicate copy of this
+// file (uprogs/mkfs.c's own "#include "fs.h"" is unqualified, so it picks up
+// that local copy, not the kernel's) - update both together, since they
+// define the SAME on-disk layout and mkfs writing one format while the
+// kernel reads another corrupts every file.
+//
+// NDIRECT was 12 (this fork's original value) - too small for a
+// modern-toolchain build: MAXFILE*BSIZE, the largest file this filesystem
+// can hold, worked out to 71680 bytes and this fork's own compiled
+// usertests binary is 74512, so mkfs's iappend() aborted on
+// "assert(fbn < MAXFILE)" while packing it into fs.img. This only surfaced
+// now because uprogs/ had never been built here at all - source/fs.img was
+// a committed blob predating the current toolchain.
+//
+// NDIRECT cannot be just any larger value: mkfs.c's own
+// "assert((512 % sizeof(struct dinode)) == 0)" requires dinode's size
+// (12 fixed bytes + 4*(NDIRECT+1) for addrs[]) to divide BSIZE(512)
+// evenly. NDIRECT=60 gives a 256-byte dinode and MAXFILE*BSIZE=96256 -
+// comfortable margin, and the same value the sibling forks/arm-pi2 and
+// forks/amd64-jserv already landed on for this identical bug.
+#define NDIRECT 60
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 
