@@ -161,6 +161,73 @@ Suggested pilots: `mips` and `arm-pi1-bis`, which between them hit the
 `lib/`-ambiguity and the duplicate-header cases and are small enough to verify
 quickly.
 
+### What the mips pilot found (2026-09-10, DONE)
+
+`forks/mips` is through Phase 0 and green: three commits — `af3eb0f`
+(.gitignore prep), `f53c972` (83 files, **all R100** pure renames),
+`ff85fed` (Makefile fixup). `make test-mips` reports ALL TESTS PASSED with
+the same four skipped sub-tests as before (`sbrktest`, `validatetest`,
+`exitwait`, `forktest`), and `make test-all` is green across all thirteen.
+`git blame -C -C` on the moved files still shows Frans Kaashoek, Robert
+Morris and Russ Cox, plus `pad` on `ulib/umalloc.c` — nothing blames to the
+move.
+
+The two-commit shape held, but it needed a **third commit in front of it**,
+and two of the three gotchas below cost a failed build to discover. Check
+all three before moving the next fork:
+
+**1. A bare `.gitignore` word also matches a directory — and a build output
+can collide with a new directory name outright.** `forks/mips/.gitignore`
+had a bare `kernel`, which would have silently ignored the whole new
+`kernel/` directory; worse, the build wrote a *file* named `kernel` at the
+fork root, and a file and a directory of the same name cannot coexist at
+all. Anchor the patterns first, in their own commit, so the `git mv` commit
+stays a pure rename. `forks/riscv64/.gitignore` already has the right shape
+(`/kernel/kernel`, `/mkfs/mkfs`).
+
+Still to fix, found by grep: bare `kernel` **and** `mkfs` in `amd64` and
+`i386`; bare `mkfs` in `amd64-jserv`, `arm64`, `arm64-pi4`, `loongarch`.
+
+**2. A make target cannot share a name with an existing directory.** Once
+`kernel/` exists, a `kernel:` target is considered already built — the
+directory exists and has an mtime — so make never relinks. Rename it to
+`kernel/kernel` (where `riscv64` already puts it). Keep a `.PHONY` alias for
+any name the top-level Makefile or the fork's `test-xv6.py` asks for by
+hand, so the move stays contained inside the fork: mips needed
+`kernelmemfs: kernel/kernelmemfs`.
+
+Still to fix: `amd64` and `i386` both have a literal `kernel:` target.
+
+**3. `ld -b binary` derives its symbols from the file path, so an embedded
+blob's output path is load-bearing.** `initcode.S` may move into `kernel/`,
+but the generated `initcode` blob may **not**: `ld -b binary kernel/initcode`
+mangles non-alphanumerics to underscores and emits
+`_binary_kernel_initcode_start/_end/_size`, while `proc.c`'s `userinit()`
+reads `_binary_initcode_start`. The link fails with four undefined
+references. Relocating the blob would mean editing that C, which a layout
+move is not allowed to do — so move the source and leave the output path
+alone.
+
+This is the widest of the three. Five forks embed a blob this way (`i386`,
+`mips`, `amd64`, `amd64-jserv`, `arm64-pi4`), and **eleven** reference
+`_binary_*` symbols from C: `amd64`, `amd64-jserv`, `arm`, `arm64-pi4`,
+`arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`, `i386`, `mips` — mostly in
+`proc.c`, `memide.c` and `main.c`. Any of them that embeds `fs.img` the same
+way has the identical constraint on `fs.img`'s path.
+
+**Cheap and it worked:** keep `-I.` replaced by explicit `-Ikernel -Iuser`
+rather than rewriting includes. The sources keep their existing
+`#include "types.h"` / `"user.h"` spellings and stay byte-identical, which is
+what makes commit 2 a build-only change. Two `_%` pattern rules — `user/%.o`
+and `tests/%.o` — resolve unambiguously, since GNU make picks whichever
+rule's prerequisites can actually be made and a program's `.c` exists in
+exactly one directory.
+
+**Not addressed, and not Phase 0's business:** mips still scatters user-program
+build outputs (`_cat`, `cat.o`, `cat.asm`, `cat.sym`, …) across the fork root,
+because the `_%` rule writes `$*.o` there. All ignored and all removed by
+`clean`; a separate tidy if it's ever worth doing.
+
 **Decide the residue rule once, not per fork.** Some files fit none of the five
 buckets: `arm/device/` (`gic.c`, `timer.c`, `uart.c`), the Pi ports'
 `entry.s`/`exception.s`/`csud_glue.c`/`font.bin`, and the linker scripts
