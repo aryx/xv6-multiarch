@@ -184,10 +184,24 @@ $(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
 # own objects are individually timestamp-tracked via "-MD"), which is a
 # no-op print ("'fs.img' is up to date.") when nothing changed there,
 # rather than trying to duplicate that tracking here.
-.PHONY: source/fs.img
-source/fs.img:
+#
+# claude: the phony target is "uprogs-fs-img", NOT "source/fs.img"
+# itself. A phony target used as a prerequisite of a REAL file makes
+# that file's recipe run unconditionally (GNU make treats a phony
+# prerequisite as always newer), so with ".PHONY: source/fs.img" the
+# $(BUILD)entry.o dependency below re-assembled entry.S and re-linked
+# the whole kernel on EVERY build even when nothing had changed - the
+# unconditional "cp" bumped source/fs.img's mtime to match. Delegating
+# the up-to-date check to uprogs/ still works exactly as described
+# above (the recursive make still runs every time); the difference is
+# that source/fs.img's own timestamp now only moves when the image
+# CONTENT actually changed, so entry.o rebuilds only when it must.
+.PHONY: uprogs-fs-img
+uprogs-fs-img:
 	$(MAKE) -C uprogs TOOLPREFIX=$(TOOLCHAIN) fs.img
-	cp uprogs/fs.img source/fs.img
+
+source/fs.img: uprogs-fs-img
+	cmp -s uprogs/fs.img $@ || cp uprogs/fs.img $@
 
 # entry.S is the only source file that actually embeds fs.img (via its
 # own ".incbin \"fs.img\"", source/entry.S) - only ITS object needs the
@@ -225,11 +239,15 @@ qemu: kernel7-qemu.bin
 	$(QEMU) -M raspi2b -nographic -kernel kernel7-qemu.bin
 
 # Build ASM files
-$(BUILD)%.o: $(SOURCE)%.S $(BUILD)
+# claude: order-only "|" on $(BUILD) - see forks/arm-pi1/Makefile's own
+# copy of this comment: as a normal prerequisite the build directory's
+# mtime, bumped by writing the first .o into it, makes every later make
+# rebuild the entire kernel. forks/arm-pi3/Makefile already had it right.
+$(BUILD)%.o: $(SOURCE)%.S | $(BUILD)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) -I source $< -o $@
 
 # Build C files
-$(BUILD)%.o: $(SOURCE)%.c $(BUILD)
+$(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) $<  -o $@
 
 loader: loader.S kernel7.bin
@@ -238,6 +256,7 @@ loader: loader.S kernel7.bin
 	#$(TOOLCHAIN)objdump -D loader.elf > loader.list
 	$(TOOLCHAIN)objcopy loader.elf -O binary kernel7.img
 	-rm loader.elf  loader.o
+
 
 $(BUILD):
 	mkdir $@

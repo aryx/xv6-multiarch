@@ -144,10 +144,18 @@ $(BUILD)output.elf : $(OBJECTS) $(C_OBJS) $(LINKER) $(BUILD)libcsud.a
 	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L$(BUILD) $(patsubst %,-l %,$(LIBRARIES)) -Map $(MAP) -o $(BUILD)output.elf -T $(LINKER)
 
 # Rule to make the object files.
-$(BUILD)%.o: $(SOURCE)%.s $(BUILD)
+# claude: $(BUILD) is an ORDER-ONLY prerequisite ("|"), not a normal
+# one - compiling into build/ updates that directory's own mtime, so as
+# a normal prerequisite it is newer than every .o the moment the first
+# one is written, and EVERY later make rebuilds the whole kernel from
+# scratch (visible as forks/arm-pi1 recompiling on a second, unchanged
+# "make build-all"). Order-only means "create the directory first if
+# missing" without its timestamp ever forcing a rebuild - which is what
+# the sibling forks/arm-pi3/Makefile already does.
+$(BUILD)%.o: $(SOURCE)%.s | $(BUILD)
 	$(ARMGNU)-as -I $(SOURCE) $< -o $@
 
-$(BUILD)%.o: $(SOURCE)%.c $(BUILD)
+$(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 	$(CC) -c $(CFLAGS) $<  -o $@
 
 # claude: QEMU-only targets, added alongside the existing real-hardware
@@ -201,6 +209,7 @@ qemu-graphics: kernel-qemu.img
 	@echo "Ctrl-A X (from the monitor side) to terminate"
 	@echo "Click the QEMU window and type there for a real USB-keyboard test - the terminal keeps working as the serial console too"
 	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio -device usb-kbd $(QMP_OPTS)
+
 
 $(BUILD):
 	mkdir $@
