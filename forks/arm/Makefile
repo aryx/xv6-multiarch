@@ -89,9 +89,26 @@ build/initcode: $(addprefix build/,$(INITCODE_OBJ))
 	$(call OBJCOPY_INIT)
 	$(OBJDUMP) -S $< > initcode.asm
 
-build/fs.img:
-	make -C tools
-	make -C usr
+# claude: "build/fs.img" had NO prerequisites, so once the file existed make
+# considered it final forever - editing anything in usr/ (or tools/) rebuilt
+# nothing, and the kernel kept embedding the previously built image. That is
+# not a theoretical hazard: it silently invalidated a debugging run during
+# this port's own kill()-fix investigation, where an instrumented usertests.c
+# produced a kernel still containing the OLD binary and therefore no output.
+#
+# The phony target is "usr-fs-img", not "build/fs.img" itself: a phony
+# prerequisite of a real file forces that file's recipe to run every time,
+# which is what we want for the recursive make (usr/ and tools/ do their own
+# up-to-date checking), while build/fs.img's own timestamp still only moves
+# when the sub-make actually rewrites it - so kernel.elf is re-linked when the
+# image really changed, and not otherwise.
+.PHONY: usr-fs-img
+usr-fs-img:
+	$(MAKE) -C tools
+	$(MAKE) -C usr
+
+build/fs.img: usr-fs-img
+	@:
 
 
 # claude: read back the per-object header dependencies gcc writes next to
