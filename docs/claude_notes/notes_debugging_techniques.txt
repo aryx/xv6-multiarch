@@ -868,3 +868,71 @@ both generalisable:
     the live table is the one built in early boot at a fixed physical
     address. Editing the wrong one would have produced a fix that
     changed nothing, with no error to explain why.
+
+32. grep can silently return nothing on a file with one non-UTF-8 byte - check the file's actual encoding before trusting "no matches"
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+While chasing the arm-pi1 USB root-hub bug (item 33 below), `grep -n
+"ProcessRootHub"` against csud/source/hcd/dwc/roothub.c returned
+NOTHING, even though `nm` on the compiled object proved the function
+was defined right there in that file. The file contained a single
+non-UTF-8 byte (an "®" in a comment, left over from the original
+Windows-authored source - `file` reported "ISO-8859 text" against
+every OTHER vendored file's plain "ASCII text"/"UTF-8 text"). In a
+UTF-8 locale, GNU grep's own "binary file matches" heuristic can
+silently treat a file with an invalid UTF-8 sequence as binary and
+stop reporting ordinary line matches at all, with NO error or warning
+printed - the search just quietly comes back empty, indistinguishable
+from "genuinely not present". `grep -a` (force text mode) or `file
+<path>` (to notice the encoding is anomalous in the first place) are
+the fix. General lesson: a `grep`/`ripgrep` "no matches" result on a
+file you have independent reason to believe contains the string
+(a linker/nm symbol table, a compiler error citing a line number) is
+itself a clue, not a dead end - check the file's actual byte encoding
+before concluding the string truly isn't there.
+
+33. When a "no matching log line" investigation goes silent, trace the SPECIFIC early-return path, not just "does the function get called"
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi1's USB keyboard bring-up hit a long silent stretch: a
+polling function ran every tick (confirmed directly - a debug counter
+printed on schedule), yet produced zero corresponding log output from
+deep inside the call chain it was supposed to drive. The instinct is
+to ask "is the function even being called?" - but the more useful
+question, once that is confirmed via a direct one-off instrumentation
+call (see below), is "which SPECIFIC return path is it taking, silently?"
+Reading the actual code found the answer: multiple guard clauses in
+this call chain return early with NO log call on certain error codes
+(`if (result != ErrorDisconnected) LOGF(...)`, `if ((result =
+UsbControlMessage(...)) != OK) return result;` with no message at
+all) - by design, not by omission, because a caller further up the
+stack is expected to log the FINAL outcome. Staring at "why is nothing
+printed" for a chain with several such gates is unproductive; instead,
+temporarily instrument the SPECIFIC intermediate values a silent
+function is branching on (here: the raw hardware Connected/Changed
+status bits, added as a one-line LOGF inside the otherwise-silent
+function itself) rather than continuing to add prints only at entry/exit
+points further up the call stack, which just re-confirms "it's being
+called" without ever revealing WHY it does nothing.
+
+34. Reading data returned by another agent (firmware, an emulated register, a bus transaction) needs "is this genuinely the value I think it is" verified directly, not inferred
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Two distinct bugs in the same arm-pi1 USB investigation had the exact
+same shape: code compared a live value against a sentinel/expected
+value, the comparison silently failed, and the actual live value was
+never printed anywhere to check. (a) `RootHubDeviceNumber` (expected to
+equal the root hub's own USB address) was simply never assigned -
+grepping for every WRITE to the variable (not every read/use) found
+the gap immediately, a five-second check that would have taken far
+longer to find by tracing call chains forward. (b) A hardware port's
+"connection changed" bit was assumed to be set once, on principle,
+after a controller reset - reading the ACTUAL bit values
+(Connected=1, Changed=0) immediately falsified that assumption rather
+than yet another round of re-reading the driver's own source trying to
+reason out what "should" happen. General lesson, generalizing item 30
+from a QEMU-specific case to comparisons in general: when a bug looks
+like "condition X should be true and evidently isn't", print the raw
+value on both sides of the comparison before hypothesizing further -
+it is usually cheaper than the next three hypotheses combined, and
+often reveals the bug is somewhere else entirely (as in (a), where the
+"missing edge" theory chased for a while turned out to be a red
+herring once the real gap - a variable that starts at 0 and is
+compared against, but never assigned - was found by grepping writes).
