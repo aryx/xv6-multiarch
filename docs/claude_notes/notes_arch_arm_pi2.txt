@@ -598,3 +598,80 @@ Fully wired up: build-arm-pi2/run-arm-pi2/test-arm-pi2/
 quick-test-arm-pi2/clean-arm-pi2/kill-arm-pi2, all folded into their
 respective "-all" umbrella targets - the same shape every other
 Phase-4 port has.
+
+
+Bug 12 (real, fixed 2026-09-09): mem() was never hanging - umalloc's morecore() stranded a fragment per chunk
+--------------------------------------------------------------------------------------------------------------
+Resolves "Bug/gap 10" above, which skipped usertests' mem() as "a real,
+cross-port allocuvm()/kalloc() class of bug under sustained memory
+pressure". That diagnosis was wrong on every count: nothing in the
+kernel was at fault, there was no memory-pressure bug, and it was not
+even a hang. mem() terminates - it is quadratic.
+
+Evidence first, because the previous note was a guess:
+ - gdb on the "hung" machine showed the process in USER space at
+   0x3d2c, inside malloc()'s free-list walk (not in the kernel at all),
+   with r4 = 1252 (units for malloc(10001)) and r2 = 340 - i.e. stepping
+   over a long chain of 340-unit blocks, every one too small.
+ - Sampling the PC repeatedly showed it occasionally at 0xffff0008, the
+   ARM vector - so the timer was preempting it normally. Not a deadlock,
+   not a lock, just work.
+ - Left running, the allocation loop COMPLETED at 322s ("allocuvm out of
+   memory" from the kernel, which is the loop's intended exit), and the
+   free loop was still going at 600s.
+
+Cause, in uprogs/umalloc.c's morecore(): it asks sbrk for
+max(nunits, 4096) units. malloc(10001) is 1252 units, and 1252 does not
+divide 4096 - three blocks fit (3*1252 = 3756) and 340 units are left
+over. That remainder is BY CONSTRUCTION smaller than the request, so a
+program allocating one size repeatedly can never reuse it; and it cannot
+coalesce, because the next sbrk chunk is separated from it by the three
+blocks just handed out. So the free list gained one dead fragment per
+32KB of heap, and malloc() rescanned that growing list before every
+morecore(). Quadratic in heap size.
+
+Which is precisely why this looked port-specific and was not. The
+variable is RAM, not the architecture: forks/arm fixes PHYSTOP at 128MB
+and mem() passes there, while this port sizes memory dynamically from
+the firmware mailbox (getpmsize(), the right thing to do) and gets
+~960MB under QEMU's raspi2b - ~30000 stranded fragments instead of
+~4000, i.e. ~56x the work. uprogs/umalloc.c here is byte-identical to
+forks/arm's usr/umalloc.c apart from indentation, which is what ruled
+out an allocator difference between the two in the first place.
+
+Fix: round morecore()'s chunk up to a whole multiple of the caller's
+request, so no tail is stranded. Four lines, no test awareness, no
+special cases:
+
+    uint nunits = nu;            // before the 4096 clamp
+    if(nu < 4096) nu = 4096;
+    if(nu % nunits)
+      nu += nunits - (nu % nunits);
+
+It is a no-op wherever it does not help: any nunits that divides 4096
+(every power-of-two size, i.e. most small allocations) leaves nu
+unchanged, and a request larger than 4096 already has nu == nunits. The
+only cost is that an affected chunk grows by less than one block's
+worth (1252-unit requests now get 5008 units, 39KB instead of 32KB).
+
+Result: mem() goes from "not finished in 600s" to ~4 seconds, and
+"make test-arm-pi2" completes in 30s wall clock including a clean
+rebuild. The identical fix applied to forks/mips (different ISA, 256MB
+instead of 960MB) fixes its own mem() skip too - see notes_arch_mips.txt
+Bug 8. Two independent ports, one four-line change, which is the reason
+to believe this is a general allocator fix rather than something tuned
+to this test.
+
+What it does NOT do: make the allocator non-fragmenting in general.
+Mixed-size workloads still fragment, and that is inherent. It removes
+one specific pathology - the repeated same-size allocation that strands
+an unusable tail every chunk - which is the case that turns O(n) into
+O(n^2). The deeper fix would be to stop malloc() rescanning the whole
+free list before each morecore(); that is a redesign of a teaching
+allocator shared by all 14 ports and was deliberately not attempted.
+
+Latent elsewhere: every other fork here carries the same unmodified
+morecore(). They pass mem() only because they have less RAM, so the fix
+was applied only where a real failure was observed and verified. Worth
+doing once, for all ports, when the factorization phase unifies
+umalloc.c.

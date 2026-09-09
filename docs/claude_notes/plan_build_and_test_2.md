@@ -30,14 +30,16 @@ hidden — but it is the one place where the matrix in `README.md` is
 
 | port | skipped | where it's written up |
 |---|---|---|
-| `forks/mips` | ~~`preempt`~~ (fixed 2026-09-09), `sbrktest`, `validatetest`, `mem`, `exitwait`, `forktest` | `notes_arch_mips.txt`, "Gap, resolved pragmatically" + Bug 7 |
+| `forks/mips` | ~~`preempt`~~, ~~`mem`~~ (both fixed 2026-09-09), `sbrktest`, `validatetest`, `exitwait`, `forktest` | `notes_arch_mips.txt` Bug 7 / Bug 8 |
 | `forks/arm` | ~~`preempt`~~ (fixed 2026-09-09), `sbrktest` | `notes_arch_arm.txt`, "Gap 3" + Bug 14/15 |
-| `forks/arm-pi2` | `mem` | `notes_arch_arm_pi2.txt`, "Bug/gap 10" |
+| `forks/arm-pi2` | ~~`mem`~~ (fixed 2026-09-09) — **none left** | `notes_arch_arm_pi2.txt` Bug 12 |
 
-**Both `preempt()` skips are now gone**, and neither was the "timing
-under emulation" they had been written off as: `forks/arm` had no timer
-interrupt at all, `forks/mips` had the interrupt but an always-false
-yield condition. Seven skips remain, none of them `preempt`.
+**`preempt()` and `mem()` are both gone from every port.** None of the
+three was what it had been written off as. `forks/arm` had no timer
+interrupt at all; `forks/mips` had the interrupt but an always-false
+yield condition; `mem()` was not a hang and not a kernel bug at all, but
+quadratic user-space allocator fragmentation. Five skips remain, all in
+`mips` except `arm`'s `sbrktest`, and `forks/arm-pi2` is now clean.
 
 The skips are **not** independent — they cluster into two families, which
 is the useful part and the reason to attack them as one task rather than
@@ -103,13 +105,30 @@ nine:
       genuinely separate bugs, not symptoms of the missing preemption.
       `mem()`, `validatetest()` and `sbrktest()` unchanged. Five of the
       original six `mips` skips remain.
-- **`mem()` — heap-exhaustion `malloc`/`free` loop hangs for real.**
-  Skipped in `mips` and `arm-pi2`, confirmed via gdb in both (hung, not
-  merely slow), found independently in each. Two ports failing the same
-  test the same way is a strong hint of one shared bug in the inherited
-  `umalloc.c`/`sbrk` path rather than two board-specific ones — worth
-  diffing those two files against a port where `mem()` passes before
-  debugging either.
+- **`mem()`: DONE 2026-09-09.** The hint above was right that it was one
+  shared bug in the inherited `umalloc.c`, and wrong that it "hangs for
+  real": it terminates, quadratically. `morecore()` asks `sbrk` for
+  `max(nunits, 4096)` units, and `malloc(10001)` (1252 units) does not
+  divide 4096 — three blocks fit and **340 units are stranded per
+  chunk**, too small to reuse and impossible to coalesce because the next
+  `sbrk` chunk is separated from the remainder by the blocks just handed
+  out. The free list gained one dead fragment per chunk and `malloc()`
+  rescanned it before every `morecore()`. The variable between ports is
+  RAM, not the architecture: `forks/arm` passes unmodified at 128MB,
+  `arm-pi2` sizes memory from the firmware mailbox and gets ~960MB.
+  gdb settled it — the process was in USER space inside `malloc`'s
+  free-list walk (`r4=1252`, `r2=340`), never in the kernel, so the
+  "allocuvm/kalloc under memory pressure" theory was wrong from the
+  start. Fixed by rounding the chunk up to a whole multiple of the
+  request; a no-op for any size dividing 4096 (every power of two) and
+  for requests above 4096. `mem()` went from not finishing in 600s to
+  ~4s; `make test-arm-pi2` is 30s wall clock end to end. Applied to both
+  `arm-pi2` and `mips` and verified on each. Written up as Bug 12
+  (`notes_arch_arm_pi2.txt`) and Bug 8 (`notes_arch_mips.txt`).
+  - *Latent elsewhere:* every other fork carries the same unmodified
+    `morecore()` and passes `mem()` only by having less RAM. Fixed only
+    where a real failure was observed; worth doing once for all ports
+    when factorization unifies `umalloc.c`.
 
 `sbrktest`, `validatetest`, `exitwait` and `forktest` (all `mips`, plus
 `sbrktest` in `arm`) are root-caused only as far as *where* they hang,

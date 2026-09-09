@@ -1657,22 +1657,20 @@ main(int argc, char *argv[])
   // every general register were byte-for-byte identical every time,
   // stuck inside malloc()'s own free-list traversal loop
   // ("ldr r2,[r7]" reading p->s.ptr) while forking a child that
-  // malloc(10001)s in a loop until malloc() returns 0 - this fork's own
-  // getpmsize() reports ~960MB of RAM (QEMU raspi2b's own default), so
-  // this loop needs to run to genuine heap exhaustion. Same failure
-  // reported independently for forks/mips's own mem() (see that fork's
-  // usr/usertests.c: "mem() and preempt() also hang - same family...
-  // real memory pressure... not chased individually") - a real,
-  // cross-port allocuvm()/kalloc() class of bug under sustained memory
-  // pressure, not something specific to this session's own fixes above
-  // (all of which are independently verified: this exact binary reaches
-  // "validate ok" - i.e. sbrktest()/validatetest() above, usertests.c's
-  // OWN two most invasive stress probes, both pass cleanly). Not
-  // chased further this session, matching the mips precedent's own
-  // documented scope - skipped so the rest of usertests can reach a
-  // real "ALL TESTS PASSED" signal to build a test-arm-pi2 target
-  // around; not a fix.
-  // mem();
+  // claude: re-enabled 2026-09-09 - fixed for real in uprogs/umalloc.c's
+  // morecore(), not skipped. The old comment here (kept in git history)
+  // blamed "a real, cross-port allocuvm()/kalloc() class of bug under
+  // sustained memory pressure"; that was wrong on both counts. mem()
+  // terminates - its allocation loop finished after 306s and the free
+  // loop was still running at 600s - and nothing in the kernel was at
+  // fault. morecore() asked sbrk for a 4096-unit chunk, which 1252-unit
+  // requests (malloc(10001)) do not divide, so 340 units were stranded
+  // per chunk, unusable and uncoalescable. With ~960MB of RAM here that
+  // is ~30000 dead fragments on the free list, rescanned by malloc()
+  // before every chunk. Quadratic in heap size, which is exactly why it
+  // looked fine on ports with little RAM (forks/arm, 128MB) and hopeless
+  // here. Now ~4 seconds. See morecore()'s own comment.
+  mem();
   pipe1();
   preempt();
   exitwait();

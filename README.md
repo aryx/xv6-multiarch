@@ -37,7 +37,7 @@ re-checks all of it in about a minute:
 | `forks/arm` | ARM32 | `-M raspi2b` | ✅ | ✅ * |
 | `forks/arm-pi1` | ARM32 | `-M raspi1ap` | ✅ | ✅ |
 | `forks/arm-pi1-bis` | ARM32 | `-M raspi1ap` | ✅ | ✅ |
-| `forks/arm-pi2` | ARM32 | `-M raspi2b` | ✅ | ✅ * |
+| `forks/arm-pi2` | ARM32 | `-M raspi2b` | ✅ | ✅ |
 | `forks/arm-pi3` | ARM32 | `-M raspi3b` | ✅ | ✅ |
 | `forks/mips` | MIPS | `-M malta` | ✅ | ✅ * |
 | `forks/loongarch` | LoongArch | `-M virt` | ✅ | ✅ |
@@ -55,18 +55,23 @@ this distro ships 8.2.2, so its **boot** is verified against a local source
 build of QEMU and is deliberately kept out of `test-all` and CI. Its
 **build** is in `build-all` like every other port.
 
-\* Three ports reach "ALL TESTS PASSED" with some `usertests` sub-tests
-commented out and individually diagnosed: `mips` skips five
-(`sbrktest`, `validatetest`, `mem`, `exitwait`, `forktest`), `arm` one
-(`sbrktest`), `arm-pi2` one (`mem`). Each skip is recorded in that
-port's own `usertests.c` and written up in its
-`docs/claude_notes/notes_arch_*.txt`. **No port skips `preempt()` any
-more** — both ports that did were fixed 2026-09-09, and neither was the
-"multi-process timing under emulation" they had been written off as:
+\* Two ports reach "ALL TESTS PASSED" with some `usertests` sub-tests
+commented out and individually diagnosed: `mips` skips four
+(`sbrktest`, `validatetest`, `exitwait`, `forktest`) and `arm` one
+(`sbrktest`). Each skip is recorded in that port's own `usertests.c` and
+written up in its `docs/claude_notes/notes_arch_*.txt`.
+
+**No port skips `preempt()` or `mem()` any more** — all three of those
+skips were fixed 2026-09-09, and none was what it had been recorded as.
 `arm` had no working timer interrupt at all (it drove the SP804, which
-QEMU stubs out), and `mips` had the interrupt but a yield condition
-comparing the MIPS CP0 Cause register against an x86 constant, so it
-could never fire.
+QEMU stubs out with `create_unimp()`). `mips` had the interrupt but a
+yield condition comparing the CP0 Cause register against an x86
+constant, so it could never fire. And `mem()`, skipped in two ports as
+"real memory pressure", was neither a hang nor a kernel bug: `umalloc`'s
+`morecore()` stranded an unusable fragment on the free list per chunk,
+making the whole thing quadratic in RAM — which is why ports with small
+fixed `PHYSTOP` passed it and ports that size memory from real firmware
+did not.
 
 Getting there took dozens of separately diagnosed bugs — modern-GCC
 breakage, missing `.bss` zeroing, SMP boot races, a Top-Byte-Ignore setting

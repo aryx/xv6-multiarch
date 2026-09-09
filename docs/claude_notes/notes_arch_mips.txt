@@ -616,3 +616,40 @@ this fix and each still hangs on its own, so they are genuinely separate
 bugs and not symptoms of the missing preemption. `mem()`,
 `validatetest()` and `sbrktest()` are unchanged. Five of the original
 six skips remain.
+
+
+Bug 8 (real, fixed 2026-09-09): mem() - the same umalloc morecore() fragmentation as arm-pi2
+----------------------------------------------------------------------------------------------
+Resolves a second of the six skipped usertests sub-tests. mem() is now
+re-enabled and make test-mips passes with it.
+
+Same cause and same four-line fix as forks/arm-pi2's Bug 12 - see that
+file for the full diagnosis, which was done there first (with gdb
+showing the process spinning in USER-space malloc, not the kernel). In
+short: lib/umalloc.c's morecore() asks sbrk for max(nunits, 4096) units,
+and 1252-unit requests (malloc(10001), which is all mem() does) do not
+divide 4096. Three fit; 340 units are stranded per chunk, too small to
+reuse and impossible to coalesce because the next sbrk chunk is
+separated from the remainder by the blocks just handed out. The free
+list grew one dead fragment per chunk and malloc() rescanned it before
+every morecore() - quadratic in heap size.
+
+Worth recording that the note above ("mem() and preempt() also hang -
+same family - real memory pressure / multi-process timing under real
+QEMU emulation, not chased individually") grouped two genuinely
+unrelated bugs. They were not the same family at all:
+ - preempt() was a dead yield condition in trap.c (Bug 7),
+ - mem() is user-space allocator fragmentation and never involved the
+   kernel.
+Both were written off with the same sentence, which is a good argument
+for not grouping skips by symptom.
+
+This port has 256MB (PHYSTOP 0x10000000) against arm-pi2's ~960MB, only
+4x the heap of forks/arm which passes mem() unmodified - which is why
+the scaling argument alone did not obviously explain this one, and why
+it was worth confirming the fix here rather than assuming. It does fix
+it: ALL TESTS PASSED with mem() enabled.
+
+The fix is in lib/umalloc.c (this port keeps its user library there, not
+in usr/); see morecore()'s own comment for the reasoning and for why it
+is a no-op for power-of-two allocation sizes.

@@ -1769,7 +1769,14 @@ main(int argc, char *argv[])
   // under real QEMU emulation, not chased individually - see
   // notes_arch_mips.txt). Skipped pragmatically to reach a real
   // ALL TESTS PASSED signal for CI; not fixes.
-  // mem();
+  // claude: re-enabled 2026-09-09 - the cause was found and fixed in
+  // lib/umalloc.c's morecore(), not worked around. mem() was never
+  // hanging and this was never "memory pressure": morecore() asked for a
+  // 4096-unit chunk that 1252-unit requests do not divide, stranding a
+  // permanently unusable 340-unit fragment per chunk, so the free list
+  // grew without bound and malloc() rescanned it before every chunk -
+  // quadratic in heap size. See morecore()'s own comment.
+  mem();
   pipe1();
   // claude: re-enabled 2026-09-09 - root-caused and fixed in the kernel,
   // not worked around. This kernel never preempted anything: trap.c's
