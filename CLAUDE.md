@@ -41,13 +41,19 @@ Two sequential efforts, in order:
    and a working USB keyboard (`-device usb-kbd`, typed keystrokes
    execute real shell commands, verified end to end) - ten real bugs
    found and fixed across four sessions, see `notes_arch_arm_pi1.txt`.
-   `arm-pi1-bis` and `arm-pi2` - the same real-hardware board family,
-   both still stuck before any console output at all - are the most
-   likely next candidates for the same treatment: `arm-pi1-bis`'s own
-   notes already show the identical `bcm2835-fb` re-entrant-IO QEMU
-   warning that turned out, for `arm-pi1`, to be caused by this
-   kernel's own missing `.bss` zeroing - a strong, transferable lead,
-   not yet investigated for either sibling.
+   `arm-pi1-bis` - same real-hardware board family as `arm-pi1` - was
+   taken to the same fully-working state (interactive shell, graphics,
+   USB keyboard) via the identical fix pattern, see
+   `notes_arch_arm_pi1_bis.txt`. `arm-pi2` (a different, more mature
+   board-family member - real ARMv7/Cortex-A7, `hw=rpi2`) is real
+   progress but NOT there yet: four distinct real bugs found and fixed
+   (an ARM/Thumb interworking gap in its own hand-written `entry.S`, a
+   missing VFP/NEON coprocessor enable, the same missing-`.bss`-zeroing
+   bug as its siblings, and the same QEMU-uses-PL011-not-mini-UART
+   finding as `arm-pi1`/`arm-pi1-bis`) - it now boots and prints real
+   console output, but panics soon after on a `pushcli`/`popcli`
+   imbalance still being tracked down; see `notes_arch_arm_pi2.txt`'s
+   own "Session 2" for the full diagnosis and the open lead.
 2. **`docs/claude_notes/factorization-plan.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).

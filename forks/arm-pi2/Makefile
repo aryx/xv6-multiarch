@@ -25,7 +25,14 @@ ifeq ($(hw), fvp)
 	MMIO_VA   = 0xD0000000
 	MMIO_SIZE = 0x04000000
 	PERIPHBASE= 0xDF000000
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
+	# claude: -marm added - this toolchain's default is Thumb-2, but
+	# source/entry.S (hand-written assembly, all three hw= targets
+	# share it) uses plain "bl"/"b" to call into C code with no
+	# ARM<->Thumb interworking, so the C side must stay ARM too. See
+	# the rpi2 block's own longer comment below for the full story
+	# (found via QEMU/gdb; this fvp block's own bug is untested but
+	# shares the identical root cause).
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -ggdb -Wall -marm -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
 	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
@@ -39,7 +46,8 @@ else ifeq ($(hw), rpi1)
 	MMIO_SIZE = 0x01000000
 	PERIPHBASE= 0xDF000000
 	#CFLAGS   = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
+	# claude: -marm added, same reason as the fvp block above.
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -marm -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -51,7 +59,30 @@ else ifeq ($(hw), rpi2)
 	MMIO_VA   = 0xD0000000
 	MMIO_SIZE = 0x01000000
 	PERIPHBASE= 0xDF000000
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I include 
+	# claude: -marm added - this arm-linux-gnueabihf- toolchain
+	# defaults to Thumb-2 (confirmed via "readelf -s build/kernel-qemu.elf":
+	# every C function symbol - cmain, uartinit, mmuinit0, etc - had its
+	# low bit set, the ELF convention for a Thumb interworking target),
+	# but source/entry.S is hand-written pure ARM assembly whose
+	# "bl cmain" doesn't perform ARM<->Thumb interworking (unlike a
+	# "blx", "bl" never changes CPSR.T). The CPU stayed in ARM state
+	# after jumping into cmain() and executed Thumb-2 instruction bytes
+	# as if they were 32-bit ARM instructions - mostly harmless-looking
+	# garbage for a surprisingly long stretch (mmuinit0()'s 256-
+	# iteration loop and several later functions still appeared to
+	# "complete" under a gdb breakpoint sweep, since a breakpoint only
+	# checks the PC value, not whether the CPU decoded its way there
+	# correctly) until a genuinely undecodable bit pattern was hit
+	# inside uartinit(), producing a repeating "Undefined Instruction"
+	# exception loop with zero console output - see
+	# notes_arch_arm_pi2.txt's own "Bug 2" for the full gdb-based
+	# diagnosis. This is a real ISA-correctness bug, not a QEMU quirk -
+	# real hardware would hit the identical fault - so -marm (make the
+	# whole C codebase ARM, matching entry.S, rather than patching every
+	# asm-to-C call site with "blx") is a straightforward, safe fix for
+	# both targets, matching how forks/arm-pi1's own toolchain already
+	# defaults to (or is pinned to) ARM mode.
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -marm -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I include
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2
 else

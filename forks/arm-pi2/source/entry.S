@@ -173,6 +173,34 @@ pagetable_invalidate:
 	// All processors will start from here after waiting:
 mp_continue:
 	ldr sp, =(KERNBASE+0x3000)
+
+	// claude: enable VFP/NEON coprocessor access (CPACR cp10/cp11)
+	// and the VFP unit itself (FPEXC.EN) before ever reaching C code.
+	// Found via gdb/objdump: gpuinit()'s own struct-field
+	// initialization (fbinfo.width=...; fbinfo.fbp=0; ...) got
+	// auto-vectorized by GCC into "vld1.64 {d16-d17}, [sp]" /
+	// "vstr d16/d17, [r4, ...]" (see notes_arch_arm_pi2.txt's own
+	// "Bug 3") - -mcpu=cortex-a7 makes NEON/VFPv4 instructions
+	// available to the compiler for ordinary bulk memory copies like
+	// this one, entirely independent of -mfloat-abi=hard/soft (that
+	// flag only picks the calling convention for float arguments).
+	// With no coprocessor access ever granted, the very first such
+	// instruction anywhere in the kernel takes an Undefined
+	// Instruction exception - and since this happens before tvinit()
+	// has populated the real exception vectors, it cascades into the
+	// unrecoverable fault loop this file's own notes describe. A real
+	// ISA-bring-up bug real hardware needs identically, not a QEMU
+	// quirk - see arm-pi1's own csud/source/hcd/dwc/designware20.c
+	// for why the "never remove real-hardware behavior" rule doesn't
+	// apply to a fix like this one (it isn't removing anything, only
+	// granting access the CPU already supports).
+	mrc	p15, 0, r0, c1, c0, 2	// Read CPACR
+	orr	r0, r0, #(0xf << 20)	// Full access to cp10/cp11 (VFP/NEON)
+	mcr	p15, 0, r0, c1, c0, 2	// Write CPACR
+	isb
+	mov	r0, #0x40000000			// FPEXC.EN
+	vmsr	fpexc, r0
+
 	// Enable I/D$, MMU, and flow prediction.
 	dsb
 	ldr r1,=_pagingstart

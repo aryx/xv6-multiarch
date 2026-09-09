@@ -41,6 +41,38 @@
 #define AUX_MU_STAT_REG 	(MMIO_VA+0x215064)
 #define AUX_MU_BAUD_REG 	(MMIO_VA+0x215068)
 
+// claude: PL011 (UART0), not the mini-UART/AUX above - added because
+// QEMU's raspi2b "-nographic" console is backed by PL011, not the
+// mini-UART (same finding as forks/arm-pi1's own uart.c - see
+// notes_arch_arm_pi1.txt bug 5/6 and notes_arch_arm_pi2.txt's own "Bug
+// 4"). Real hardware's own mini-UART path below is untouched - PL011
+// output is added in front of it, not instead of it, so both still run
+// on real hardware; PL011 is a real, always-present BCM283x peripheral
+// there too, so writing to it is harmless even where nothing reads it.
+#define UART0_DR		(MMIO_VA+0x201000)
+#define UART0_FR		(MMIO_VA+0x201018)
+#define UART0_IBRD		(MMIO_VA+0x201024)
+#define UART0_FBRD		(MMIO_VA+0x201028)
+#define UART0_LCRH		(MMIO_VA+0x20102C)
+#define UART0_CR		(MMIO_VA+0x201030)
+
+static void
+pl011putc(uint c)
+{
+	while (inw(UART0_FR) & (1 << 5)) ; // wait while TX FIFO full
+	outw(UART0_DR, c);
+}
+
+static void
+pl011init(void)
+{
+	outw(UART0_CR, 0);          // disable UART0
+	outw(UART0_IBRD, 26);       // 115200 baud @ 48MHz UART clock
+	outw(UART0_FBRD, 3);
+	outw(UART0_LCRH, (3 << 5)); // 8n1, FIFOs enabled
+	outw(UART0_CR, (1 << 0) | (1 << 8) | (1 << 9)); // UARTEN | TXE | RXE
+}
+
 extern unsigned int core_clock_freq, boardmodel, boardrevision;
 
 void
@@ -80,9 +112,12 @@ setgpiofunc(uint pin, uint func)
 }
 
 
-void 
+void
 uartputc(uint c)
 {
+	if(c=='\n') pl011putc(0x0d); // add CR before LF
+	pl011putc(c);
+
 	if(c=='\n') {
 		while(1) if(inw(AUX_MU_LSR_REG) & 0x20) break;
 		outw(AUX_MU_IO_REG, 0x0d); // add CR before LF
@@ -114,10 +149,12 @@ miniuartintr(void)
   consoleintr(uartgetc);
 }
 
-void 
+void
 uartinit(void)
 {
     unsigned int v;
+
+	pl011init();
 
 	outw(AUX_ENABLES, 1);
 	outw(AUX_MU_CNTL_REG, 0);

@@ -1,6 +1,27 @@
 notes_arch_arm_pi2.txt
 ======================
 
+STATUS UPDATE (2026-09-09, session 2): the "genuinely unresolved crash"
+this file originally ended on turned out to be FOUR separate, real,
+fully-diagnosed bugs, not one - all four found and fixed via gdb (QEMU's
+own gdbstub, "-s -S", one vCPU per gdb "thread") rather than trace-log
+guessing, since a "jump to an address with no corresponding symbol at
+all" is exactly the kind of thing trace logs can't explain but a live
+debugger can. The port now builds, boots, prints real console output
+("Hello World from xv6"), and runs deep into cmain() before hitting a
+NEW, cleanly-diagnosed panic (see "Bug/gap 7" below) - real, substantial
+progress, but still not a booting shell, so build-arm-pi2/run-arm-pi2
+stay build-only/interactive-only in the top-level Makefile for now (no
+test-arm-pi2/clean-arm-pi2/kill-arm-pi2 yet), same caveat the original
+2026-09-07 text below already stated. See "Bugs 3-6" and "Bug/gap 7"
+below for the session 2 findings; the original 2026-09-07 text
+(preserved below, now superseded) still accurately describes Bug 1/2's
+own history.
+
+--- Original 2026-09-07 text follows (superseded by session 2 above for
+--- the "one genuinely unresolved crash" characterization specifically -
+--- Bug 1 and the general fork background below are still accurate.
+
 Written: 2026-09-07, against commit 1865287 (the rpi1 bring-up commit),
 during the rpi2 bring-up itself. Phase 4 of
 docs/claude_notes/build-and-test-plan.md, tenth port attempted from that
@@ -162,3 +183,183 @@ notes_arch_arm_pi1.txt) - no test-rpi2/clean-rpi2/kill-rpi2 yet, and not
 folded into build-all/run-all/test-all, since there is no console
 output yet (the crash happens before any UART/framebuffer output would
 even be reached) to build a real pass/fail signal around.
+
+=== Session 2 (2026-09-09) ===
+
+Methodology: QEMU's own gdbstub ("-s -S", connect with gdb-multiarch,
+"target remote :1234") rather than trace-log reading. Each of QEMU's
+emulated cores shows up as its own gdb "thread" (CPU0 = thread 1), which
+is what confirmed CPUs 1-3 were innocent (cleanly parked in QEMU's own
+synthetic secondary-core spin stub, an address range with no matching
+kernel symbol - not a bug, just QEMU's raspi2b machine model's own
+boot-time behavior, easily mistaken for a kernel bug from a trace log
+alone). A repeatable technique going forward: set breakpoints at a
+sequence of function addresses along the expected call path (from
+"nm build/kernel-qemu.elf"), "continue" through each in order, and
+whichever breakpoint is the LAST one hit before the crash marks the
+function actually responsible - much faster than single-stepping, and
+avoids the false "it's stuck forever" reading a slow gdbstub singlestep
+session gives for a loop that's actually fine and just slow to observe
+this way (see Bug/gap 7's own note on this trap). Cross-check any
+"stuck" reading against a fast, non-gdb "-d in_asm,int" trace (dedups
+by translated block, so a real busy-loop shows as silence rather than
+megabytes of repeated lines) before concluding a real hang.
+
+Bug 3 (real, fixed): entry.S's "bl cmain" doesn't perform ARM<->Thumb interworking, but every C function is Thumb
+--------------------------------------------------------------------------------------------------------------------------
+"readelf -s build/kernel-qemu.elf" showed cmain/uartinit/mmuinit0/etc
+all at ODD addresses - the ELF convention for a Thumb interworking
+target - confirming this arm-linux-gnueabihf- toolchain defaults to
+Thumb-2 C code generation with no explicit "-mthumb"/"-marm" either way
+in this fork's own Makefile. source/entry.S is hand-written pure ARM
+assembly; its "_pagingstart: bl cmain" is a plain ARM-mode
+branch-with-link, which does NOT change CPSR.T (unlike "blx", which
+does) - so the CPU stayed in ARM state while fetching cmain()'s own
+Thumb-2 instruction bytes and decoded them AS 32-bit ARM instructions.
+This is mostly harmless-looking garbage for a surprisingly long
+stretch - a gdb breakpoint sweep showed mmuinit0()'s own 256-iteration
+loop and several later functions still appearing to "complete" (PC
+reaching their addresses), since a breakpoint only checks the PC VALUE,
+not whether the CPU decoded its way there via a semantically correct
+instruction stream - until a genuinely undecodable 32-bit pattern was
+hit inside uartinit(), producing the repeating "Taking exception 1
+[Undefined Instruction]" loop this file's own Bug/gap 2 (above) already
+found the symptom of, just not the cause.
+
+Fix: added "-marm" to all three hw= blocks' own CFLAGS (fvp, rpi1, and
+rpi2 - only rpi2 is QEMU-tested, but all three share the identical
+entry.S and the identical bug class) - makes the whole C codebase ARM,
+matching entry.S, rather than patching every asm-to-C call site with
+"blx" (the user's own explicit preference, given forks/arm-pi1's
+toolchain already defaults to/is pinned at ARM). A genuine ISA-
+correctness bug, not a QEMU quirk - real hardware would hit the
+identical fault - so no runtime/QEMU-only special-casing needed; see
+CLAUDE.md's own "Real hardware vs. QEMU" section for why that
+distinction matters here.
+
+Bug 4 (real, fixed): GCC auto-vectorized a struct init into NEON instructions, but VFP/NEON coprocessor access was never enabled
+----------------------------------------------------------------------------------------------------------------------------------------
+With Bug 3 fixed, the crash moved (same "Undefined Instruction"
+symptom, later in the boot sequence) to gpuinit()'s own first statement
+- "fbinforesp = initframebuf(...)". Disassembly of gpuinit()'s entry
+block (objdump -d) showed the REAL culprit wasn't the mailbox call at
+all: initframebuf()'s own bulk zero-initialization of the "fbinfo"
+struct (fbinfo.width=...; fbinfo.fbp=0; fbinfo.fbs=0; - 8 consecutive
+32-bit fields) got compiled by GCC into "vld1.64 {d16-d17}, [sp]" /
+"vstr d16/d17, [r4, ...]" - NEON/VFP 128-bit load-store instructions,
+GCC's own optimization for a fixed-size bulk memory copy given
+"-mcpu=cortex-a7" makes NEON available. This is entirely independent of
+"-mfloat-abi=hard/soft" (that flag only selects the calling convention
+for float ARGUMENTS - it does not stop the compiler from using
+vector/NEON instructions for ordinary memory operations). Nothing in
+this kernel's own boot sequence had EVER enabled CPACR (coprocessor
+access control, cp10/cp11) or FPEXC (the VFP unit's own enable bit), so
+the very first such instruction anywhere in the kernel faulted.
+
+Fix: added the standard ARM VFP/NEON bring-up sequence (CPACR full
+access to cp10/cp11, isb, FPEXC.EN) to entry.S's "mp_continue", right
+before the MMU is enabled and the code jumps into cmain() - a real,
+generic ISA bring-up step this kernel had simply never done, needed
+identically on real hardware (which also starts with VFP/NEON access
+disabled at reset) - not a QEMU quirk.
+
+Bug 5 (real, fixed): .bss was never zeroed - identical to forks/arm-pi1's own Bug 5 and forks/arm-pi1-bis's equivalent fix
+---------------------------------------------------------------------------------------------------------------------------------
+With Bugs 3-4 fixed, boot progressed further and produced the exact
+same "Blocked re-entrant IO on MemoryRegion: bcm2835-fb at addr: 0x0"
+QEMU warning already diagnosed twice before in this repo (see
+notes_arch_arm_pi1.txt's own Bug 5) - confirmed via grep that nothing in
+this fork (kernel.ld, entry.S, main.c) ever zeroed .bss, only declared
+the linker SECTION. Fixed the same way: a "bss_start" linker symbol
+(PROVIDE(bss_start = .); right before ".bss :" in kernel.ld) plus a
+bsszero() function (source/main.c) called as cmain()'s literal first
+statement, before mmuinit0(). Safe for real hardware - this only makes
+true what the C standard already promises for zero-initialized globals.
+
+Bug 6 (real, fixed): QEMU's raspi2b "-nographic" console is backed by PL011, not the mini-UART this fork's own uartinit() programs
+----------------------------------------------------------------------------------------------------------------------------------------
+With Bugs 3-5 fixed, the kernel actually ran deep into cmain() (traced
+via "-d in_asm,int" all the way into exec(), i.e. past the ENTIRE
+init sequence) - but zero characters ever appeared on the captured
+serial console, even given 15 real seconds. This fork's own
+source/uart_pl011.c (a PL011 driver, present in the tree but written for
+ARM's own FVP simulator's different register base - "fvp.h" addresses,
+not BCM283x's) was never called from anywhere outside its own file -
+dead code. Exactly the same finding as forks/arm-pi1's own Bug 6/
+notes_arch_arm_pi1_bis.txt's Session 2: QEMU's raspi machine models back
+"-nographic" with PL011 (UART0), not the mini-UART/AUX peripheral this
+port's own uartinit()/uartputc() were written against.
+
+Fix: added a small RPI2-specific PL011 register block (UART0_DR/FR/
+IBRD/FBRD/LCRH/CR at MMIO_VA+0x201000, the standard BCM283x PL011
+offset) plus pl011putc()/pl011init() to source/uart.c, following the
+exact pattern already used for forks/arm-pi1/forks/arm-pi1-bis:
+uartputc() calls pl011putc() FIRST, then falls through to the original,
+UNMODIFIED mini-UART code; uartinit() calls pl011init() before its own
+mini-UART setup. Real hardware keeps working identically - PL011 is a
+real, always-present BCM283x peripheral there too, this is a pure
+addition, nothing removed or reordered in the mini-UART path.
+
+Verified after Bug 6: "Hello World from xv6" (consoleinit()'s own first
+cprintf, main.c) now genuinely appears on the QEMU serial console - the
+first-ever visible console output from this port under QEMU.
+
+Bug/gap 7 (open, NOT fixed): a real kernel panic ("popcli") on the first cprintf() call that actually uses cons.lock
+---------------------------------------------------------------------------------------------------------------------------
+Immediately after "Hello World from xv6" prints, the boot enters a
+tight repeating "cpu0: panic: " loop (the message text itself never
+prints - see below for why). A gdb breakpoint at panic() itself
+(source/console.c:328) caught it cleanly: panic(s="popcli"), called from
+source/spinlock.c:101's "if(--curr_cpu->ncli < 0) panic("popcli");",
+itself called from release() (spinlock.c:58), from cprintf() itself
+(console.c:319 - the "if(locking) release(&cons.lock);" line), from
+cmain() at main.c:169 ("The core clock rate is set to %d\n", ...) - a
+single-level, non-recursive call chain, no earlier frames. This is
+notable because "locking" only becomes true once consoleinit() sets
+"cons.locking = 1" near its own end (console.c:529) - so this cprintf()
+call is very plausibly the FIRST time cons.lock's acquire()/release()
+(and therefore pushcli()/popcli()) pair is genuinely exercised - yet
+popcli() finds curr_cpu->ncli already <= 0 BEFORE its own decrement,
+despite THIS SAME cprintf() call's own acquire()/pushcli() call having
+had to succeed first (no earlier "acquire" panic was seen, and
+machinit() - which zeroes the whole cpus[] array - runs early in
+cmain(), well before this point). Something between this call's own
+pushcli() and popcli() is deflating curr_cpu->ncli by at least one extra
+count, OUTSIDE of the visible cprintf()->acquire()/release() pair -
+the character-printing loop between them calls gpuputc()/uartputc() per
+character, so a reasonable next-session hypothesis is to check whether
+either of those (or something they call) has its own, separate
+pushcli()/popcli() or acquire()/release() use that isn't correctly
+paired. NOT a recursive-panic explanation: the backtrace is a single,
+clean level - the "cpu0: panic: " repeating with no message text is
+just this cprintf() call itself (INSIDE panic(), also locking-gated
+through the exact same broken cons.lock) hitting the identical bug on
+its own first character, over and over, in panic()'s own infinite
+"for(;;);" - not real reentrant/recursive panic() invocations.
+
+Diagnostic trap worth recording for its own sake: a gdb breakpoint sweep
+across cmain()'s later calls (kinit2/userinit/pinit/tvinit/etc) initially
+looked "stuck" after gpuinit() - none of those breakpoints hit within a
+10-second gdb session. A parallel, non-gdb "-d in_asm,int" trace of the
+SAME binary showed real forward progress all the way into exec() within
+about 4 real seconds. The gdbstub round-trip overhead, not a real hang,
+was responsible for the false "stuck" reading - see this file's own
+"Methodology" note above.
+
+Verification so far (session 2)
+---------------------------------
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- clean
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf-
+    -> builds kernel7.bin (real hardware target) cleanly with every
+       session-2 fix applied (-marm, VFP/NEON enable, bsszero, PL011) -
+       NOT tested on real hardware this session (no physical access)
+  make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- QEMU=qemu-system-arm kernel7-qemu.bin
+  qemu-system-arm -M raspi2b -nographic -kernel kernel7-qemu.bin
+    -> prints "Hello World from xv6" (first-ever visible console output
+       for this port under QEMU), then hits the open Bug/gap 7 panic
+       loop documented above
+
+Still NOT folded into test-arm-pi2/clean-arm-pi2/kill-arm-pi2 or any
+"-all" umbrella target - not booting to a shell yet, so there is still
+no real pass/fail signal to build a test around. build-arm-pi2/
+run-arm-pi2 remain the only wired-up targets.

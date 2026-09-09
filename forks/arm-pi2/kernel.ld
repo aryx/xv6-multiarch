@@ -55,6 +55,7 @@ SECTIONS {
 		*.c.o(*)
 	}
 
+	PROVIDE(bss_start = .);
 	.bss : {
 		*(.bss)
 	}

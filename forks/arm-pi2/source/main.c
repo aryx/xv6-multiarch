@@ -16,6 +16,7 @@
 #include "mailbox.h"
 
 extern char end[]; // first address after kernel loaded from ELF file
+extern char bss_start[];
 extern pde_t *kpgdir;
 extern volatile uint *mailbuffer;
 extern unsigned int pm_size;
@@ -131,8 +132,28 @@ void enableirqminiuart(void);
 
 uint mb_data[10];
 
+// claude: nothing anywhere in this fork ever zeroed .bss (only
+// kernel.ld's own ".bss :" linker section existed, no code touched it
+// at boot) - real hardware likely gets away with it because DRAM often
+// powers up mostly-zeroed, but QEMU's raspi2b model does not, and
+// several kernel globals (this file's own "fbinfo" in console.c
+// included) silently depend on a zeroed initial value. Matches the
+// identical bug already found and fixed in forks/arm-pi1 and
+// forks/arm-pi1-bis - see notes_arch_arm_pi1.txt's own "Bug 5" for the
+// original diagnosis (same "Blocked re-entrant IO on MemoryRegion:
+// bcm2835-fb" QEMU warning as the symptom here too). Safe for real
+// hardware either way - zeroing .bss is what the C standard already
+// guarantees for globals with no initializer, this only makes it true.
+void bsszero(void)
+{
+  char *p;
+  for(p = bss_start; p < end; p++)
+    *p = 0;
+}
+
 int cmain()
 {
+  bsszero();
   mmuinit0();
   machinit();
 
