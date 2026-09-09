@@ -55,7 +55,7 @@ any of them (`forks/amd64/test-xv6.py` is a short one) for the pattern.
 Factored out 2026-09-09 after the "boot" CLI mode (see `make
 quick-test-<arch>` in the top-level Makefile) had to be patched into all
 ten files at once, by hand - not something this repo's own
-factorization-plan.md is blocked on: these are this repo's own test
+plan_factorization.md is blocked on: these are this repo's own test
 scripts, not upstream kernel/user code, so there's no git-blame history
 to preserve across the merge.
 

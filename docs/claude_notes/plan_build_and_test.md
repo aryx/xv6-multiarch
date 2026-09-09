@@ -1,7 +1,7 @@
 # Plan: building and testing all thirteen architectures
 
 **Status:** proposed, not started. This is a prerequisite for
-[factorization-plan.md](factorization-plan.md) — merging files you cannot
+[plan_factorization.md](plan_factorization.md) — merging files you cannot
 build is how the gitlab predecessor of this project died.
 
 ## Which machine?

@@ -38,7 +38,7 @@ fifteenth port, `forks/d1` (michaelengel/xv6-d1, RISC-V64, Allwinner D1), was
 imported, evaluated and then removed (commit `c233d3b`) once bring-up showed
 it was build-only on real hardware with no QEMU machine model and no
 kernel-logic difference from `forks/riscv64` worth keeping — see
-`docs/claude_notes/build-and-test-plan.md`.
+`docs/claude_notes/plan_build_and_test.md`.
 
 Several ports target the same instruction set independently: `amd64` and
 `amd64-jserv` are unrelated x86-64 efforts (`amd64` is MIT's own abandoned
@@ -334,14 +334,14 @@ Per-arch commit counts are in the "Commit counts by fork" table above.
 - **No build or boot verification at merge time.** Blobs were byte-identical
   to their sources, so nothing should have broken structurally — but the real
   answer is now tracked separately in
-  `docs/claude_notes/build-and-test-plan.md`.
+  `docs/claude_notes/plan_build_and_test.md`.
 
 ## Future work: factoring the architectures together
 
 The intended end state is Linux-style — common code shared, arch-specific code
 isolated — rather than near-duplicate trees per port. That work is planned in
 detail, and blocked on the build-and-boot effort above, in
-`docs/claude_notes/factorization-plan.md` — don't duplicate its rules here,
+`docs/claude_notes/plan_factorization.md` — don't duplicate its rules here,
 read it there. The short version of why it's safe to attempt at all: every
 port's full tree was imported with real history *before* any unification, so
 `git blame -C -C` can still attribute each line of a future shared file to

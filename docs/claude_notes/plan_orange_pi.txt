@@ -3,7 +3,7 @@ plan_orange_pi.txt
 
 Written: 2026-09-09, from a research-only conversation (no code touched
 yet). Status: PROPOSED, NOT STARTED - this is a plan, like
-build-and-test-plan.md, not a notes_arch_*.txt findings file. Write a
+plan_build_and_test.md, not a notes_arch_*.txt findings file. Write a
 notes_arch_riscv_opi_rv2.txt (or similar) once real bring-up work
 starts, the way every other port in this repo does.
 

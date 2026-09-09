@@ -2,7 +2,7 @@ notes_arch_amd64.txt
 =====================
 
 Written: 2026-09-06, against commit a2bc551 (the fully-working x86_64
-commit). Phase 4 of docs/claude_notes/build-and-test-plan.md, second port
+commit). Phase 4 of docs/claude_notes/plan_build_and_test.md, second port
 attempted from that phase's list. Ends at "builds clean, boots, passes
 the full usertests suite" on the FIRST real boot attempt, needing only
 one of the two GCC-false-positive fixes forks/i386/forks/x86_64 both

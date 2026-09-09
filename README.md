@@ -26,14 +26,14 @@ Two sequential goals:
    pinned reproducibly (toolchain, QEMU version, a real usertests run per
    arch — not a mock). Most ports are there; the rest are being brought up
    one at a time. See
-   [`docs/claude_notes/build-and-test-plan.md`](docs/claude_notes/build-and-test-plan.md)
+   [`docs/claude_notes/plan_build_and_test.md`](docs/claude_notes/plan_build_and_test.md)
    for exactly which and what's left.
 2. **Factor the near-duplicate trees into a Linux-style layout** —
    `user/`, `kernel/`, `include/` shared, `arch/<name>/` per port —
    once (1) is done. Blocked on (1): merging files you haven't verified
    still build is how this repo's abandoned predecessor
    (`gitlab.com/xv6-multiarch`) died. See
-   [`docs/claude_notes/factorization-plan.md`](docs/claude_notes/factorization-plan.md).
+   [`docs/claude_notes/plan_factorization.md`](docs/claude_notes/plan_factorization.md).
 
 ## Build and run
 

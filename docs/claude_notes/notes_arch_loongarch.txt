@@ -3,7 +3,7 @@ notes_arch_loongarch.txt
 
 Written: 2026-09-07, against commit 2f67570 (the mips bug-5 follow-up
 commit), during the loongarch bring-up itself. Phase 4 of
-docs/claude_notes/build-and-test-plan.md, sixth port attempted from that
+docs/claude_notes/plan_build_and_test.md, sixth port attempted from that
 phase's list. Status: FULLY WORKING on the very first real attempt - no
 kernel or user code changes needed at all. Every fix this session was in
 build plumbing: two real bugs in the port's own Makefile (a version-
@@ -189,7 +189,7 @@ Docker/CI wiring (added 2026-09-09)
 Added a `loongarch)` case to the Dockerfile's own apt-get switch, a
 matching `loongarch` entry to .github/workflows/docker.yml's own matrix,
 and folded build-loongarch/test-loongarch into the Dockerfile's ARCH=all
-target lists - the last step of build-and-test-plan.md's Phase 4 recipe
+target lists - the last step of plan_build_and_test.md's Phase 4 recipe
 for this port. Verified locally with the exact
 `docker build --build-arg ARCH=loongarch .` first, per
 notes_debugging_techniques.txt item 6, and that caught TWO real

@@ -4,7 +4,7 @@ notes_arch_arm_pi3.txt
 Written: 2026-09-08, during the arm-pi3 bring-up itself, in a session
 that also renamed forks/pi_mp -> forks/arm64-pi3 -> forks/arm-pi3 (see
 "What this is" below for why it landed on the second name). Not part of
-the original Phase 4 list in build-and-test-plan.md - added later,
+the original Phase 4 list in plan_build_and_test.md - added later,
 alongside forks/rpi4, purely for provenance/history reasons - so this
 is bonus bring-up work, not filling in a planned gap. Status: NOT fully
 working yet - boots all 4 cores under QEMU, all the way through

@@ -1,7 +1,7 @@
 # Build and boot each xv6-multiarch port via docker, one job per arch in
 # parallel. See also the Dockerfile at the root of the project (in
 # particular its own ARCH build-arg), and
-# docs/claude_notes/build-and-test-plan.md's own Phase 5 ("CI").
+# docs/claude_notes/plan_build_and_test.md's own Phase 5 ("CI").
 #
 # claude: modeled on ~/c--/.github/workflows/docker.yml and
 # ~/tiger/.github/workflows/docker.yml's own shape - no "submodules:
@@ -16,7 +16,7 @@
 # job serially paying for every arch's full build+boot one after another.
 # Add a new arch here (matrix.arch) at the same time it gets its own
 # ARCH case in the Dockerfile and build-<arch>/test-<arch> pair in the
-# top-level Makefile - see build-and-test-plan.md's own Phase 4 order for
+# top-level Makefile - see plan_build_and_test.md's own Phase 4 order for
 # the fewest-surprises sequence to add them in.
 
 name: docker

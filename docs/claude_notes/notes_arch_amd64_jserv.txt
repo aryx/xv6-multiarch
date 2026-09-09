@@ -6,7 +6,7 @@ which itself ended at "builds, boots partially, one mystery open" -
 this file was rewritten once the mystery was actually resolved in the
 same day's follow-up work; the git history is the record of that
 progression, this file only needs to state the final, correct picture).
-Phase 4 of docs/claude_notes/build-and-test-plan.md, first port attempted
+Phase 4 of docs/claude_notes/plan_build_and_test.md, first port attempted
 from that phase's list. Ends at "builds clean, boots, passes the full
 usertests suite, wired into ./configure/the top-level Makefile/CI" - four
 real bugs found and fixed along the way (a GCC false positive, a
@@ -48,7 +48,7 @@ Same `-Winfinite-recursion` false positive as i386, same fix
 forks/x86_64/user/sh.c is a direct descendant of forks/i386/user/sh.c
 (same recursive-descent `runcmd()`) and hits the exact same GCC 12+
 `-Winfinite-recursion` false positive documented in
-notes_arch_i386.txt - confirmed by build-and-test-plan.md's own guidance
+notes_arch_i386.txt - confirmed by plan_build_and_test.md's own guidance
 (check siblings, see notes_debugging_techniques.txt item 7). Fixed
 identically: `CFLAGS += -Wno-infinite-recursion` in
 forks/x86_64/Makefile, with a comment pointing back at forks/i386/

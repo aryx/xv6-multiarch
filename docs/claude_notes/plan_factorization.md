@@ -1,7 +1,7 @@
 # Plan: factoring the thirteen architectures together
 
 **Status:** proposed, not started.
-**Blocked on:** [build-and-test-plan.md](build-and-test-plan.md). Do not start
+**Blocked on:** [plan_build_and_test.md](plan_build_and_test.md). Do not start
 this without a working per-arch build and boot check. Merging files you cannot
 verify is precisely how `gitlab.com/xv6-multiarch` — the abandoned project
 this repo descends from — died. It got the architectures into one tree and

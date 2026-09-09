@@ -18,7 +18,7 @@ material here - read it there.
 
 Two sequential efforts, in order:
 
-1. **`docs/claude_notes/build-and-test-plan.md`** - get each of the
+1. **`docs/claude_notes/plan_build_and_test.md`** - get each of the
    14 `forks/<name>/` ports actually building and booting under
    QEMU on this machine, with the result pinned reproducibly. **Phases 1
    (riscv64), 2 (i386), 3 (Docker), and 5 (CI) are done, and Phase 4's
@@ -64,7 +64,7 @@ Two sequential efforts, in order:
    `quick-test`/`clean`/`kill-arm-pi2`, folded into every `-all`
    umbrella target - see `notes_arch_arm_pi2.txt`'s own "Session 2" for
    the full bug-by-bug diagnosis.
-2. **`docs/claude_notes/factorization-plan.md`** - once ports build and
+2. **`docs/claude_notes/plan_factorization.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).
    **Blocked on (1)** - do not start merging files across ports before
@@ -156,7 +156,7 @@ via `git log --follow`/`git blame -C` after each one):
 
 ## Adding a new arch (Phase 4)
 
-Repeat, in order, for the next arch in `build-and-test-plan.md`'s Phase 4
+Repeat, in order, for the next arch in `plan_build_and_test.md`'s Phase 4
 list (`x86_64`, `amd64`, `rv32`, `aarch64`, `loongarch`, `mips`, the four
 ARM Raspberry Pi ports, then `d1` build-only):
 
@@ -268,7 +268,7 @@ behave.
 
 - `README.md` - short pitch, current build/boot status, build commands
 - `docs/provenance.md` - the evidence behind each fork point
-- `docs/claude_notes/build-and-test-plan.md` - the build/boot/CI plan (this file's own "Current status" section tracks progress against it)
-- `docs/claude_notes/factorization-plan.md` - the later Linux-style-unification plan, blocked on the above
+- `docs/claude_notes/plan_build_and_test.md` - the build/boot/CI plan (this file's own "Current status" section tracks progress against it)
+- `docs/claude_notes/plan_factorization.md` - the later Linux-style-unification plan, blocked on the above
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
 - `docs/claude_notes/notes_debugging_techniques.txt` - general debugging methodology, grown from real investigations in this repo

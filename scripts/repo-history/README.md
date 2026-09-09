@@ -32,7 +32,7 @@ written up in `docs/provenance.md` under "Four pitfalls".
 ## Analysis helpers
 
 These are still useful — they produced the duplication figures that shape
-`docs/claude_notes/factorization-plan.md`, and re-running them will show
+`docs/claude_notes/plan_factorization.md`, and re-running them will show
 progress once that phase starts. Both read `git ls-tree` output on stdin:
 
 ```sh
