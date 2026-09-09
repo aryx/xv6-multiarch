@@ -451,6 +451,28 @@ int copyout (pde_t *pgdir, uint va, void *p, uint len)
 // mapped as 4KB pages
 void paging_init (uint phy_low, uint phy_hi)
 {
-    mappages (P2V(&_kernel_pgtbl), P2V(phy_low), phy_hi - phy_low, phy_low, AP_KU);
+    // claude: AP_KO ("privileged access, kernel: RW, user: no access"), was
+    // AP_KU ("full access"). This call maps ALL of physical RAM into the
+    // kernel page table, and xv6 keeps the kernel mappings resident in every
+    // process's address space - so AP_KU here made the entire kernel, and all
+    // of physical memory, readable and writable from USER mode by any
+    // process. start.c's own early page directory already gets this right
+    // (it builds its section entries with "AP_KO << 10"); this later, finer
+    // remap then overrode it with the permissive value.
+    //
+    // usertests catches it directly: its sbrktest() walks KERNBASE upward
+    // from a forked child and prints "oops could read <addr> = <byte>" for
+    // every kernel address the child manages to read - 18 of them here. The
+    // reason that turned into a CI failure rather than just noise is what
+    // the child does NEXT: on a successful read it calls kill(ppid), so the
+    // test deliberately kills usertests itself. Whether the parent died
+    // before finishing was pure timing, which is why this looked flaky and
+    // host-dependent (green on an aarch64 host, a 600s timeout on GitHub
+    // Actions' x86_64 runners) rather than simply broken.
+    //
+    // User pages are unaffected: allocuvm()/inituvm() map those AP_KU
+    // themselves (see their own mappages calls above), and copyuvm()'s
+    // "PTE_AP(*pte) != AP_KU" check still identifies them.
+    mappages (P2V(&_kernel_pgtbl), P2V(phy_low), phy_hi - phy_low, phy_low, AP_KO);
     flush_tlb ();
 }
