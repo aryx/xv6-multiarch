@@ -181,26 +181,33 @@ RUN ./configure
 # suite end to end - see forks/riscv/test-xv6.py and forks/x86/test-xv6.py.
 #
 # claude: ARCH=all deliberately does NOT call the top-level Makefile's own
-# build-all/test-all - those umbrella targets cover every arch wired into
+# build-all - that umbrella target covers every arch wired into
 # ./configure (which by design runs ahead of this file - see build.md's
-# Phase 4 recipe step 2 vs step 6), including ones this Dockerfile's own
-# ARCH=all apt-get case above does not install a toolchain/qemu for yet
-# (arm64, loongarch, ...). Calling build-all/test-all here breaks the
-# instant a new arch is folded into that umbrella target before it's also
-# added to the apt-get case - which is exactly what happened (caught on
-# an arm64 dev machine, but arch-independent: check-loongarch-toolchain
-# fails identically on any host, since .github/workflows/docker.yml's own
-# matrix never runs ARCH=all - only single real arches - so this path had
-# never actually been exercised in CI). This explicit target list is the
-# Dockerfile's own source of truth for what ARCH=all covers - keep it in
-# lockstep with the apt-get "all" case above, not with build-all/test-all.
+# Phase 4 recipe step 2 vs step 6), and used to include arm64/loongarch
+# before this Dockerfile's own ARCH=all apt-get case installed a
+# toolchain/qemu for them; the apt-get "all" case above has since grown
+# to cover both, so this explicit list is no longer strictly required for
+# that reason - it's kept anyway as this Dockerfile's own source of truth
+# for what ARCH=all covers, to be kept in lockstep with the apt-get "all"
+# case above by inspection rather than by trusting the two lists agree.
+#
+# The test step below DOES call the top-level "test-all", but that name
+# means the fast, boot-only "quick-test-<arch>" check across every arch
+# now (~1 min total - see CLAUDE.md's "Testing conventions"), not full
+# usertests - full coverage for ARCH=all here would cost the ~25 min a
+# real "stress-test-all" run takes, on every build of this one-image-
+# does-everything convenience path. Single-ARCH builds are unaffected:
+# the "else" branch below still calls "test-$ARCH" directly, which keeps
+# its original full-usertests meaning - this is the exact path
+# .github/workflows/docker.yml's own matrix uses (one real arch per job,
+# never ARCH=all), so CI's actual coverage is untouched by this change.
 RUN if [ "$ARCH" = all ]; then \
       make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm-pi1-bis build-arm64 build-mips build-loongarch; \
     else \
       make "build-$ARCH"; \
     fi
 RUN if [ "$ARCH" = all ]; then \
-      make test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm test-arm-pi1 test-arm-pi1-bis test-arm64 test-mips test-loongarch; \
+      make test-all; \
     else \
       make "test-$ARCH"; \
     fi
