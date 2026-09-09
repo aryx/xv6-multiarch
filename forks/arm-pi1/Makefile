@@ -187,11 +187,20 @@ qemu: kernel-qemu.img
 # "Bug 8" through "Bug 10") gives QEMU an actual USB keyboard attached
 # to this board's dwc2 controller, so keys typed directly into the GTK
 # window itself now reach the shell - not just the serial console.
+# claude: QMP_SOCK (optional, unset by default - a plain interactive
+# "make qemu-graphics" is unaffected) adds a QMP socket alongside the
+# monitor, for scripted regression testing (screendump/send-key) - see
+# scripts/qemu_graphics.py and scripts/test_qemu_graphics.py. "comma"
+# is the standard Make idiom for getting a literal "," into a
+# "$(if ...)" call, which itself can't contain an unescaped comma.
+comma := ,
+QMP_OPTS := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)nowait)
+
 qemu-graphics: kernel-qemu.img
 	@echo "Serial console + QEMU monitor share this terminal - Ctrl-A C to switch to the monitor (try: screendump /tmp/fb.ppm), Ctrl-A C again to switch back"
 	@echo "Ctrl-A X (from the monitor side) to terminate"
 	@echo "Click the QEMU window and type there for a real USB-keyboard test - the terminal keeps working as the serial console too"
-	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio -device usb-kbd
+	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio -device usb-kbd $(QMP_OPTS)
 
 $(BUILD):
 	mkdir $@

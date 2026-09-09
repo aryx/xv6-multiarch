@@ -179,6 +179,59 @@ dump, yet the DRIVER's own repeat-suppression logic still produced a
 flood of the same character; the fix belonged in the driver, not in how
 the key was injected.
 
+Don't hand-roll this every time: scripts/qemu_graphics.py/scripts/test_qemu_graphics.py
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Everything above - the QMP client, PPM parsing, pixel counting/ASCII
+downsampling - started as ad hoc one-off Python snippets typed directly
+into a shell heredoc, repeated across several separate investigations
+(arm-pi1's framebuffer, then its USB keyboard, then arm-pi1-bis's own
+bring-up). Once a fourth port needed the exact same technique, it was
+worth extracting into `scripts/qemu_graphics.py` (a QMP class with
+`send_key`/`type_text`/`screendump`, plus `load_ppm`/`non_black_count`/
+`distinct_colors`/`ascii_art`) and `scripts/test_qemu_graphics.py` (a
+regression test driving it against every "-qemu-graphics" capable port
+- i386, amd64, amd64-jserv, arm-pi1, arm-pi1-bis - see scripts/README.md).
+Reach for these directly instead of re-deriving the QMP JSON protocol
+or the PPM header parser from scratch:
+
+  import sys; sys.path.insert(0, "scripts")
+  import qemu_graphics as qg
+  m = qg.QMP("/tmp/some.sock")
+  m.type_text("ls\r")
+  m.screendump("/tmp/fb.ppm")
+  w, h, px = qg.load_ppm("/tmp/fb.ppm")
+  print(qg.non_black_count(w, h, px))
+
+Getting a QMP socket in the first place: every "run-<arch>-qemu-graphics"
+Makefile target (top-level Makefile, and forks/arm-pi1's/
+forks/arm-pi1-bis's own Makefiles) accepts an optional `QMP_SOCK=<path>`
+that adds `-qmp unix:<path>,server,nowait` to the QEMU command line -
+`make run-arm-pi1-qemu-graphics QMP_SOCK=/tmp/x.sock` gets you a
+scriptable session without hand-writing the QEMU invocation at all
+(unset by default, so plain interactive use is unaffected). Adding this
+support to a NEW port's own Makefile is a one-line "comma := ," +
+"$(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)nowait)"
+pair (see forks/arm-pi1/Makefile's own comment on the idiom), or, if
+the port already has an unused extension point like i386/amd64/
+amd64-jserv's own `QEMUEXTRA`, no Makefile change at all - just pass
+the same `-qmp ...` string through that variable instead (see the
+top-level Makefile's own `QMP_QEMUEXTRA`).
+
+A real gotcha this surfaced, worth knowing before scripting ANY
+"launch QEMU via `make`, then kill it later" flow: `proc.terminate()`
+on a `subprocess.Popen(["make", "run-<arch>-qemu-graphics", ...])` only
+signals the immediate `make` process. `make` does not propagate that
+signal to ITS OWN child (a second, nested `make -C forks/<name>`, which
+then execs `qemu-system-*`) - the actual QEMU process (and its live QMP
+socket) survives as an orphan, confirmed directly (a leftover
+`qemu-system-arm` kept running, `pgrep` still found it, after what
+looked like a clean test run). Fixed the general way: launch with
+`start_new_session=True` (its own process group) and kill the WHOLE
+group on cleanup - `os.killpg(os.getpgid(proc.pid), signal.SIGTERM)`,
+with a `SIGKILL` fallback if it doesn't exit in time - never just
+`proc.terminate()`/`proc.kill()` on the top-level handle when what you
+actually launched is a multi-level process tree.
+
 Trace events: --trace and -d int/-d in_asm, and how to discover what's available
 -----------------------------------------------------------------------------------------
 Two different logging systems, for two different questions:

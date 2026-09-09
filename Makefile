@@ -106,6 +106,19 @@ QEMU_ARM_PI2 ?= qemu-system-arm
 TOOLPREFIX_ARM_PI3 ?=
 QEMU_ARM_PI3 ?= qemu-system-aarch64
 
+# claude: QMP_SOCK (optional, unset by default) forwards a QMP socket
+# path into whichever "run-<arch>-qemu-graphics" target is invoked, for
+# scripted regression testing - see scripts/qemu_graphics.py and
+# scripts/test_qemu_graphics.py. forks/arm-pi1/forks/arm-pi1-bis's own
+# Makefiles understand QMP_SOCK directly; forks/i386/forks/amd64/
+# forks/amd64-jserv have no such variable of their own, so it's turned
+# into a "-qmp ..." flag here and threaded through their own existing
+# QEMUEXTRA extension point instead. "comma" is the standard Make idiom
+# for a literal "," inside a "$(if ...)" call.
+QMP_SOCK ?=
+comma := ,
+QMP_QEMUEXTRA := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)nowait)
+
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 run-i386-qemu-graphics test-i386 clean-i386 kill-i386 check-i386-toolchain \
         build-amd64-jserv run-amd64-jserv run-amd64-jserv-qemu-graphics test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
@@ -191,7 +204,7 @@ run-i386: check-i386-toolchain
 # build-all/test-all (nothing headless-CI can assert against a GTK
 # window).
 run-i386-qemu-graphics: check-i386-toolchain
-	$(MAKE) -C forks/i386 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) qemu
+	$(MAKE) -C forks/i386 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) QEMUEXTRA="$(QMP_QEMUEXTRA)" qemu
 
 # forks/i386/test-xv6.py (this repo's own, not upstream - see its own header
 # comment) drives plain "make qemu-nox" the same way forks/riscv64's does -
@@ -254,7 +267,7 @@ run-amd64-jserv: check-amd64-jserv-toolchain
 # on real hardware. Same CPUS=2 override as run-amd64-jserv above, same
 # reason. Requires $DISPLAY; not folded into build-all/test-all.
 run-amd64-jserv-qemu-graphics: check-amd64-jserv-toolchain
-	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 qemu
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 QEMUEXTRA="$(QMP_QEMUEXTRA)" qemu
 
 # Unlike forks/riscv64's/forks/i386's own QEMU vars, forks/amd64-jserv/
 # Makefile's is "QEMU ?= qemu-system-x86_64" (a conditional default) - so
@@ -295,7 +308,7 @@ run-amd64: check-amd64-toolchain
 # Real PS/2 keyboard emulation, same as run-amd64-jserv-qemu-graphics
 # above. Requires $DISPLAY; not folded into build-all/test-all.
 run-amd64-qemu-graphics: check-amd64-toolchain
-	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) qemu
+	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) QEMUEXTRA="$(QMP_QEMUEXTRA)" qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
 # forks/riscv64's/forks/i386's own test-<arch> targets (forks/amd64/
@@ -498,7 +511,7 @@ run-arm-pi1-bis: check-arm-pi1-bis-toolchain
 # separate real-hardware-vs-QEMU target split, so there is only one
 # "qemu" target to extend here).
 run-arm-pi1-bis-qemu-graphics: check-arm-pi1-bis-toolchain
-	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) qemu-graphics
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
 
 test-arm-pi1-bis: check-arm-pi1-bis-toolchain
 	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) ./test-xv6.py
@@ -597,7 +610,7 @@ run-arm-pi1: check-arm-pi1-toolchain
 # folded into build-all/test-all (nothing headless-CI can assert against
 # a GTK window).
 run-arm-pi1-qemu-graphics: check-arm-pi1-toolchain
-	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) qemu-graphics
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
 
 test-arm-pi1: check-arm-pi1-toolchain
 	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py

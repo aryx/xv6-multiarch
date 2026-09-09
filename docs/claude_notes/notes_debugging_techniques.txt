@@ -996,3 +996,28 @@ this per-hook: a print that answered a one-off "is X true right now"
 question is fine to delete; one that answers a recurring "what is the
 current state of Y" question (raw HID reports, raw port-status bits)
 is worth keeping behind a toggle.
+
+37. Killing a `subprocess.Popen(["make", ...])` needs the whole process group, not just the top-level PID
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Writing scripts/test_qemu_graphics.py (a regression test that launches
+"make run-<arch>-qemu-graphics" and kills it after screendumping the
+result) hit a real, reproducible leak: `proc.terminate()` on the
+`Popen` handle left the actual `qemu-system-*` process running,
+confirmed directly via `pgrep` after what looked like a clean test
+exit. Cause: `make run-<arch>-qemu-graphics` itself invokes a SECOND,
+nested `make -C forks/<name>` to run the real per-fork target, which
+then execs `qemu-system-*` - `SIGTERM` sent to the outer `make`'s own
+PID does not automatically propagate to that grandchild process; `make`
+has no special-cased "forward signals to my own children" behavior.
+General fix, useful for launching ANY multi-level process tree you'll
+need to kill later (not just `make` specifically): pass
+`start_new_session=True` to `Popen` (puts the whole tree in its own
+process group), then kill the GROUP on cleanup -
+`os.killpg(os.getpgid(proc.pid), signal.SIGTERM)`, with a `SIGKILL`
+fallback if it doesn't exit within a few seconds - rather than
+`proc.terminate()`/`proc.kill()` on the top-level handle alone. Worth
+checking for this class of leak (`pgrep` for the expected process name
+right after your own script's cleanup runs) any time a test/automation
+script launches something through an intermediate wrapper process
+(`make`, a shell script, a launcher binary) rather than the target
+binary directly.

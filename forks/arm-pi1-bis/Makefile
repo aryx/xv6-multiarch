@@ -141,11 +141,19 @@ qemu: kernel.elf
 # (requires a working $DISPLAY; "-serial mon:stdio" multiplexes the
 # interactive shell AND the QEMU monitor onto this terminal, Ctrl-A C
 # to switch between them).
+# claude: QMP_SOCK (optional, unset by default - a plain interactive
+# "make qemu-graphics" is unaffected) adds a QMP socket alongside the
+# monitor, for scripted regression testing (screendump/send-key) - see
+# scripts/qemu_graphics.py and scripts/test_qemu_graphics.py. Same
+# "comma" idiom as forks/arm-pi1/Makefile's own identical addition.
+comma := ,
+QMP_OPTS := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)nowait)
+
 qemu-graphics: kernel.elf
 	@echo "Serial console + QEMU monitor share this terminal - Ctrl-A C to switch to the monitor (try: screendump /tmp/fb.ppm), Ctrl-A C again to switch back"
 	@echo "Ctrl-A X (from the monitor side) to terminate"
 	@echo "Click the QEMU window and type there for a real USB-keyboard test - the terminal keeps working as the serial console too"
-	$(QEMU) -M raspi1ap -kernel kernel.img -serial mon:stdio -device usb-kbd
+	$(QEMU) -M raspi1ap -kernel kernel.img -serial mon:stdio -device usb-kbd $(QMP_OPTS)
 
 INITCODE_OBJ = initcode.o
 $(addprefix build/,$(INITCODE_OBJ)): initcode.S
