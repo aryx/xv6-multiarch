@@ -132,12 +132,16 @@ main(int argc, char *argv[])
   iappend(rootino, &de, sizeof(de));
 
   for (i = 2; i < argc; i++) {
-    // get rid of "user/"
-    char *shortname;
-    if (strncmp(argv[i], "user/", 5) == 0)
-      shortname = argv[i] + 5;
-    else
-      shortname = argv[i];
+    // claude: was "get rid of 'user/'" - a hardcoded strncmp against that
+    // one literal prefix. Phase 0 (docs/claude_notes/plan_factorization.md)
+    // splits the user programs across user/ and tests/, so that would have
+    // needed a second special case, and the next layout change a third.
+    // Take the basename instead - strip everything up to the last '/',
+    // whatever directory the program was built in. The assert below is now
+    // always satisfied rather than load-bearing, but it still documents the
+    // invariant the rest of this loop relies on.
+    char *shortname = strrchr(argv[i], '/');
+    shortname = shortname ? shortname + 1 : argv[i];
 
     assert(index(shortname, '/') == 0);
 

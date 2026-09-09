@@ -1,5 +1,10 @@
 K=kernel
 U=user
+# claude: Phase 0 (plan_factorization.md) - test programs, the user
+# library and the host-built tools each get their own directory.
+T=tests
+L=ulib
+O=tools
 
 OBJS = \
   $K/entry.o \
@@ -101,27 +106,29 @@ $K/%.o: $K/%.S
 tags: $(OBJS)
 	etags kernel/*.S kernel/*.c
 
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
-_%: %.o $(ULIB) $U/user.ld
-	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)
+# claude: not anchored to a directory, so this one rule builds both
+# user/_cat and tests/_usertests.
+_%: %.o $(ULIB) $L/user.ld
+	$(LD) $(LDFLAGS) -T $L/user.ld -o $@ $< $(ULIB)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
-$U/usys.S : $U/usys.pl
-	perl $U/usys.pl > $U/usys.S
+$L/usys.S : $L/usys.pl
+	perl $L/usys.pl > $L/usys.S
 
-$U/usys.o : $U/usys.S
-	$(CC) $(CFLAGS) -c -o $U/usys.o $U/usys.S
+$L/usys.o : $L/usys.S
+	$(CC) $(CFLAGS) -c -o $L/usys.o $L/usys.S
 
-$U/_forktest: $U/forktest.o $(ULIB)
+$T/_forktest: $T/forktest.o $(ULIB)
 	# forktest has less library code linked in - needs to be small
 	# in order to be able to max out the proc table.
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
-	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $T/_forktest $T/forktest.o $L/ulib.o $L/usys.o
+	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
-mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
-	gcc -Wno-unknown-attributes -I. -o mkfs/mkfs mkfs/mkfs.c
+$O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
+	gcc -Wno-unknown-attributes -I. -o $O/mkfs $O/mkfs.c
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
@@ -132,7 +139,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 UPROGS=\
 	$U/_cat\
 	$U/_echo\
-	$U/_forktest\
+	$T/_forktest\
 	$U/_grep\
 	$U/_init\
 	$U/_kill\
@@ -141,27 +148,27 @@ UPROGS=\
 	$U/_mkdir\
 	$U/_rm\
 	$U/_sh\
-	$U/_stressfs\
-	$U/_usertests\
-	$U/_grind\
+	$T/_stressfs\
+	$T/_usertests\
+	$T/_grind\
 	$U/_wc\
-	$U/_zombie\
-	$U/_logstress\
-	$U/_forphan\
-	$U/_dorphan\
-	$U/_sync\
+	$T/_zombie\
+	$T/_logstress\
+	$T/_forphan\
+	$T/_dorphan\
+	$T/_sync\
 
-fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+fs.img: $O/mkfs README $(UPROGS)
+	$O/mkfs fs.img README $(UPROGS)
 
--include kernel/*.d user/*.d
+-include kernel/*.d user/*.d tests/*.d ulib/*.d
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
 	$K/kernel fs.img \
-	mkfs/mkfs .gdbinit \
-        $U/usys.S \
+	$O/mkfs .gdbinit \
+        $L/usys.S \
 	$(UPROGS)
 
 # try to generate a unique GDB port
@@ -201,4 +208,4 @@ check-qemu-version:
 
 .PHONY: fmt
 fmt:
-	clang-format -i $(wildcard kernel/*.[ch] user/*.[ch] mkfs/*.c)
+	clang-format -i $(wildcard kernel/*.[ch] user/*.[ch] tests/*.c ulib/*.c tools/*.c)

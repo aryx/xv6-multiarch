@@ -1,5 +1,5 @@
 *.img
-/mkfs/mkfs
+/tools/mkfs
 /kernel/kernel
-/user/usys.S
+/ulib/usys.S
 TAGS
