@@ -57,8 +57,10 @@ set -eu
 # representative: forks/arm, forks/arm64, forks/amd64). Done ahead of
 # the factorization phase to make related forks sort together, while
 # keeping them genuinely distinct builds - forks/arm-pi1 and
-# forks/arm-pi1-bis target the literal same real board (independent
-# ports). forks/pi_mp joined "arm", not "arm64", despite its own
+# forks/arm-pi1-bis target the literal same real board (arm-pi1-bis is
+# a genuine fork/continuation of arm-pi1's own upstream, not an
+# independent implementation - see docs/provenance.md). forks/pi_mp
+# joined "arm", not "arm64", despite its own
 # upstream README saying "AArch64" - its Makefile only ever builds
 # 32-bit ARM code (arm-none-eabi-), real Pi 3 MP hardware in AArch32
 # compatibility mode on its ARMv8 chip, not a 64-bit kernel (caught and

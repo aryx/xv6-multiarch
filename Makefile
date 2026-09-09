@@ -14,7 +14,7 @@
 # comment for why the directories themselves aren't renamed to match.
 #
 # Currently wired for riscv64, i386, x86_64, amd64, riscv32, arm64, mips,
-# loongarch, arm, and arm-pi1 - see docs/claude_notes/build-and-test-plan.md,
+# loongarch, arm, arm-pi1, and arm-pi1-bis - see docs/claude_notes/build-and-test-plan.md,
 # Phases 1-2, and Phase 4 (see docs/claude_notes/notes_arch_amd64_jserv.txt,
 # notes_arch_amd64.txt, notes_arch_riscv32.txt - riscv32's own test-riscv32
 # now passes (bug 4, a missing user-program start() wrapper, fixed
@@ -28,7 +28,11 @@
 # test-arm passes with two known usertests skipped; notes_arch_arm_pi1.txt -
 # a real Raspberry Pi 1 port (the user owns the hardware); test-arm-pi1
 # now passes with a full, unmodified usertests run, via an additive
-# PL011 console alongside the real-hardware Mini-UART).
+# PL011 console alongside the real-hardware Mini-UART; also reaches a
+# working framebuffer console and USB keyboard under QEMU - see
+# notes_arch_arm_pi1.txt. notes_arch_arm_pi1_bis.txt - forks/arm-pi1-bis,
+# the same real board via a different upstream fork; test-arm-pi1-bis
+# now passes too, via the exact same fix pattern as arm-pi1).
 #
 # arm64, not aarch64: the Makefile target/./configure variable name
 # follows ~/c--'s and ~/goken's own CCARM64/RUN_ARM64/arch/arm64/
@@ -55,8 +59,13 @@
 # builds, done to make the eventual factorization-phase merge easier to
 # reason about (related forks now sort together by prefix). forks/arm-pi1
 # and forks/arm-pi1-bis both target the literal same real board (ARMv6
-# Raspberry Pi 1/Model B - zhiyihuang's and inaciose's independent
-# ports). forks/pi_mp's own upstream README says "AArch64" but its
+# Raspberry Pi 1/Model B) - arm-pi1-bis is a genuine fork/continuation
+# of arm-pi1's own upstream (inaciose's own README: "based on
+# zhiyihuang/xv6_rpi_port"), not an independent implementation. Both
+# reach a full interactive shell, framebuffer graphics, and a working
+# USB keyboard under QEMU (test-arm-pi1/test-arm-pi1-bis) - see
+# notes_arch_arm_pi1.txt/notes_arch_arm_pi1_bis.txt. forks/pi_mp's own
+# upstream README says "AArch64" but its
 # Makefile only ever builds 32-bit ARM code (arm-none-eabi-,
 # -mcpu=cortex-a7) - real Pi 3 MP hardware, in AArch32 compatibility
 # mode on its ARMv8 chip, not a 64-bit kernel - so it joined the "arm"
@@ -105,7 +114,7 @@ QEMU_ARM_PI3 ?= qemu-system-aarch64
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
         build-mips run-mips test-mips clean-mips kill-mips check-mips-toolchain \
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
-        build-arm-pi1-bis run-arm-pi1-bis check-arm-pi1-bis-toolchain \
+        build-arm-pi1-bis run-arm-pi1-bis run-arm-pi1-bis-qemu-graphics test-arm-pi1-bis clean-arm-pi1-bis kill-arm-pi1-bis check-arm-pi1-bis-toolchain \
         build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
         build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
@@ -449,28 +458,28 @@ kill-loongarch:
 # forks/armv6-rpi)
 ###############################################################################
 # Targets the literal same real board as forks/arm-pi1 below (ARMv6
-# Raspberry Pi 1/Model B) - inaciose's independent implementation, not a
-# fork of zhiyihuang's (see docs/provenance.md). Grouped under the
-# shared "arm" ISA prefix, "-bis" marking it as the second, independent
-# port of that same board (see this Makefile's own header comment on
-# this rename).
+# Raspberry Pi 1/Model B) - a genuine fork/continuation of zhiyihuang's
+# own xv6_rpi_port (its own README: "based on zhiyihuang/xv6_rpi_port
+# ... doesn't boot my Raspberry Pi B ... I have done some changes in
+# order to successfully boot my pi"), not an independent implementation
+# (see docs/provenance.md). Grouped under the shared "arm" ISA prefix,
+# "-bis" marking it as the second port of that same board.
 #
 # claude: forks/arm-pi1-bis/makefile.inc's own toolchain variable is
 # "CROSSCOMPILE", not "TOOLPREFIX" like every other fork here - passed
 # through as-is below rather than renamed, to keep this repo's own
 # changes to that file minimal.
 #
-# No test-arm-pi1-bis/clean-arm-pi1-bis/kill-arm-pi1-bis yet, and not
-# folded into build-all/run-all/test-all: six real bugs were found and
-# fixed this bring-up (see notes_arch_arm_pi1_bis.txt) and boot now
-# progresses vastly further than before - past the point where earlier
-# bugs caused an immediate crash loop - but it does not reach a shell
-# yet. The last remaining issue looks like it may be at the QEMU "-M
-# raspi1ap" board-emulation/firmware level rather than something fixable
-# from this kernel's own source, so build-arm-pi1-bis/run-arm-pi1-bis
-# are wired up (per the user's own "at least connect it... even if it
-# fails"), but there is no reliable pass/fail console signal yet for a
-# scripted test.
+# test-arm-pi1-bis/clean-arm-pi1-bis/kill-arm-pi1-bis and build-all/
+# test-all/clean-all/kill-all added 2026-09-09: a fourth session applied
+# the exact same fix pattern that got forks/arm-pi1 to a full shell +
+# framebuffer + USB keyboard (same DEVSPACE/PHYSIO layout, byte-for-byte
+# identical keyboard.s) - see notes_arch_arm_pi1_bis.txt "Session 2" for
+# the full writeup. Worked on the very first attempt: this port shares
+# arm-pi1's exact bugs (missing PL011 UART, no fb_ready guard, no .bss
+# zeroing), so the earlier session's "may be a QEMU firmware issue"
+# hypothesis for the six-bugs-in stopping point turned out to be wrong -
+# it was the same kernel-level bug, just not yet diagnosed.
 check-arm-pi1-bis-toolchain:
 	@if [ "$(TOOLPREFIX_ARM_PI1_BIS)" = NONE ] || [ "$(QEMU_ARM_PI1_BIS)" = NONE ]; then \
 		echo "Makefile: arm-pi1-bis toolchain/qemu not found - run ./configure to see what's missing" >&2; \
@@ -482,6 +491,23 @@ build-arm-pi1-bis: check-arm-pi1-bis-toolchain
 
 run-arm-pi1-bis: check-arm-pi1-bis-toolchain
 	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) qemu
+
+# claude: same kernel.elf/kernel.img, but with a real GTK window and a
+# USB keyboard attached - see forks/arm-pi1/Makefile's own
+# "qemu-graphics" target for the identical pattern (this fork has no
+# separate real-hardware-vs-QEMU target split, so there is only one
+# "qemu" target to extend here).
+run-arm-pi1-bis-qemu-graphics: check-arm-pi1-bis-toolchain
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) qemu-graphics
+
+test-arm-pi1-bis: check-arm-pi1-bis-toolchain
+	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) ./test-xv6.py
+
+clean-arm-pi1-bis:
+	$(MAKE) -C forks/arm-pi1-bis clean
+
+kill-arm-pi1-bis:
+	-pkill -f '$(QEMU_ARM_PI1_BIS)' 2>/dev/null || true
 
 ###############################################################################
 # arm (forks/arm, inaciose/xv6-armv7-rpi - renamed from forks/armv7-rpi)
@@ -653,13 +679,13 @@ run-arm-pi3: check-arm-pi3-toolchain
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-mips
+build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-arm-pi1-bis build-mips
 
-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-mips
+test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-arm-pi1-bis test-mips
 
-clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-mips
+clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-arm-pi1-bis clean-mips
 
-kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-mips
+kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-arm-pi1-bis kill-mips
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header
