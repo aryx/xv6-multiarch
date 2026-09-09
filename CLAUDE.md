@@ -93,8 +93,15 @@ Two sequential efforts, in order:
    across a whole run because the SP804 ARM timer it programmed is a
    QEMU `create_unimp()` stub, so it was running with no preemption at
    all. Moved to the System Timer, like `arm-pi2`; `preempt()` is
-   uncommented and `test-arm` is green. Only `mips` still skips it -
-   see `plan_build_and_test_2.md` item 1.) And (4) - unmasked by
+   uncommented and `test-arm` is green. `mips`'s own `preempt()` is
+   fixed too, the same day and by the same "measure first" step but with
+   a different cause: its timer WAS firing (~23Hz, counted at the i8259
+   via `-trace memory_region_ops_write`, since `-d int` does not log
+   external interrupts on QEMU's MIPS target and reports a false zero),
+   but `trap.c`'s yield test compared `tf->cause` - the CP0 Cause
+   bitfield - against the x86 constant `T_IRQ0+IRQ_TIMER`, so it could
+   never be true and `yield()` was never called. **No port skips
+   `preempt()` any more.** See `plan_build_and_test_2.md` item 1.) And (4) - unmasked by
    (3), which is the useful kind of regression - `scheduler()` flushed
    the process's **entire** address space (`dc cvau`/`ic ivau` per page,
    O(`p->sz`)) on *every* context switch while holding `p->lock`, which

@@ -1094,3 +1094,211 @@ Related: consoleintr()-style input handling is worth grepping across
 sibling forks when one is fixed - arm-pi1 and arm-pi2 hold the exact
 mirror image of arm-pi3's bug (they drop LF and honour only CR), which
 is almost certainly where the inverted version came from.
+
+40. Before debugging why a scheduler-dependent test hangs, COUNT THE INTERRUPTS
+------------------------------------------------------------------------------
+Three ports in this repo independently skipped `usertests`' `preempt()`
+with some version of the same note: "real memory pressure / multi-process
+timing under emulation, not chased". That diagnosis was wrong every
+time, and in two ports the real cause has now been found - both were a
+timer interrupt that never reached the scheduler.
+
+The tell is the same in every case: `preempt()` forks CPU-bound children
+that spin in `for(;;)` and then `kill()`s them. Nothing in that test
+makes a syscall from the spinning children, so nothing re-enters the
+kernel voluntarily. It is therefore a *direct test of preemption* and of
+almost nothing else. A kernel with no working timer tick still boots,
+still runs a shell, and still passes nearly all of `usertests`, because
+everything else yields through syscalls - so the bug hides until this
+one test. `kill()` makes it worse in a way that looks unrelated: it only
+sets `p->killed`, and the victim exits on its *next* trap into the
+kernel, which for a spinning process is only ever a timer interrupt. So
+the parent's `wait()` blocks forever too.
+
+The measurement is one command and takes a minute, and it partitions the
+problem before a line of scheduler code is read:
+
+    qemu-system-<arch> ... -d int -D /tmp/int.log
+    grep -c "Taking exception 5 \[IRQ\]" /tmp/int.log      # ARM
+
+**But `-d int` is NOT a portable interrupt counter, and on MIPS it will
+lie to you.** QEMU's MIPS target logs syscall/TLB exceptions through
+`mips_cpu_do_interrupt` but does not log external interrupt delivery the
+same way, so a `forks/mips` run that was in fact taking ~23 timer
+interrupts per second produced a log containing only `syscall` and
+`TLB store` lines - i.e. a convincing, and completely wrong, "zero
+interrupts" reading. See item 42; this was the exact trap it describes.
+
+The portable counter is one level down, at the interrupt controller,
+because servicing an interrupt always ends in an ack/EOI write:
+
+    qemu-system-<arch> ... -trace memory_region_ops_write -D /tmp/mr.log
+    grep -oE "name '[^']*'" /tmp/mr.log | sort | uniq -c | sort -rn
+
+then look at the controller's own region. On `forks/mips` (i8259 via
+Malta's PIIX4) that immediately showed the truth:
+
+    347  0x20 <- 0x0a   (OCW3: read IRR)
+    346  0x20 <- 0x0c   (OCW3: poll)
+    346  0x20 <- 0x60   (OCW2: specific EOI, IRQ 0)
+
+346 timer EOIs in 15s of idle - the tick was working all along. That
+same trace is also how to check the timer was PROGRAMMED at all (look
+for writes to the `pit` region), and it needs no per-target knowledge of
+how the emulator names exceptions. Prefer it over `-d int` unless you
+have already confirmed `-d int` reports interrupts on that target.
+
+and, on SMP, count PER CPU - a tick that reaches one core and not the
+others looks identical from the console:
+
+    grep -o "Taking exception 5 \[IRQ\] on CPU [0-9]" /tmp/int.log \
+      | sort | uniq -c
+
+What that has actually found here:
+
+ - `forks/arm64-pi4`: 108 / 0 / 0 / 0 IRQs across CPUs 0-3. The virtual
+   timer PPI was enabled on CPU0 only, because GICv2 banks ISENABLER0/
+   ICPENDR0/IPRIORITYR per CPU interface for INTIDs 0-31 and
+   `gic_setup_ppi()` was called from the CPU0-only init function. After
+   the fix: 382 / 351 / 351 / 350.
+ - `forks/arm`: **1** IRQ against 7214 SVCs across a whole boot plus 150s
+   of `usertests`. The kernel was driving the SP804 "ARM timer", which
+   QEMU registers as a `create_unimp()` stub that never interrupts, so
+   the port had no preemption at all and was running entirely on
+   cooperative scheduling.
+
+Both numbers are unambiguous in a way that reading scheduler code is
+not, and both took far less time than the sessions that had previously
+looked at these hangs and given up.
+
+Corollaries worth stating separately:
+
+ - **A sibling port that PASSES the same test is the fastest fix.**
+   `forks/arm-pi2` runs `preempt()` fine on the identical board, because
+   it ticks off the BCM2835 System Timer instead of the SP804. That made
+   the `forks/arm` fix a transcription rather than a design problem. So:
+   before designing a fix, grep the sibling forks for one that already
+   passes, and diff the relevant driver.
+ - **"No interrupts at all" and "interrupts on some cores" are different
+   bugs with an identical console symptom.** Only the per-CPU count
+   tells them apart.
+ - Fixing the timer can *unmask* a second bug rather than finishing the
+   job - see item 41.
+
+41. A fix that enables a previously-dead code path is expected to surface a second bug; budget for it
+-----------------------------------------------------------------------------------------------------
+Twice in one session, fixing a timer immediately produced a *new* failure
+that had been unreachable before, and in both cases the second bug was
+older than the first:
+
+ - `forks/arm64-pi4`: enabling the timer on cores 1-3 turned a
+   `preempt()` hang into a total loss of forward progress. `scheduler()`
+   had always flushed the incoming process's *entire* address space
+   (`dc cvau`/`ic ivau` per page, O(`p->sz`)) on every context switch
+   while holding `p->lock` - survivable only while secondary cores
+   almost never rescheduled.
+ - `forks/arm`: enabling the System Timer produced a flood of
+   "unhandled interrupt: 0". `pic_dispatch()` tested the whole BCM2835
+   BASIC pending word as "the ARM timer fired", but bits 8/9 of that
+   register mean "GPU pending register 1/2 is non-empty" - so every
+   GPU-routed interrupt was also dispatched as the timer. Harmless only
+   while nothing else was ever pending.
+
+The pattern: code that was never exercised was never wrong in a way
+anyone could observe. When a fix turns a dormant path live, re-run the
+FULL suite rather than just the one test that was failing, and read the
+new failure as a genuine finding rather than as a regression from the
+fix. Neither of these was caused by the timer change; both were revealed
+by it.
+
+42. Validate a measurement tool on a signal you know is present, before trusting a zero from it
+------------------------------------------------------------------------------------------------
+While chasing `forks/mips`' own `preempt()` skip, a
+`-trace "pit_ioport*"` run produced an empty log, which reads as a
+strong result: "the kernel's `outb()` writes never reach QEMU's PIT at
+all". It was wrong. Re-running with a *control* event known to be
+firing - `-trace "serial_ioport*"`, on a port whose console output is
+visibly working - produced an empty log too, proving the filter itself
+was matching nothing and the first "zero" carried no information.
+
+A zero from an instrument you have not calibrated is not evidence. Any
+time a measurement returns "this never happens", spend the extra minute
+to make the same instrument report something you already know does
+happen. Cheap controls for the tools used in this repo:
+
+ - `-trace <glob>`: also trace a device you can see working (the UART,
+   on any port that prints).
+ - `-d int`: check the log is non-empty at all; a syscall-heavy guest
+   should show a steady stream of them. Note that non-empty is NOT
+   enough to trust it as an *interrupt* counter - on MIPS it logs
+   syscalls and TLB faults while silently omitting external interrupts
+   (see item 40).
+ - a device trace (`-trace "pit_ioport*"`): confirm the event name
+   actually exists in the emulator's own `trace-events` first. Two
+   separate "zero accesses" readings in this repo came from event names
+   that were never registered - `serial_ioport_*` does not exist (the
+   16550's events are `serial_read`/`serial_write`), and
+   `pit_ioport_write` never fired even though
+   `memory_region_ops_write` showed the PIT being programmed three
+   times. `memory_region_ops_read`/`_write` is the low-level fallback
+   that cannot miss.
+ - a `cprintf()` you just added: confirm an unconditional one at the
+   same point appears, before concluding the conditional never fires.
+
+43. A condition ported from another architecture can be silently always-false; grep for constants that no longer mean anything
+------------------------------------------------------------------------------------------------------------------------------
+`forks/mips` had this in `trap.c`, and it is the whole reason the kernel
+never preempted anything:
+
+    if(proc && proc->state == RUNNING && tf->cause == T_IRQ0+IRQ_TIMER)
+      yield();
+
+That line is correct, verbatim, in x86 xv6 - `tf->trapno` really does
+hold `T_IRQ0 + <irq>` there. On MIPS `tf->cause` is the CP0 **Cause**
+register: a 5-bit exception code at bits 6:2 sharing the register with
+the IP pending bits, BD and CE. For a hardware interrupt the code is 0
+and the register reads something like `0x00008000` - never the constant
+32 this compares against. So the branch was dead, and no process ever
+gave up the CPU on a clock tick.
+
+What makes this class nasty is that everything around it was already
+ported correctly. Fifteen lines above, the same function decodes the
+same register properly (`tf->cause & CAUSE_EXC`, then `picgetirq()` to
+get the IRQ number) and services the timer, increments `ticks` and EOIs
+it. Only the *last* use of `tf->cause` kept the x86 meaning. A reviewer
+reading top-to-bottom sees correct MIPS code and stops looking.
+
+The failure is also maximally quiet. A kernel with no preemption boots,
+runs a shell, and passes nearly all of `usertests`, because everything
+else yields through syscalls. It shows up in exactly one test -
+`preempt()` - which had duly been commented out in three ports as "real
+memory pressure / multi-process timing under emulation".
+
+How to find this class deliberately:
+
+ - **Grep the ported tree for the old architecture's constants and field
+   names.** `T_IRQ0`, `trapno`, `tf->cs & 3`, `DPL_USER`, `%eip` in a
+   MIPS/ARM/RISC-V port are all suspects. A constant that survives a port
+   unchanged is either genuinely portable or a bug; there is rarely a
+   middle case.
+ - **Suspect any comparison of a hardware register against a small
+   integer.** Registers like Cause, ESR, SPSR or CPSR are bitfields;
+   `reg == <constant>` is almost always wrong where `reg & MASK` is meant.
+   `forks/arm` had the mirror-image bug in the same session -
+   `if(vic_base[VIC_IRQPENDING_ARM])` treated a whole pending word as one
+   flag, when bits 8/9 of it mean "some *other* bank is pending".
+ - **When one use of a field is decoded and a later use is not, the later
+   one is the bug.** Decoding it twice, inconsistently, in one function is
+   the signature.
+
+The fix here is the shape worth copying: decide the condition *where the
+information exists*. `picgetirq()` already returns the IRQ number in the
+dispatch switch, so set an `istimer` flag there and test that flag at the
+bottom - which is exactly what `forks/arm`'s own `device/gic.c`
+`pic_dispatch()` does. Don't re-derive a decoded value from a raw
+register a second time.
+
+Result: `preempt()` uncommented, and `forks/mips` reports ALL TESTS
+PASSED. Two ports in one session had `preempt()` skipped as a timing
+artifact and neither was - `forks/arm` had no timer interrupt at all
+(item 40), `forks/mips` had the interrupt but no yield.

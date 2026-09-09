@@ -30,9 +30,14 @@ hidden — but it is the one place where the matrix in `README.md` is
 
 | port | skipped | where it's written up |
 |---|---|---|
-| `forks/mips` | `sbrktest`, `validatetest`, `mem`, `preempt`, `exitwait`, `forktest` | `notes_arch_mips.txt`, "Gap, resolved pragmatically" |
-| `forks/arm` | `preempt`, `sbrktest` | `notes_arch_arm.txt`, "Gap 3 resolution" |
+| `forks/mips` | ~~`preempt`~~ (fixed 2026-09-09), `sbrktest`, `validatetest`, `mem`, `exitwait`, `forktest` | `notes_arch_mips.txt`, "Gap, resolved pragmatically" + Bug 7 |
+| `forks/arm` | ~~`preempt`~~ (fixed 2026-09-09), `sbrktest` | `notes_arch_arm.txt`, "Gap 3" + Bug 14/15 |
 | `forks/arm-pi2` | `mem` | `notes_arch_arm_pi2.txt`, "Bug/gap 10" |
+
+**Both `preempt()` skips are now gone**, and neither was the "timing
+under emulation" they had been written off as: `forks/arm` had no timer
+interrupt at all, `forks/mips` had the interrupt but an always-false
+yield condition. Seven skips remain, none of them `preempt`.
 
 The skips are **not** independent — they cluster into two families, which
 is the useful part and the reason to attack them as one task rather than
@@ -75,8 +80,29 @@ nine:
     explicitly retested on a clean rebuild after this fix and still
     hangs, so it is a genuinely separate problem, not a leftover of this
     one.
-  - *Still open:* `forks/mips`'s own `preempt()`. Apply the same first
-    step there — count interrupts before reading scheduler code.
+  - **`forks/mips`: DONE 2026-09-09.** Different cause, same symptom, and
+    a warning about the measurement: `-d int` on QEMU's MIPS target does
+    **not** log external interrupt delivery, so it reports a convincing
+    "zero interrupts" that is simply false. Counting at the interrupt
+    controller instead (`-trace memory_region_ops_write`, then the i8259
+    region) showed **346 specific-EOIs for IRQ 0 in 15s of idle** — the
+    tick was working the whole time. The bug was one always-false
+    condition: `trap.c` ended with
+    `if(... && tf->cause == T_IRQ0+IRQ_TIMER) yield();`, inherited
+    verbatim from x86 xv6 where `tf->trapno` really does hold that. On
+    MIPS `tf->cause` is the CP0 Cause register — a bitfield with the
+    exception code at bits 6:2 — so it never equals 32 and `yield()` was
+    never called. Fixed with an `istimer` flag set inside the `EXC_INT`
+    switch where `picgetirq()` already knows the IRQ, the same shape
+    `forks/arm`'s `pic_dispatch()` uses. `preempt()` uncommented,
+    `make test-mips` green (`EXIT=0`, `preempt: kill... wait... preempt
+    ok`). Written up as Bug 7 in `notes_arch_mips.txt` and as items
+    40/42/43 in `notes_debugging_techniques.txt`.
+    - `exitwait()` and `forktest()` were each **re-enabled and retested**
+      after this fix and each still hangs on its own, so they are
+      genuinely separate bugs, not symptoms of the missing preemption.
+      `mem()`, `validatetest()` and `sbrktest()` unchanged. Five of the
+      original six `mips` skips remain.
 - **`mem()` — heap-exhaustion `malloc`/`free` loop hangs for real.**
   Skipped in `mips` and `arm-pi2`, confirmed via gdb in both (hung, not
   merely slow), found independently in each. Two ports failing the same

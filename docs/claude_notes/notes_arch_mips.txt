@@ -547,3 +547,72 @@ Still open / not investigated
   causing any of the six hangs above (checked directly - `nasid` was
   129 at the `forktest()` hang, well under the 255 ceiling). A real,
   independent latent bug in its own right, not chased further.
+
+
+Bug 7 (real, fixed 2026-09-09): the kernel never preempted anything - an x86 constant in a MIPS trap handler
+--------------------------------------------------------------------------------------------------------------
+Resolves one of the six skipped `usertests` sub-tests recorded above:
+`preempt()` is now re-enabled and `make test-mips` passes with it.
+
+The skip note above says preempt() "was also skipped without
+individually confirming it hangs", on the strength of the same shape
+having failed in sibling ports. It does genuinely hang - confirmed here
+first - but the cause is not the "real memory pressure / multi-process
+timing under emulation" this file assumed for the whole group. It is a
+single always-false condition.
+
+trap.c ended with, inherited verbatim from x86 xv6:
+
+    if(proc && proc->state == RUNNING && tf->cause == T_IRQ0+IRQ_TIMER)
+      yield();
+
+On x86 `tf->trapno` really does hold `T_IRQ0 + <irq>`. On MIPS
+`tf->cause` is the CP0 Cause register - a bitfield whose exception code
+occupies bits 6:2, sharing the register with the IP pending bits, BD and
+CE. For a hardware interrupt that code is 0 and the register reads
+something like 0x00008000; it is never the constant 32 this compared
+against. So `yield()` was never called and no process ever gave up the
+CPU on a clock tick.
+
+What makes it easy to miss: the SAME function decodes the SAME register
+correctly fifteen lines earlier - `uint exccode = tf->cause & CAUSE_EXC`,
+then `picgetirq()` to get the IRQ, then a switch that services the timer,
+bumps `ticks` and EOIs it. Only the last use of tf->cause kept the x86
+meaning. Reading top to bottom, everything looks properly ported.
+
+And the failure is quiet: with no preemption the kernel still boots,
+still runs a shell, and still passes nearly all of usertests, because
+everything else yields through syscalls. Only a test with CPU-bound
+children that never syscall - preempt() - can see it.
+
+Measurement that pointed here, and a warning about the obvious tool:
+`-d int` on QEMU's MIPS target does NOT log external interrupt delivery
+(it logs syscall and TLB exceptions), so it reports a convincing and
+completely wrong "zero interrupts". The portable check is one level
+down, at the interrupt controller, since servicing an interrupt always
+ends in an EOI:
+
+    -trace memory_region_ops_write -D /tmp/mr.log
+
+    347  0x20 <- 0x0a   (OCW3: read IRR)
+    346  0x20 <- 0x0c   (OCW3: poll)
+    346  0x20 <- 0x60   (OCW2: specific EOI, IRQ 0)
+
+346 timer EOIs in 15s of idle - ~23Hz, which is exactly what
+timer.c's own divisor produces, and proof the tick was working all
+along. (~23Hz rather than the intended 10Hz is a separate, still-open
+latent bug: TIMER_DIV(10) is 119318, which does not fit the PIT's
+16-bit divisor register, so the hardware actually gets 0xd216 = 53782.
+Harmless for scheduling, wrong for anything timing-dependent.)
+
+Fix: set an `istimer` flag inside the EXC_INT switch, where
+`picgetirq()` has already identified the IRQ, and test that flag at the
+bottom - the same shape forks/arm's own device/gic.c pic_dispatch()
+uses. See notes_debugging_techniques.txt items 40, 42 and 43.
+
+Retested at the same time, still skipped, now with evidence rather than
+assumption: `exitwait()` and `forktest()` were each re-enabled after
+this fix and each still hangs on its own, so they are genuinely separate
+bugs and not symptoms of the missing preemption. `mem()`,
+`validatetest()` and `sbrktest()` are unchanged. Five of the original
+six skips remain.

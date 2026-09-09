@@ -1771,7 +1771,19 @@ main(int argc, char *argv[])
   // ALL TESTS PASSED signal for CI; not fixes.
   // mem();
   pipe1();
-  // preempt();
+  // claude: re-enabled 2026-09-09 - root-caused and fixed in the kernel,
+  // not worked around. This kernel never preempted anything: trap.c's
+  // "give up the CPU on a clock tick" test compared tf->cause (the MIPS
+  // CP0 Cause register, a bitfield) against T_IRQ0+IRQ_TIMER, an x86
+  // constant inherited verbatim from xv6-public - a condition that can
+  // never be true on MIPS, so yield() was never called. The timer itself
+  // was working the whole time (~23Hz, measured at the i8259). See
+  // trap.c's own comment on the yield(), and notes_arch_mips.txt.
+  preempt();
+  // claude: still skipped, but RETESTED 2026-09-09 after the trap.c
+  // yield() fix that un-skipped preempt() above - it still hangs, so it
+  // is a genuinely separate bug and not a symptom of the missing
+  // preemption. Same for forktest() below.
   // exitwait();
 
   rmdot();
@@ -1787,6 +1799,8 @@ main(int argc, char *argv[])
   // this point given how much prior forking this whole suite does - see
   // notes_arch_mips.txt). Skipped for the same reason as the others
   // above.
+  // claude: still skipped; retested 2026-09-09 alongside exitwait()
+  // above, after the preemption fix, and still hangs on its own.
   // forktest();
   bigdir(); // slow
   exectest();
