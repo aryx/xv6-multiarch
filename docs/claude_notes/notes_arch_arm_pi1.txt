@@ -6,17 +6,19 @@ commit), during the rpi1 bring-up itself. Phase 4 of
 docs/claude_notes/build-and-test-plan.md, ninth port attempted from that
 phase's list, third of the four ARM board ports.
 
-STATUS (updated 2026-09-09): FULLY WORKING, INCLUDING GRAPHICS - a
-second session (see "Session 2" below) found and fixed four real bugs,
-reaching a genuinely interactive shell under QEMU and a full,
-unmodified "ALL TESTS PASSED" usertests run; a third session fixed the
-framebuffer console too (see "Bug 7" at the end - the emulated screen
-now shows real rendered text, verified by screendump), and added a
-"make run-arm-pi1-qemu-graphics" target that boots with a real GTK
-window plus a serial console multiplexed onto the terminal. The one
-thing that still does not work is typing INTO that window: input comes
-from the UART only, since the shipped USB keyboard driver was never
-wired up (see "Still open" at the end). Wired up as build-arm-pi1/run-arm-pi1/
+STATUS (updated 2026-09-09): FULLY WORKING, INCLUDING GRAPHICS AND A
+REAL USB KEYBOARD - a second session (see "Session 2" below) found and
+fixed four real bugs, reaching a genuinely interactive shell under
+QEMU and a full, unmodified "ALL TESTS PASSED" usertests run; a third
+session fixed the framebuffer console too (see "Bug 7" - the emulated
+screen shows real rendered text, verified by screendump) and added a
+"make run-arm-pi1-qemu-graphics" target (a real GTK window plus a
+serial console multiplexed onto the terminal); a fourth session
+vendored CSUD (the previously-unused, source-less USB driver) and got
+a real emulated USB keyboard fully working end to end - see "Bug 8"
+through "Bug 10" - typed keystrokes (verified via QMP's send-key, not
+just log lines) execute genuine shell commands, with the framebuffer
+console showing the result. Wired up as build-arm-pi1/run-arm-pi1/
 test-arm-pi1/clean-arm-pi1/kill-arm-pi1, folded into build-all/test-all/
 clean-all/kill-all, plus a Dockerfile ARCH=arm-pi1 case and
 .github/workflows/docker.yml matrix entry (verified locally with
@@ -593,27 +595,89 @@ emulating() - a runtime VendorId read: QEMU's dwc2 reports revision
     the identical underlying QEMU dwc2 gap (no split state machine in
     the model at all).
 
-Current state (end of this session): HCD initializes cleanly, the
-virtual root hub attaches, and - with "-device usb-kbd" on the QEMU
-command line - the emulated downstream "QEMU USB Hub" is now detected
-and an attach is attempted (a real change: before these fixes, nothing
-past the root hub was ever even reached). It currently fails partway
-through the new device's own enumeration:
+Bug 9: three more real bugs, found by reading QEMU's own device-model source directly
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+The "Transfer was not acknowledged"/enumeration-stuck failure above was
+root-caused, not left open. Fetched QEMU 8.2.2's actual
+hw/usb/hcd-dwc2.c (pinned to the exact installed version - see
+notes_tutorial_qemu.txt for the general technique) rather than
+continuing to guess:
 
-  HCD: Transfer was not acknowledged.
-  HCD: Request to New Device (Not Ready) failed.
-  [x3, then:]
-  HCD: Could not send SETUP to New Device (Not Ready).
-  HUB: Could not connect to new device in USB Root Hub.Port1. Disabling.
+  - HcdChannelInterruptToError() (designware20.c) treats a transfer as
+    failed unless the hardware's "Ack" interrupt bit is set. Grepping
+    QEMU's ENTIRE dwc2 model for every write to HCINTMSK_ACK found
+    none, anywhere in the file - on a successful transfer QEMU only
+    ever raises XferCompl + ChHltd; real Broadcom hardware additionally
+    raises Ack, which is what this check actually tested for. Skipped
+    under HcdEmulating() - Halt, which the driver's own SETUP/DATA/
+    STATUS loops already wait on before checking this, still correctly
+    reflects real completion either way.
+  - HcdChannelSendWait()'s own "packets == PacketCount means the
+    transfer got stuck" heuristic misfires for a genuinely-completed
+    0-length transfer (the STATUS stage of every control transfer).
+    QEMU's own completion arithmetic (dwc2_handle_packet(): "tpcnt =
+    actual/mps; pcnt -= min(tpcnt,pcnt)") computes tpcnt=0 for
+    actual==0, so PacketCount is written back UNCHANGED even though the
+    transfer did complete (QEMU separately flags it done via its own
+    "actual == 0" check - confirmed the transfer itself succeeded via
+    HcdChannelSendWaitOne's own return value). Skipped for
+    bufferLength==0 under HcdEmulating() - the same class of gap as
+    Principia's own usbdwc.c "0-length transfer Pktcnt not decremented"
+    writeup, independently rediscovered here for a different driver.
+  - HubAttach()'s own PowerSwitchingMode switch statement (hub.c) only
+    handles Global(0)/Individual(1) and rejects everything else as
+    "Driver incompatible" - QEMU's emulated hub reports mode 2 ("no
+    power switching - always on"), a real, spec-defined value (USB 2.0
+    sec 11.23.2.1), not a QEMU quirk. Added the missing case,
+    unconditionally (not gated on HcdEmulating() - a real hub could
+    report this too).
 
-Not yet root-caused. Candidates for a future session: a settle-time
-issue (real USB spec wants ~10ms recovery time after a port reset
-before addressing a new device - HubPortReset()'s own timing hasn't
-been audited against QEMU's model specifically); or another QEMU dwc2
-model gap in the same family as the two already found (Principia's own
-usbdwc.c also documents a sticky-Hcintr interrupt storm and a
-0-length-transfer Pktcnt-not-decremented bug that this session never
-got far enough to hit or rule out). No regression risk either way: a
-plain boot with no usb-kbd device attached (every existing test/CI
-invocation) is completely unaffected - confirmed after every fix, not
-just at the end.
+With those three, the emulated hub AND keyboard both fully enumerate
+("Device Attached: USB 1.1 Hub" / "... HID Keyboard").
+
+Bug 10: two more bugs found only once real keystrokes were tested (not just log lines)
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Enumeration succeeding is not the same as input working. Verified with
+real injected keystrokes via QMP's send-key against the emulated USB
+HID device (see notes_tutorial_qemu.txt) rather than trusting the log:
+
+  - A held key produced a long run of identical characters
+    ("llllll..."). Confirmed via HidReadDevice's own built-in raw-report
+    dump hook (csud/source/device/hid/hid.c's pre-existing, previously
+    commented-out "quick hack to view 8 bytes worth of report") that
+    the underlying USB HID report was completely clean - a single,
+    correct press-then-release transition, not a stuck/repeating report
+    at the hardware level. The bug is in CSUD's own KeyboardGetChar()/
+    KeyWasDown() repeat-suppression (keyboard.s, hand-written ARM
+    assembly) failing to actually suppress in practice. Rather than
+    debug that state machine further, fixed at the glue layer instead:
+    source/timer.c's usbkbdgetc() now refuses to emit the same
+    character on two consecutive polls in a row (a genuine repeat needs
+    a real "key up" - KeyboardGetChar() returning 0 - in between).
+  - Enter produced no output at all. source/keyboard.s's own
+    KeysNormal/KeysShift tables map the Enter key to '\n' (0x0a) - a
+    reasonable, standard USB-keyboard-driver choice in isolation, but
+    this kernel's own consoleintr() explicitly discards a raw '\n' and
+    only treats '\r' (0x0d) as "submit line" (the same real
+    serial-terminal convention already documented for the UART path
+    earlier in this file - not a new rule, just a second input path
+    that also needed to honor it). Translated '\n' -> '\r' in
+    usbkbdgetc() specifically - not in keyboard.s (would be the wrong
+    fix for any other hypothetical caller expecting standard ASCII) and
+    not in consoleintr() itself (shared with the UART path, already
+    correct there).
+
+Verification: a real end-to-end typed command over QMP's send-key
+against the emulated USB keyboard -
+
+  send-key l, s, ret
+  -> "ls\n.              1 1 512\n..             1 1 512\n
+      README         2 2 1929\n...(the full, real directory listing)...\n$"
+
+- a genuine command execution, not merely characters appearing. "make
+  test-arm-pi1" (the full unmodified usertests suite) still reaches ALL
+  TESTS PASSED, and both "make all" (real-hardware kernel.img) and
+  "make kernel-qemu.img" build clean from scratch with zero warnings -
+  confirmed after every single fix in this bring-up, not just at the
+  end. A plain boot with no usb-kbd device attached (every existing
+  test/CI invocation) is completely unaffected either way.
