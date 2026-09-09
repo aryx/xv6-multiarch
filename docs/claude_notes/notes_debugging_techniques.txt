@@ -936,3 +936,63 @@ often reveals the bug is somewhere else entirely (as in (a), where the
 "missing edge" theory chased for a while turned out to be a red
 herring once the real gap - a variable that starts at 0 and is
 compared against, but never assigned - was found by grepping writes).
+
+35. When guest-visible behavior contradicts a driver written for real hardware, fetch the emulator's own device-model source and read the exact arithmetic
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+arm-pi1's USB keyboard bring-up hit two separate cases where a driver
+(CSUD) that plausibly worked on real hardware behaved incorrectly under
+QEMU, in ways no amount of re-reading the driver's OWN source settled:
+a transfer that should have succeeded reported "not acknowledged", and
+a 0-length transfer that DID complete was nonetheless treated as
+"stuck". Rather than keep guessing at QEMU's dwc2 model's behavior,
+fetching its actual source settled both in minutes:
+
+  curl -fsSL "https://raw.githubusercontent.com/qemu/qemu/v8.2.2/hw/usb/hcd-dwc2.c" -o /tmp/hcd-dwc2.c
+
+(pin the tag to the EXACT installed version - `qemu-system-arm
+--version` - not `master`, since behavior can differ across versions
+and you want to read the code that's actually running). Grepping the
+~1500-line result for every write to a specific interrupt bit
+(`HCINTMSK_ACK`) found none anywhere in the file - the emulated device
+genuinely never raises it, on any transfer, ever; and reading the exact
+packet-completion arithmetic (`tpcnt = actual/mps; pcnt -=
+min(tpcnt,pcnt)`) showed precisely why a 0-length transfer's packet
+count is never decremented (tpcnt is always 0 for actual==0). Both
+findings are things you could exhaustively test-and-guess your way to
+eventually, but reading ~40KB of the actual deciding code settled them
+with certainty in about the same time as one more guess-and-recheck
+cycle would have taken. General lesson: "the emulator probably doesn't
+implement X" is a hypothesis, not a diagnosis - for any actively
+developed open-source emulator (QEMU included), it is nearly free to
+fetch the exact device model and check directly, and doing so beats
+several more rounds of print-and-guess against what is, from the
+guest's side, an opaque black box. See notes_tutorial_qemu.txt for the
+fuller writeup and more examples (info qtree/usb, screendump, QMP key
+injection, --trace, and the process-management gotchas from this same
+session).
+
+36. Debug hooks worth keeping: prefer restoring an EXISTING toggle over deleting temporary instrumentation outright
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Several of this session's own temporary print statements, added and
+then removed while chasing the USB keyboard bugs (item 33/34's own
+"KeyboardPoll result" and raw-HID-report dumps), turned out to
+duplicate a toggle the ORIGINAL author had already anticipated and left
+in place, commented out: csud/source/device/hid/hid.c's own
+"// Uncomment this for a quick hack to view 8 bytes worth of report"
+block. Recognizing and reusing an existing commented-out hook (restore
+it to its original commented state when done, rather than deleting it
+or leaving an ad hoc duplicate print nearby) keeps the source tidier
+and preserves the SAME hook for the next session that needs it. More
+generally: before adding a brand-new temporary LOGF/printf for a
+one-off investigation, grep the surrounding function for a
+"// uncomment" / "#if 0" / "#ifdef DEBUG"-style comment first - library
+and driver code from a real upstream project (CSUD included) often
+already has one. Conversely, when a temporary print turns out to answer
+a question worth re-asking later (not just this one bug), consider
+leaving it as a genuine toggle - a compile-time `#ifdef`/named define,
+or a runtime flag checked cheaply - rather than deleting it outright,
+so the NEXT investigation doesn't have to re-add it from scratch. Judge
+this per-hook: a print that answered a one-off "is X true right now"
+question is fine to delete; one that answers a recurring "what is the
+current state of Y" question (raw HID reports, raw port-status bits)
+is worth keeping behind a toggle.

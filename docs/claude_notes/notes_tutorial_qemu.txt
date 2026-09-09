@@ -1,0 +1,301 @@
+notes_tutorial_qemu.txt
+========================
+
+A hands-on tutorial for QEMU-side debugging techniques - everything except
+gdb-multiarch, which already has its own tutorial
+(notes_tutorial_gdb_multiarch.txt). Written from real sessions bringing up
+forks/arm-pi1's framebuffer console and USB keyboard (2026-09-08/09) -
+every command and finding below actually happened, in this order, against
+this repo. See notes_arch_arm_pi1.txt for those bug-hunts' actual
+conclusions; this file is the *how*.
+
+The QEMU monitor: info qtree, info usb, xp, screendump
+--------------------------------------------------------------
+The monitor is QEMU's own interactive command line - a live window into
+what the emulator itself thinks is attached and what state it's in,
+independent of (and often more trustworthy than) whatever the guest
+kernel prints. Reach it three ways:
+
+- `-nographic`'s own Ctrl-A C toggles between the guest serial console
+  and the monitor, sharing your terminal.
+- `-serial mon:stdio` (not `-nographic`) does the same thing while ALSO
+  giving you a real graphical window - see the "graphics vs headless"
+  section below.
+- For scripting, put it on its own socket and drive it from Python:
+
+    qemu-system-arm ... -monitor unix:/tmp/mon.sock,server,nowait &
+
+    import socket, time
+    m = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    m.connect("/tmp/mon.sock")
+    time.sleep(0.4); m.recv(4096)          # discard the greeting/prompt
+    m.sendall(b"info qtree\n")
+    time.sleep(1); print(m.recv(200000).decode(errors="replace"))
+
+Commands actually used this session, and what each answered:
+
+- `info qtree` - the real device tree QEMU built, independent of
+  anything the guest has enumerated. This is how "does this board even
+  HAVE a USB controller" and "what's the exact topology of what's
+  plugged in" got answered directly instead of inferred from a driver's
+  own (possibly wrong) diagnosis - it showed a `dwc2-usb` controller
+  with a `usb-hub` (an emulated "QEMU USB Hub", itself 8 ports) sitting
+  at root port 1, and `usb-kbd` behind THAT at port 1.1 - two hops, not
+  one, which mattered for reasoning about the driver's own hub-vs-root
+  handling.
+- `info usb` - a shorter, USB-specific summary of the same tree
+  ("Device 0.0, Port 1, Speed 12 Mb/s, Product QEMU USB Hub").
+- `xp/<count><format><size> <addr>` - raw physical memory examine, e.g.
+  `xp/16xw 0x0` to check what's actually sitting at a suspicious
+  address (used to confirm what a misdirected exception vector jumped
+  into during the framebuffer/vector-table bug).
+- `screendump <file>.ppm` - dumps the actual emulated framebuffer to a
+  real image file. This is the definitive answer to "is the display
+  device outputting anything at all" - see the "verifying graphics"
+  section below for how to actually read the result.
+
+Verifying graphics output: screendump + a tiny PPM parser, no image viewer needed
+---------------------------------------------------------------------------------------
+Every port in this repo is normally run `-nographic`, which is exactly
+wrong for a display bug: it gives no screen at all, so "nothing appears"
+is indistinguishable from "the driver never ran". The fix used
+repeatedly this session:
+
+1. Drop `-nographic`, keep a usable console anyway via
+   `-serial mon:stdio` (see "graphics vs headless" below for why plain
+   `-monitor stdio` is a trap here).
+2. A headless machine may still have a live X display - `echo $DISPLAY`
+   before assuming graphics are impossible (this sandbox has one).
+3. `screendump /tmp/fb.ppm` via the monitor (socket-scripted, see
+   above).
+4. Parse the PPM directly instead of eyeballing an image viewer - P6 PPM
+   is a trivial ASCII header (magic, width, height, maxval) followed by
+   raw RGB bytes:
+
+     def load_ppm(path):
+         d = open(path, 'rb').read()
+         i = 2; vals = []
+         while len(vals) < 3:
+             while d[i] in b" \t\n\r": i += 1
+             j = i
+             while d[j] not in b" \t\n\r": j += 1
+             vals.append(int(d[i:j])); i = j
+         return vals[0], vals[1], d[i+1:]     # width, height, pixel bytes
+
+   Then three cheap measurements answer almost every question:
+     - count of non-black pixels: 0 means nothing was drawn at all.
+     - number of distinct colours: 2 (background + one ink colour) is
+       the signature of a working text console; many colours suggests
+       garbage/uninitialised memory being displayed.
+     - a coarse ASCII-art downsample (one character per 8x16 cell, "#"
+       if any pixel in the cell is non-background) prints the actual
+       screen layout into your terminal - enough to recognise rendered
+       text and exactly where it stopped.
+   On arm-pi1 this turned "is it working?" into "1024x768, 2 distinct
+   colours, 3293 non-black pixels forming glyph shapes in the top-left"
+   - conclusive, and scriptable (see notes_debugging_techniques.txt item
+   29 for the full downsample recipe).
+5. Diff two screendumps (before/after an action) to test causality, not
+   just state - e.g. capturing before and after sending a serial-console
+   command turned "does typing echo onto the framebuffer" from a guess
+   into "3293 -> 3938 non-black pixels, two new rows of text".
+
+Graphics vs headless: -serial mon:stdio is the one that actually works for both
+----------------------------------------------------------------------------------------
+Three distinct configurations, easy to reach for the wrong one:
+
+- `-nographic`: no window at all; serial console and monitor share your
+  terminal via Ctrl-A C. Right for CI/headless testing, useless for a
+  display bug.
+- `-monitor stdio` (no `-nographic`): a real window opens, but this puts
+  ONLY the monitor on your terminal - the guest's serial console goes to
+  QEMU's own default backend (usually a tab inside the window itself),
+  so your terminal goes quiet and the shell looks hung even though it's
+  fine. A genuinely confusing state, hit for real this session - worth
+  recognising immediately rather than concluding the boot broke.
+- `-serial mon:stdio` (no `-nographic`): the fix. Multiplexes BOTH the
+  guest serial console and the monitor onto your terminal (Ctrl-A C to
+  switch between them, matching `-nographic`'s own convention), while
+  the window still shows the framebuffer. This is what
+  forks/arm-pi1/Makefile's own `qemu-graphics` target uses, and the only
+  one of the three that gives you an interactive shell AND a visible
+  screen at the same time.
+
+Injecting keyboard/mouse input via QMP, without a physical keyboard
+-------------------------------------------------------------------------
+QMP (QEMU Machine Protocol) is a second control channel, JSON-based, for
+scripting exactly the kind of input a human would give the graphical
+window - essential for testing a USB HID driver headlessly.
+
+Setup: add `-qmp unix:/tmp/qmp.sock,server,nowait` to the QEMU command
+line alongside (not instead of) `-device usb-kbd` (or `usb-mouse`) -
+QMP controls the machine, it doesn't create the input device itself.
+Every session must start with the capabilities handshake before any
+other command is accepted:
+
+    import socket, time, json
+    m = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    m.connect("/tmp/qmp.sock")
+    time.sleep(0.3); m.recv(4096)                    # greeting banner
+    m.sendall(b'{"execute":"qmp_capabilities"}\n')
+    time.sleep(0.3); m.recv(4096)                    # {"return": {}}
+
+Two different APIs for key events, and they are NOT interchangeable:
+
+- `send-key` - the simple one. Presses AND releases a chord of qcodes
+  in one command:
+
+    cmd = {"execute": "send-key",
+           "arguments": {"keys": [{"type": "qcode", "data": "l"}]}}
+    m.sendall((json.dumps(cmd) + "\n").encode())
+
+  qcodes are QEMU's own key names: single lowercase letters "a".."z",
+  digits, "ret" (Enter), "spc" (Space), "shift"+"3" as a two-element
+  list for a shifted glyph, etc. This is what actually worked reliably
+  this session for driving a real xv6 shell command
+  (`send-key l, s, ret` -> a genuine "ls" execution with real output).
+- `input-send-event` - explicit down/up control, letting you set the
+  hold duration precisely:
+
+    cmd = {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "key", "data": {"down": True,
+                                  "key": {"type": "qcode", "data": "k"}}}
+    ]}}
+
+  This did NOT reliably reach the emulated device in the same testing
+  session where `send-key` worked cleanly (repeated attempts at various
+  hold durations produced no guest-visible effect at all) - not fully
+  root-caused (possibly needs an explicit input route/head argument
+  this session never supplied), but the practical lesson stands:
+  **if `input-send-event` produces nothing, fall back to `send-key`
+  before concluding the device itself is broken** - it was the
+  input-injection method, not the driver, that was the dead end there.
+
+A held key producing a long run of repeated characters is a real thing
+to watch for and is not necessarily a QEMU bug - see
+notes_arch_arm_pi1.txt's own USB section for a case where the raw HID
+report was confirmed clean (a single press-then-release) via a report
+dump, yet the DRIVER's own repeat-suppression logic still produced a
+flood of the same character; the fix belonged in the driver, not in how
+the key was injected.
+
+Trace events: --trace and -d int/-d in_asm, and how to discover what's available
+-----------------------------------------------------------------------------------------
+Two different logging systems, for two different questions:
+
+- `-d int` (and `-d in_asm`, `-d exec`, etc.) is QEMU's own generic
+  CPU-execution tracing - exception/interrupt entry, instruction
+  disassembly as it executes. Route it to a file, not stdout, since it
+  interleaves badly with a serial console on the same terminal:
+
+    qemu-system-arm ... -d int -D /tmp/trace.log
+
+  This is what proved a boot was genuinely, silently hung rather than
+  just quiet: a 10-second capture showing 1.26 million identical
+  repeating faults, versus a healthy boot's trace stopping cleanly after
+  the real exception activity settles.
+- `--trace <pattern>` (or `--trace events=<file>` for many at once) is
+  QEMU's per-DEVICE-MODEL tracing - individual device implementations
+  (`hw/usb/hcd-dwc2.c`, `hw/misc/bcm2835_property.c`, etc.) emit named
+  trace points. Discover what a given QEMU build actually supports
+  before guessing a name:
+
+    qemu-system-arm --trace help | grep -i dwc2
+
+  Used this session to confirm, independent of anything the guest
+  kernel could report, that QEMU's own USB core successfully completed
+  a SETUP-stage packet (`usb_dwc2_packet_status status USB_RET_SUCCESS
+  len 8`) at the exact moment the guest driver was reporting a timeout -
+  proof the bug was in how the driver interpreted a REAL success, not in
+  the underlying transfer.
+- Route trace output to its own file too (`-D <file>` applies to both
+  systems) rather than stdout, for the same interleaving reason.
+
+When the guest-visible behaviour doesn't make sense, read QEMU's own device-model source
+------------------------------------------------------------------------------------------------
+The single highest-leverage technique this session, used twice to
+settle otherwise-unresolvable disagreements between "what should
+happen" (per a driver written and tested against real hardware) and
+"what's actually happening" (under emulation):
+
+    curl -fsSL "https://raw.githubusercontent.com/qemu/qemu/v$(qemu-system-arm --version | grep -oP '(?<=version )[0-9.]+')/hw/usb/hcd-dwc2.c" -o /tmp/hcd-dwc2.c
+
+(substitute the actual device file - `hw/usb/hcd-dwc2.c`, `hw/misc/
+bcm2835_property.c`, `hw/display/bcm2835_fb.c`, etc. - and pin the tag to
+the EXACT installed version, from `qemu --version`, not `master`: a
+newer or older QEMU may behave differently and you want to be reading
+the code actually running).
+
+Grepping the fetched source directly answered, with certainty rather
+than inference, two separate "is this a QEMU bug or my driver's bug"
+questions in this session:
+
+- grepping for every write to a specific interrupt-status bit
+  (`HCINTMSK_ACK`) across the ENTIRE ~1500-line file found none at all -
+  proving the emulated device never raises that bit on any transfer,
+  ever, rather than raising it only in some edge case the driver missed.
+- reading the exact packet-completion arithmetic
+  (`tpcnt = actual / mps; pcnt -= min(tpcnt, pcnt)`) showed a genuine,
+  reproducible-by-inspection reason a 0-length transfer's packet count
+  is never decremented, independent of ever running the code.
+
+General lesson: "the emulator probably doesn't implement X" is a
+hypothesis, not a diagnosis, and it's nearly free to falsify by reading
+the ~40KB of actual C that decides it - far cheaper than several more
+rounds of print-and-guess against the black box.
+
+Background QEMU processes: nohup + disown beats subshell backgrounding, and pkill on this harness can misbehave
+-----------------------------------------------------------------------------------------------------------------------------
+Two real, reproducible process-management gotchas from this session,
+both costing real time before being worked around:
+
+- `pkill -f qemu-system-arm` (and even `pgrep -f ... | xargs kill`)
+  reliably made THIS session's own tool-call harness report a spurious
+  exit code 144, even though the underlying kill happened correctly
+  (checked separately with `pgrep` afterward - the process really was
+  gone, and any command issued immediately after still worked). Not
+  fully root-caused, but the workaround is simple and lost no
+  reliability: **kill background QEMU instances by explicit PID**
+  (`pgrep -f "qemu-system-arm -M raspi1ap"`, then `kill <each pid>`
+  individually) rather than `pkill`/piped-xargs, and don't treat a 144
+  after a kill as evidence anything is actually wrong - verify with a
+  fresh `pgrep` before assuming so.
+- A plain `(qemu-system-arm ... &)` subshell-backgrounded launch,
+  combined in the SAME tool call as a later `pkill`/rebuild/relaunch
+  sequence, intermittently failed to leave a running process at all (a
+  `pgrep` immediately after showed nothing, and the expected log file
+  was empty or missing) - this reproduced the exact class of gotcha
+  notes_tutorial_gdb_multiarch.txt already documented for a DIFFERENT
+  launch pattern. `nohup qemu-system-arm ... > /tmp/out.log 2>&1 &`
+  followed by `disown`, as its own SEPARATE tool call (not chained with
+  a kill/rebuild in the same call), worked reliably every time this
+  session. When a background QEMU launch and a following action need to
+  both succeed, prefer splitting them into separate tool calls over one
+  long chained command - it makes a launch failure visible immediately
+  (an empty log, no matching `pgrep`) instead of silently cascading into
+  a confusing later symptom.
+- Pick a fresh TCP/socket path per attempt (this session used
+  `/tmp/qmp3.sock`, `qmp4.sock`, ... `qmp10.sock`, and TCP ports 4470
+  upward) - the same cheap insurance
+  notes_tutorial_gdb_multiarch.txt recommends for gdb ports, and for the
+  same reason: a stale listener from an instance that didn't actually
+  die yet is a confusing thing to accidentally attach to.
+
+Loading a raw kernel at the right physical address: -kernel vs -device loader, and how to find out where
+------------------------------------------------------------------------------------------------------------------
+A raw binary passed via `-kernel` (or `-device loader,file=...,addr=...,
+force-raw=on` for a second file alongside it, such as an ARM64->ARM32
+firmware stub) is placed at a physical address that is a property of
+the MACHINE MODEL, not something to assume or copy from a sibling
+board - `-M raspi1ap` and `-M raspi2b` place a `-kernel` image at
+DIFFERENT addresses despite being "the same family". Find out for
+certain rather than guessing:
+
+    qemu-system-arm -M <machine> -kernel <img> -S -monitor stdio
+    (qemu) info roms
+
+`info roms` lists every loaded image with its real `addr=`/`name=` -
+takes seconds, and removes the guesswork entirely, including for
+multi-file boots (a firmware stub and the real kernel loaded via two
+separate `-device loader` calls both show up as distinct named entries,
+letting you confirm both actually landed where intended).
