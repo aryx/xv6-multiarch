@@ -15,6 +15,29 @@ a secondary core before reaching a shell. Ten real bugs found and fixed
 along the way; the eleventh (the open one) was deliberately left for a
 future session per the user's own explicit choice to stop here.
 
+STATUS UPDATE (2026-09-09, session 2): two more real, verified bugs
+found and fixed (Bug 12: the trapframe only ever captured IFAR, never
+DFAR, so every Data Abort's own diagnostic print showed a meaningless
+fault address; Bug 13: this fork has the identical missing "-fno-pic
+-fno-pie" bug forks/arm-pi2 hit this same session - see that fork's own
+notes for the full story - which was ALSO producing a real
+"cpu0: panic: release" crash here). Neither one, however, turned out to
+be THE open SMP race from session 1 - both are real fixes worth
+keeping, but a non-deterministic hang/crash still reproduces afterward.
+Chasing it further this session did narrow the picture substantially:
+the crash is NOT limited to memmove()/balloc()/bfree() as session 1's
+own notes below describe - "-d int" tracing caught a core (observed on
+both CPU1 and CPU3 across different runs) taking a spurious return to
+EL2 AArch64 (landing at QEMU's own raspi_smpboot ROM address, 0x300)
+shortly after finishing tvinit()'s own mode-switch sequence, well BEFORE
+ever reaching userinit(). A concrete hypothesis (secondary cores
+redundantly re-executing armstub64.S's own spintable-release+"sev"
+sequence after already being released) was implemented and tested
+across six repeated reboots - the failure rate was unchanged, so this
+was reverted (see armstub64.S's own "claude:" comment recording the
+dead end). See "Bug 12", "Bug 13", and the amended "Open gap" section
+below for the full session-2 diagnosis.
+
 What this is, and the naming correction
 ----------------------------------------
 forks/arm-pi3 is patha454/xv6_pi_mp (Harley Paterson, University of
@@ -301,27 +324,154 @@ Verification so far
   make build-arm-pi3 / make run-arm-pi3 (top-level Makefile)
     -> reproduces the exact same boot trace via the wired command
 
-Open gap: secondary-core page-table race in balloc()/bfree()'s memmove()
------------------------------------------------------------------------------
-NOT fixed this session, left open per the user's own explicit choice
-after ten real bugs had already been found and fixed reaching this
-point. A secondary core (not CPU0) faults reading memory inside a
-memmove() call from the block-allocation code, well after "userinit:
-OK" prints - meaning the crash happens once secondary cores are
-legitimately running kernel code (post-scheduler-handoff), not during
-early boot. Genuinely plausible causes not yet investigated: a stale/
-per-core TTBR0 snapshot that doesn't see a page CPU0 mapped after that
-snapshot was taken (this kernel's own mmuinit1()/"signal_event()" dance
-for propagating the shared page table to secondary cores runs BEFORE
-startothers() has fully synchronized, per main.c's own ordering - worth
-checking first), a genuine buffer-cache race between cores (two cores
-touching the same block), or a stack-corruption bug unrelated to paging
-that merely LOOKS like a translation fault. This is squarely a
-concurrency bug in the original 2019 pi_mp code's own SMP design - not
-a QEMU-specific artifact (nothing about the fault pattern suggests
-otherwise) - and would need real cross-core state inspection (which
-core's TTBR0 points where, when) to pin down, not just single-core
-single-stepping.
+Bug 12 (real, fixed): the trapframe only ever captured IFAR, never DFAR - every Data Abort's own diagnostic address was meaningless
+----------------------------------------------------------------------------------------------------------------------------------------
+Found while re-investigating the open SMP crash below: exception.S's
+own "_switchtosvc" (the shared handler for undefined-instruction/
+prefetch-abort/data-abort/IRQ) unconditionally read IFAR (Instruction
+Fault Address Register, coprocessor 15 c6,c0,2) into the trapframe's
+own "ifar" field, regardless of trap type - for a genuine Data Abort
+(trapno 4), the address that actually faulted lives in DFAR (c6,c0,0)
+instead, a COMPLETELY DIFFERENT register. Every "unexpected trap 4 ...
+ifar 0x0" diagnostic this fork (and, by inheritance, forks/arm-pi2
+before its own independent fix - though that fork's own version of
+this bug was never chased since its crash resolved for other reasons)
+ever printed for a data abort was therefore showing a meaningless
+value (usually 0), not the real fault address.
+
+Fixed with a 3-instruction conditional in exception.S (cmp r0,#0x04;
+mrceq ... c6,c0,0 ; mrcne ... c6,c0,2) - reads DFAR specifically when
+trapno==T_DABT, IFAR otherwise - same stack slot either way, so no
+other offset in struct trapframe or exception.S changes. Renamed the
+field itself from "ifar" to "far" (arm.h) and updated trap.c's three
+active print statements to match - a real, general diagnostic
+improvement independent of what turns out to be causing the open crash
+below.
+
+Bug 13 (real, fixed): missing -fno-pic -fno-pie - the identical toolchain-default bug forks/arm-pi2 hit this same session
+---------------------------------------------------------------------------------------------------------------------------------
+This fork's own Makefile (all three hw= blocks) never had "-fno-pic
+-fno-pie" either - confirmed via the identical diagnostic already used
+on forks/arm-pi2 (see that fork's own notes' "Bug 7"): "objdump -d" on
+a compiled acquire() showed the same GOT-indirect global-variable
+access pattern ("ldr r5,[pc,#N]; add r5,pc,r5; ldr r3,[pc,#M];
+ldr r5,[r5,r3]"), and this fork ALSO produces a real "cpu0: panic:
+release" crash under sustained SMP load (usertests) - spinlock.c's own
+release() detecting !holding(lk), exactly the symptom a broken
+GOT-indirect "cpus[]" access would cause. Same fix, same reasoning:
+"-fno-pic -fno-pie" restores direct "movw/movt" absolute addressing.
+This fork's own rpi1 hw= block even had the SAME tell-tale commented-out
+alternate CFLAGS line with "-fno-pic" already in it that forks/arm-pi2's
+own rpi1 block had - both forks share the same zhiyihuang-lineage
+Makefile ancestry, so this was very likely the SAME author's own fix,
+lost from the ACTIVE CFLAGS line in both forks the same way.
+
+Verified: the real-hardware kernel7.bin build stays clean with this
+change (checked before and after, matching this repo's own convention
+for every fork). Does NOT, on its own, fix the open SMP crash below -
+see that section for why this was tested and ruled out as sufficient.
+
+Open gap: a non-deterministic SMP crash/hang, re-characterized this session but still not root-caused
+------------------------------------------------------------------------------------------------------------
+Session 1 (2026-09-08) documented this as a page-table race specifically
+inside balloc()/bfree()'s own memmove(), well after "userinit: OK".
+Session 2 (2026-09-09) found the SAME underlying non-determinism
+manifests in at least two other ways too, INCLUDING one that happens
+much EARLIER (before "userinit: OK", sometimes even before "kinit1: OK"
+- the very first thing CPU0 prints after "Hello World from xv6"):
+
+- Garbled, interleaved "cpu0: panic: release" output (multiple cores
+  printing through the SAME cprintf() call concurrently, itself a
+  strong signal something is corrupting shared kernel state, not just
+  one memory access) - this specific SYMPTOM turned out to be Bug 13
+  above (the missing -fno-pic), and no longer reproduces the same way.
+- A hang with NO panic message at all: console output simply stops
+  (most often right after some core's own "CPU N: Handing off to
+  scheduler." line, before CPU0 has even reached "kinit1: Ok") and
+  every core stays silently parked forever. "-d int" tracing (a real,
+  reproduced hang, captured from the very first traced instruction -
+  see "Methodology" below) caught the actual mechanism: a core (CPU3 in
+  the captured run) takes "Taking exception 1 [Undefined Instruction]"
+  "from EL2 to EL2" with "ELR 0x300" - physical address 0x300, QEMU's
+  OWN "raspi_smpboot" ROM location (see Bug 6 above) - "to EL2 PC 0x200"
+  (ESR 0x0/0x2000000: EC=0 "Unknown reason", IL=1). This happened
+  immediately after that SAME core finished tvinit()'s own
+  set_mode_sp()-based mode-switch sequence (5 real, successfully-traced
+  AArch32 mode switches: svc<->fiq/irq/und/abt/sys, matching tvinit()'s
+  own 5 set_mode_sp() calls one-for-one) - meaning the core had
+  genuinely, correctly been running AArch32 EL1 kernel code for a real
+  stretch, then somehow ended up back at EL2 AArch64, executing
+  whatever raw bytes physical address 0x300 happens to hold as if they
+  were instructions (raspi_smpboot's own real ROM code, most likely -
+  not designed to be re-entered this way), which almost immediately hit
+  a genuinely undefined encoding and re-trapped to EL2's own vector
+  (VBAR_EL2=0, confirmed via gdb - so "PC 0x200" is literally
+  VBAR_EL2+0x200, the "current EL, SPx, synchronous" vector slot),
+  where it then sat forever (nothing ever populated real handler code
+  there either, so the SAME re-trap just repeats).
+
+  A concrete, testable hypothesis for HOW a core gets back to EL2 at
+  all: armstub64.S's own spintable-release block (writing 0xe0/0xe8/
+  0xf0 and "sev") runs unconditionally on EVERY core, not just CPU0 -
+  so cores 1-3 EACH redundantly re-write those same three slots and
+  re-broadcast "sev" once THEY reach the stub too, well after CPU0's
+  own original release already worked. If QEMU's own raspi_smpboot ROM
+  logic re-wakes on ANY "sev" (not just a targeted one), a later core's
+  own redundant broadcast could spuriously pull an ALREADY-DEPARTED
+  core back toward that ROM's own address range. This was implemented
+  (gate the whole block behind a "mrs x0,mpidr_el1; and x0,x0,#3;
+  cbnz x0,1f" check, CPU0 only) and tested across 6 repeated full
+  reboot+usertests cycles - the hang/crash rate was UNCHANGED (still
+  ~60-70% of runs), so this is NOT the (or at least not the whole)
+  mechanism - reverted, with the hypothesis and the negative result
+  recorded in armstub64.S's own comment for the next session.
+
+  What's still unexplained: WHY a core that has demonstrably been
+  running real AArch32 EL1 code (5 successful mode switches deep into
+  tvinit()) would return to EL2 at all, given nothing in AArch32 EL1
+  can voluntarily re-enter a higher EL without executing something
+  trap-worthy (SMC/HVC/an EL2-trapped system-register or WFE/WFI
+  access, per HCR_EL2's own routing bits - confirmed HCR_EL2=0 on the
+  affected core via gdb, ruling out WFE/WFI-trapping specifically).
+  Candidates for a future session, roughly in order of how much new
+  evidence would be needed: (1) capture the FIRST exception in the
+  chain, not the cascaded one this session caught - set a breakpoint at
+  VBAR_EL2+0x600 (physical 0x600, the "lower EL, AArch32, synchronous"
+  vector - the correct offset for a trap that originates FROM AArch32
+  EL1, not from EL2 itself) on a "-S"-paused boot, BEFORE continuing,
+  to read ESR_EL2/FAR_EL2/ELR_EL2 (and, critically, the ORIGINAL
+  AArch32 PC/registers, all still on the SVC stack at that point)
+  before anything cascades - this session's own attempts at this
+  either missed the window (the race can trigger within ~2 seconds of
+  boot, faster than a fresh gdb attach) or hit the SAME address-
+  resolution confusion documented in notes_tutorial_gdb_multiarch.txt's
+  own "mixed 32/64-bit target" gotchas; (2) once a clean FIRST-fault
+  ESR_EL2 is in hand, its EC field will name the actual trap class
+  directly (HVC=0x16, WFI/WFT=0x1, Data/Prefetch Abort from a lower
+  EL=0x24/0x20, ...), turning this from "which of several plausible
+  mechanisms" into a single concrete lead; (3) the ORIGINAL
+  balloc()/bfree()/memmove() manifestation from session 1 may or may not
+  be the SAME root cause as this earlier one - once the early hang is
+  understood, re-check whether it still reproduces on its own.
+
+Methodology note for a future session on this specific bug
+------------------------------------------------------------------
+This fork's crash is worse to chase than forks/arm-pi2's own bugs this
+same session for two compounding reasons, both worth knowing going in:
+(1) it is genuinely non-deterministic (roughly 60-70% of boots hang or
+crash somewhere, the rest reach a real shell - always reboot-and-retry
+rather than trusting a single clean or single failed run), and (2) the
+CPU is a REAL Cortex-A53 (AArch64-native) running AArch32 code via
+architectural compatibility mode, not a pure AArch32 core like
+forks/arm-pi1/arm-pi2/arm's own QEMU targets - gdb-multiarch's own
+"file" command, if pointed at the 32-bit kernel ELF BEFORE the first
+"target remote", forces an ARMv7-only target description that then
+outright REJECTS the remote's real (268-byte, AArch64) register-set
+report ("Remote 'g' packet reply is too long") - connect WITHOUT a
+preloaded file first (raw addresses/nm-derived symbols work fine, same
+as notes_tutorial_gdb_multiarch.txt's own "no file at all" case
+studies), and only worry about ARM-vs-AArch64 symbol resolution once
+you already know which state a given core is actually in.
 
 Dynamic QEMU-vs-real-hardware detection: considered, deliberately deferred
 -------------------------------------------------------------------------------

@@ -109,8 +109,16 @@ _switchtosvc:
 	push {r1}
 	mrs r1, cpsr
 	push {r1}
-        mrc p15, 0, r1, c6, c0, 2  /* read Instruction Fault Address Register (I
-FAR) */
+	/* claude: for a Data Abort (r0==T_DABT==0x04), the address that
+	 * actually faulted lives in DFAR (c6,c0,0), not IFAR (c6,c0,2) -
+	 * this used to read IFAR unconditionally for every trap type,
+	 * silently showing an unrelated address (usually 0) for every
+	 * data abort's own "ifar" field in trap.c's own diagnostic
+	 * prints. Same stack slot either way, so no other offset in this
+	 * file (or struct trapframe in include/arm.h) changes. */
+	cmp r0, #0x04
+	mrceq p15, 0, r1, c6, c0, 0  /* DFAR, data abort only */
+	mrcne p15, 0, r1, c6, c0, 2  /* IFAR, every other trap type */
         push {r1}
         push {r0}
 	sub r1, r3, #20

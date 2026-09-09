@@ -31,6 +31,20 @@ _start:
 	// CPU0 - where entry.S's own MPIDR-based primary/secondary gating
 	// (the "cmp r0,#0; wfene; bne mp_continue" near its own top) takes
 	// over, exactly as it would following real firmware's release.
+	//
+	// claude: a later session tried gating this block to CPU0 only
+	// (cores 1-3 were redundantly re-writing the same three slots and
+	// re-issuing their own "dsb sy; sev" once already released - a real
+	// hypothesis at the time, since "-d int" tracing had just caught a
+	// core taking an "Undefined Instruction" exception "from EL2 to
+	// EL2" with ELR=0x300 - raspi_smpboot ROM's own address - after
+	// that same core had already dropped to AArch32 EL1). Verified via
+	// repeated reboot attempts that the CPU0-only gate did NOT change
+	// the failure rate at all - reverted. Left here as a documented
+	// dead end: whatever actually causes a core to return to EL2 partway
+	// through AArch32 execution, it isn't explained by this stub's own
+	// redundant spintable writes - see notes_arch_arm_pi3.txt's own
+	// "Open gap" section for where this investigation actually landed.
 	ldr	x0, =_start
 	ldr	x1, =0xe0
 	str	x0, [x1]

@@ -488,3 +488,40 @@ Environment gotchas specific to this session (worth checking first, next time)
   file branches into this way, not just the crash site - see
   notes_arch_arm_pi2.txt's own "Bug 3" for the full story (four bugs
   deep, but this specific check took one `readelf` command to confirm).
+- **A real ARMv8-A core running AArch32 code (via architectural
+  compatibility mode, not a pure AArch32 chip) rejects a preloaded
+  32-bit ELF at connect time.** forks/arm-pi3's own CPU (a real
+  Cortex-A53, `qemu-system-aarch64 -M raspi3b`) resets AArch64 and
+  drops to AArch32 EL1 for its actual kernel - gdb-multiarch's own
+  `target remote` correctly negotiates whichever the CPU is ACTUALLY
+  running at connect time, but only if you let it: pointing `file` at
+  the 32-bit kernel ELF (or passing it on gdb's own command line)
+  BEFORE the first `target remote` locks gdb into an ARMv7-only target
+  description, and the real (AArch64, 268-byte) register-set report
+  the remote then sends gets rejected outright ("Remote 'g' packet
+  reply is too long (expected 168 bytes, got 268 bytes)"). Fix: connect
+  WITHOUT a preloaded file first (`target remote :PORT` alone) - raw
+  `x/`-reads and `break *addr` work exactly as well with no file loaded
+  as case studies 1-2 above already show, so this costs nothing - and
+  only load a matching-bitness ELF (or none at all) once you already
+  know, from `info threads`/`$cpsr`'s own mode bits, which execution
+  state a given core is actually in.
+- **Vector-table addresses for an unhandled EL2 exception are still
+  useful breakpoint targets, even with no real handler installed.**
+  Reading `VBAR_ELx` first (`info all-registers | grep -i vbar` once
+  connected) tells you exactly where an unhandled trap will land -
+  offset `+0x600` from `VBAR_EL2` specifically for "exception from a
+  lower EL using AArch32" (the one that matters when debugging exactly
+  this kind of AArch32-EL1-code-taking-a-real-fault scenario), `+0x200`
+  for "current EL, SPx" (what you'll see AFTER a first exception has
+  already put the core back at EL2 and something there re-faults). A
+  `break *<VBAR_EL2+correct offset>` set BEFORE the race has a chance
+  to trigger (ideally from a `-S`-paused boot, continued only after the
+  breakpoint is armed) catches the ORIGINAL fault's own ESR_EL2/
+  FAR_EL2/ELR_EL2 before any further cascading corrupts them - reading
+  those registers from an ALREADY-stuck core only shows whatever the
+  LAST exception in the chain looked like, which can be a materially
+  different (and less informative) address/ESR than the first one -
+  see notes_arch_arm_pi3.txt's own "Open gap" for a worked example
+  where this distinction mattered and the first-fault capture attempt
+  itself is still an open follow-up.

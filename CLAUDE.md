@@ -27,9 +27,15 @@ Two sequential efforts, in order:
    target, no logic `forks/riscv64` didn't already have). Two more ports
    surfaced after Phase 4 was scoped - `arm-pi3` and `arm64-pi4`.
    `arm-pi3` is now wired up (`build-arm-pi3`/`run-arm-pi3`) and boots
-   all 4 cores deep into userinit under QEMU - ten real bugs found and
-   fixed, one open (a secondary-core page-table race) - see
-   `notes_arch_arm_pi3.txt`. `arm64-pi4` still needs QEMU 9.1+ for
+   all 4 cores deep into userinit under QEMU - twelve real bugs found
+   and fixed (most recently the same missing-`-fno-pic` gap
+   `arm-pi2` had, and a trapframe fix so a Data Abort's own diagnostic
+   print shows the real fault address), one open: a non-deterministic
+   SMP hang/crash, re-characterized (not yet root-caused) in a second
+   session - now known to happen as early as right after `tvinit()`,
+   not only in the later `memmove()`/`balloc()` path session 1 first
+   found - see `notes_arch_arm_pi3.txt`'s own "Open gap" for the full
+   diagnosis and the concrete next lead. `arm64-pi4` still needs QEMU 9.1+ for
    `-M raspi4b` (not packaged on this host, still 8.2.2 as of
    2026-09-09) and hasn't been started; see "Adding a new arch" below
    for the recipe, and `docs/claude_notes/notes_arch_*.txt` for what's

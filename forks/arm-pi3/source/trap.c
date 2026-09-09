@@ -134,7 +134,7 @@ void tvinit(void)
 void trap_oops(struct trapframe *tf)
 {
 
-cprintf("trapno: %x, spsr: %x, sp: %x, pc: %x cpsr: %x ifar: %x\n", tf->trapno, tf->spsr, tf->sp, tf->pc, tf->cpsr, tf->ifar);
+cprintf("trapno: %x, spsr: %x, sp: %x, pc: %x cpsr: %x far: %x\n", tf->trapno, tf->spsr, tf->sp, tf->pc, tf->cpsr, tf->far);
 cprintf("Saved registers: r0: %x, r1: %x, r2: %x, r3: %x, r4: %x, r5: %x\n", tf->r0, tf->r1, tf->r2, tf->r3, tf->r4, tf->r5);
 cprintf("More registers: r6: %x, r7: %x, r8: %x, r9: %x, r10: %x, r11: %x, r12: %x\n", tf->r6, tf->r7, tf->r8, tf->r9, tf->r10, tf->r11, tf->r12);
 
@@ -221,16 +221,16 @@ led25_off();
   default:
     if(curr_proc == 0 || (tf->spsr & 0xF) != USER_MODE){
       // In kernel, it must be our mistake.
-      cprintf("unexpected trap %d from cpu %d addr %x spsr %x cpsr %x ifar %x\n",
-              tf->trapno, curr_cpu->id, tf->pc, tf->spsr, tf->cpsr, tf->ifar);
+      cprintf("unexpected trap %d from cpu %d addr %x spsr %x cpsr %x far %x\n",
+              tf->trapno, curr_cpu->id, tf->pc, tf->spsr, tf->cpsr, tf->far);
       cprintf("Data Fault Status Register: 0x%x\n", get_dsar());
       panic("trap");
     }
     // In user space, assume process misbehaved.
     cprintf("pid %d %s: trap %d on cpu %d "
-            "addr 0x%x spsr 0x%x cpsr 0x%x ifar 0x%x--kill proc\n",
+            "addr 0x%x spsr 0x%x cpsr 0x%x far 0x%x--kill proc\n",
             curr_proc->pid, curr_proc->name, tf->trapno, curr_cpu->id, tf->pc,
-            tf->spsr, tf->cpsr, tf->ifar);
+            tf->spsr, tf->cpsr, tf->far);
     curr_proc->killed = 1;
   }
 

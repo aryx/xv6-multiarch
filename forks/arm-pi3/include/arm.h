@@ -64,7 +64,9 @@ struct trapframe {
   uint r13;
   uint r14;
   uint trapno;
-  uint ifar; // Instruction Fault Address Register (IFAR)
+  uint far; // claude: renamed from "ifar" - exception.S now reads DFAR
+            // (the actually-faulting address) for Data Abort traps, and
+            // IFAR only for every other trap type, into this same slot.
   uint cpsr;
   uint spsr; // saved cpsr from the trapped/interrupted mode
   uint pc; // return address of the interrupted code
