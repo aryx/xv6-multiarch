@@ -4,13 +4,38 @@ notes_arch_arm_pi1_bis.txt
 Written: 2026-09-07, against commit ead0290 (the loongarch bring-up
 commit), during the armv6-rpi bring-up itself. Phase 4 of
 docs/claude_notes/build-and-test-plan.md, seventh port attempted from
-that phase's list, first of the four ARM board ports. Status: NOT fully
-working yet - six real bugs found and fixed, boot now progresses vastly
-further than the initial crash loop and reaches this kernel's own
-mmuinit0()/cmain() startup path on the correct board emulation, but no
-console output is reached yet - the remaining issue looks like it may be
-at the QEMU "-M raspi1ap" board/firmware-emulation level rather than
-something fixable from this kernel's own source (see "Bug 6" below).
+that phase's list, first of the four ARM board ports.
+
+STATUS (updated 2026-09-09): FULLY WORKING, INCLUDING GRAPHICS AND A
+REAL USB KEYBOARD - a second session applied the exact same fix
+pattern that got forks/arm-pi1 (the same real board, via a different
+upstream fork - see docs/provenance.md) to a full interactive shell, a
+working framebuffer console, and a working USB keyboard: no PL011 UART
+driver (QEMU has no chardev for the Mini-UART this kernel otherwise
+uses), no fb_ready guard on the framebuffer pointer, no .bss zeroing,
+and no USB stack wired up at all. Every one of those turned out to be
+present here too, byte-for-byte in some cases (this fork's own
+keyboard.s is identical to arm-pi1's, confirmed via "diff -w") - see
+"Session 2" below for the full writeup, and the end of "Bug 6" for why
+the ORIGINAL session's own "may be a QEMU firmware issue" hypothesis
+for its own stopping point turned out to be wrong: it was the same
+kernel-level bug as arm-pi1's, just not yet diagnosed. Wired up as
+build-arm-pi1-bis/run-arm-pi1-bis/run-arm-pi1-bis-qemu-graphics/
+test-arm-pi1-bis/clean-arm-pi1-bis/kill-arm-pi1-bis, folded into
+build-all/test-all/clean-all/kill-all, plus a Dockerfile ARCH=arm-pi1-bis
+case and .github/workflows/docker.yml matrix entry (verified locally
+with "docker build --build-arg ARCH=arm-pi1-bis" first, per this repo's
+own convention - caught a real, unrelated bug in the process, see
+"Session 2" bug 7).
+
+Original session status (2026-09-07, superseded by Session 2 below):
+NOT fully working yet - six real bugs found and fixed, boot now
+progresses vastly further than the initial crash loop and reaches this
+kernel's own mmuinit0()/cmain() startup path on the correct board
+emulation, but no console output is reached yet - the remaining issue
+looks like it may be at the QEMU "-M raspi1ap" board/firmware-emulation
+level rather than something fixable from this kernel's own source (see
+"Bug 6" below).
 
 What this is, and the naming exception
 ---------------------------------------
@@ -252,3 +277,169 @@ run-armv6-rpi only (per the user's own "at least connect it... even if
 it fails") - no test-armv6-rpi/clean-armv6-rpi/kill-armv6-rpi yet, and
 not folded into build-all/run-all/test-all, since there is no console
 output yet to build a real pass/fail signal around.
+
+================================================================================
+Session 2 (2026-09-09): from "may be QEMU firmware" to a full shell, graphics, and a working USB keyboard
+================================================================================
+
+Starting point: this port shares real-hardware code (see docs/
+provenance.md - a genuine fork/continuation of zhiyihuang/xv6_rpi_port,
+the same upstream forks/arm-pi1 comes from) and, once forks/arm-pi1's
+own bring-up found and fixed several real bugs of its own (missing
+PL011 UART driver, no framebuffer-pointer validity check, no .bss
+zeroing, an unwired USB stack - see notes_arch_arm_pi1.txt), the
+obvious next question was whether this port's own "may be a QEMU
+firmware issue" stopping point (Bug 6 above) was actually the exact
+same class of bug. It was - byte-for-byte in some cases.
+
+Bug 6, part 2 (real, fixed): no console output was Bug 4/Bug 5 from arm-pi1, not a QEMU firmware issue
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Re-diagnosed rather than assumed: this fork's own uart.c has no PL011
+driver at all (Mini-UART only), and QEMU's raspi1ap has no chardev
+backend for the Mini-UART - confirmed identically to arm-pi1's own
+finding, not re-derived from scratch (same board model, same
+peripheral set). Separately, console.c's own gpuputc()/drawpixel()
+write through fbinfo.fbp completely unguarded, and consoleinit() calls
+initframebuf() (which can fault through that pointer) before tvinit()
+(which installs the real exception vector table) ever runs - the exact
+same ordering gap as arm-pi1's own Bug 5, and the real explanation for
+the repeating Prefetch Abort loop this session's own Bug 6 investigation
+correctly LOCATED (IFAR at the kernel's own load address, i.e. a fault
+being mishandled by whatever pre-tvinit() code was at the vector table
+location) but incorrectly ATTRIBUTED to "QEMU raspi1ap board/firmware
+emulation" rather than this kernel's own boot ordering.
+
+Fixed with the identical pattern used for arm-pi1 (see
+notes_arch_arm_pi1.txt bugs 4/5/7/8 for the full technical detail on
+each - not re-derived here, just re-applied):
+
+  - uart.c: added a PL011 driver (register defines at
+    UART0_DR=0xFE201000 etc, matching this fork's own DEVSPACE
+    convention exactly), folded into uartputc()/uartgetc()/
+    enableirqminiuart()/miniuartintr() so every existing caller gets
+    both UARTs "for free". Unconditional, no runtime detection needed -
+    PL011 is a real, always-present peripheral regardless of which
+    UART's ALT function the GPIO pins are muxed to.
+  - console.c: added fb_ready/fb_base (a runtime bounds check on
+    fbinfo.fbp against GPUMEMBASE/GPUMEMSIZE, with a fallback L1
+    section mapping for the plain-physical-address form QEMU's
+    bcm2835-fb model returns - see notes_arch_arm_pi1.txt bug 7 for why
+    the two forms differ). gpuputc() returns immediately when
+    !fb_ready; every gpuputc()/uartputc() call pair reordered to call
+    uartputc() first (defense in depth, since gpuputc() can still fault
+    on a genuinely corrupt framebuffer state).
+  - kernel.ld + main.c: added a bss_start linker symbol and a
+    bsszero() call as the literal first thing cmain() does - this
+    kernel never zeroed .bss anywhere (the SAME latent bug as arm-pi1,
+    proven the same way: console.c's own pre-existing "panicked = 0;
+    // must initialize in code since the compiler does not" comment).
+
+Verified: booted clean on the FIRST attempt after applying all three
+fixes - "Hello World from xv6" / "ARM memory is 0 1c000000" /
+"init: starting sh" / "$", then a full, unmodified "usertests" run
+reaching "ALL TESTS PASSED" (via a socket-based interactive test, and
+later via the new test-xv6.py/test-arm-pi1-bis harness below).
+
+Bug 7 (real, fixed): USB keyboard fully working, via the SAME vendored csud/ as arm-pi1 - now shared at the repo's top level
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+This fork's own keyboard.s (Alex Chadwick's input01 sample) and
+UsbInitialise()/KeyboardUpdate()/KeyboardGetChar() declarations in
+defs.h were already present - the ORIGINAL session (this file's own
+"Bug 3") correctly diagnosed the shipped libcsud.a as unbuildable (no
+source, user-supplied dependency) and dropped the dead linkage, which
+was the right call at the time. It no longer applies: csud/ (Alex
+Chadwick's CSUD, MIT licensed) now has real, buildable, already-fixed
+source in this repo, vendored during forks/arm-pi1's own USB bring-up
+(notes_arch_arm_pi1.txt bugs 8-10) and confirmed - via "diff -w
+keyboard.s ../arm-pi1/source/keyboard.s" - to be literally the same
+driver this port already shipped a (dead) reference to.
+
+Rather than vendor a SECOND copy, csud/ was moved to the repo's own top
+level (was briefly forks/arm-pi1/csud/) and both forks now build their
+own compiled objects/archive from that shared source into their own
+build/ directory - see the top-level Makefile's own header comment and
+forks/arm-pi1/Makefile's own CSUDDIR comment for the reasoning (only
+the SOURCE is shared; each fork's own build output never collides,
+even under build-all).
+
+Wiring, mirroring forks/arm-pi1/source/main.c and source/timer.c
+exactly:
+  - Makefile: CSUDDIR=../../csud/, builds build/csud/*.o and
+    build/libcsud.a with the SAME real codegen flags as the rest of
+    this kernel (-mcpu=arm1176jzf-s -marm) - PLUS -mfloat-abi=soft,
+    which arm-pi1's own CSUD_CFLAGS does not need (arm-pi1's own kernel
+    CFLAGS has no float-abi override, so gcc's hard-float default for
+    -mcpu=arm1176jzf-s already matches; THIS fork's own makefile.inc
+    explicitly forces -mfloat-abi=soft kernel-wide, for reasons
+    unrelated to CSUD - see makefile.inc's own comment - so CSUD had to
+    match it too, or "kernel.elf" is a real inter-object ABI mismatch:
+    "ld: build/libcsud.a(usbd.o) uses VFP register arguments,
+    kernel.elf does not" was hit and fixed here, a genuine build-time
+    catch, not a false positive).
+  - main.c: UsbInitialise() called once, right after ideinit() -
+    ungated (a failed/absent USB controller is not an error, the UART
+    console works regardless).
+  - timer.c: KeyboardUpdate()/consoleintr(usbkbdgetc) polled from the
+    existing 100Hz timer3intr() (CSUD is a polling driver with no
+    interrupt path of its own), with the SAME two fixes arm-pi1's own
+    bring-up needed on top of CSUD itself:
+      - a "lastusbkey" debounce (CSUD's own KeyboardGetChar()/
+        KeyWasDown() repeat-suppression does not actually suppress a
+        held key in practice - confirmed for arm-pi1 via a raw HID
+        report dump showing a clean single press-then-release
+        underneath a flood of repeated characters; never emit the same
+        character on two consecutive polls in a row).
+      - '\n' -> '\r' translation (keyboard.s's own tables map Enter to
+        '\n'; this kernel's consoleintr() only treats '\r' as "submit
+        line").
+
+Verified with real keystrokes via QMP's send-key against the emulated
+USB keyboard (see notes_tutorial_qemu.txt), not just log lines - both
+headless and through the new "qemu-graphics" target (a real GTK window,
+confirmed via a screendump pixel-count diff: 1112 -> 5369 non-black
+pixels after typing, proving the framebuffer console actually rendered
+the typed characters):
+
+  send-key l, s, ret
+  -> "ls\n.              1 1 512\n..             1 1 512\n
+      cat            2 2 18312\n...(the full, real directory listing)...\n$"
+
+Bug 8 (real, fixed - a build-system bug, not an xv6/QEMU one): "make qemu" fails outright in any headless environment (Docker/CI included)
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Caught by this repo's own "verify Docker locally before touching CI"
+convention (see notes_debugging_techniques.txt item 6, and CLAUDE.md's
+own "Adding a new arch" step 6): "docker build --build-arg
+ARCH=arm-pi1-bis" failed with "make[1]: *** [Makefile:127: qemu] Error
+1" / "TERM environment variable not set" - this fork's own "qemu"
+target had a plain "@clear" as its first line (present since before
+this session; every other fork here has no equivalent call), which
+exits nonzero with no TTY/TERM, aborting the whole target before QEMU
+ever launches. Nothing to do with xv6 or QEMU itself - this Makefile
+target was simply never runnable outside an interactive terminal.
+Fixed with "@clear || true".
+
+Verification (full, after all of Session 2's fixes)
+------------------------------------------------------------------------
+  make CROSSCOMPILE=arm-linux-gnueabihf- clean kernel.elf
+    -> builds clean from scratch, zero warnings/errors
+  make build-arm-pi1-bis / make test-arm-pi1-bis (top-level Makefile)
+    -> reproduces "ALL TESTS PASSED" via the wired command, repeatedly
+  ./test-xv6.py (this fork's own new test harness, modeled on
+  forks/arm-pi1/test-xv6.py - same "\r"-not-"\n" Enter convention)
+    -> ALL TESTS PASSED
+  docker build --build-arg ARCH=arm-pi1-bis -t xv6-multiarch:arm-pi1-bis-test .
+    -> completes clean, "ALL TESTS PASSED" appears in the build log
+       itself, verified locally before touching
+       .github/workflows/docker.yml
+  make run-arm-pi1-bis-qemu-graphics (a real GTK window + "-device
+  usb-kbd", equivalent to forks/arm-pi1's own target)
+    -> boots to a real framebuffer console; typed keystrokes via a
+       real (or QMP-injected) USB keyboard execute real shell commands,
+       confirmed both via the serial console text AND a screendump
+       pixel-count diff
+
+Wired up as build-arm-pi1-bis/run-arm-pi1-bis/
+run-arm-pi1-bis-qemu-graphics/test-arm-pi1-bis/clean-arm-pi1-bis/
+kill-arm-pi1-bis, folded into build-all/test-all/clean-all/kill-all,
+plus a Dockerfile ARCH=arm-pi1-bis case and .github/workflows/
+docker.yml matrix entry.
