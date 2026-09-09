@@ -506,44 +506,114 @@ both uartputc() and gpuputc()), confirmed by diffing two screendumps
 before/after sending a command. "make test-arm-pi1" still reaches ALL
 TESTS PASSED, and the real-hardware "make all"/kernel.img still builds.
 
-Still open: keyboard input INTO the graphics window
----------------------------------------------------------
-The framebuffer is now a real output device under QEMU, but the QEMU
-window is still output-only: this kernel's only input path is the UART
-(consoleintr(uartgetc) driven by the PL011/Mini-UART IRQ). Typing has
-to happen on the serial console - the terminal when using
-"-serial mon:stdio", or the serial0 tab inside the QEMU window itself -
-and then echoes onto the framebuffer.
+Bug 8/Session 4 (2026-09-09): USB keyboard bring-up - real progress, one open failure left
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+The framebuffer is a real output device now (Bug 7), but the QEMU
+window was still output-only: input only ever came from the UART
+(consoleintr(uartgetc)). This fork ships a USB keyboard path -
+source/keyboard.s (Alex Chadwick's input01 sample) plus
+UsbInitialise()/KeyboardUpdate()/KeyboardGetChar() declared in
+include/defs.h - but nothing had ever called any of it, and the USB
+stack was a prebuilt libcsud.a with no source in this tree.
 
-Making the window itself accept keystrokes means driving a USB
-keyboard, and this fork ships one: source/keyboard.s (Alex Chadwick's
-input01 sample) plus libcsud.a, with UsbInitialise()/KeyboardUpdate()/
-KeyboardGetChar() already declared in include/defs.h. Nothing calls any
-of them - the USB path was never wired up by the original author.
+Vendored csud/ (github.com/Chadderz121/csud @ e13b935, MIT, confirmed
+to be that exact blob's own source - built from this tree it exports
+the same 141 symbols, plus LogPrintF which this fork's own build
+resolves itself via source/csud_glue.c) and built it from source
+instead, using this kernel's own real ARMv6 codegen flags. Wired
+UsbInitialise() into main.c (right after ideinit()) and polled it from
+the existing 100Hz timer tick (timer.c's own timer3intr() - CSUD is a
+polling driver with no interrupt path of its own).
 
-Two real obstacles before that becomes a small job:
+Getting the HCD to actually initialize and the root hub to attach
+needed four separate, real fixes:
 
-  - libcsud.a is a PREBUILT static library with no source in this tree
-    ("ar t" shows designware20.c.o, hub.c.o, hid.c.o, keyboard.c.o,
-    roothub.c.o, broadcom2835.c.o, ...), so its dwc2 driver cannot be
-    adjusted the way the rest of this port can.
-  - QEMU's dwc2 model needs real driver-side accommodation. The
-    reference point is ~/principia/kernel/COMPILE/9/bcm/usbdwc.c, which
-    got a Plan 9 dwc2 driver working under this same emulation, and
-    only after: detecting emulation at runtime (its own emulating(),
-    keying on gsnpsid == 0x4f54294a, QEMU's dwc2 rev 2.94a, versus real
-    hardware's own id), skipping split transactions entirely under
-    emulation (QEMU routes low/full-speed transfers directly and its
-    split state machine otherwise eats a ~1s timeout per transfer),
-    working around a sticky-Hcintr interrupt storm, tolerating lost
-    completion wakeups with bounded waits, and handling QEMU not
-    decrementing hctsiz.Pktcnt. That is a substantial amount of
-    emulation-specific knowledge to have to reproduce against a
-    library whose source isn't here.
+  - HCD_DESIGNWARE_BASE (csud/include/configuration.h) and two more
+    addresses in csud/source/platform/arm/broadcom2835.c
+    (MicroDelay's timestamp register, PowerOnUsb's mailbox) were raw
+    ARM PHYSICAL addresses (0x20980000, 0x20003004, 0x2000B880) -
+    meaningless under this kernel's own memory map, which only ever
+    reaches peripherals through the DEVSPACE=0xFE000000 virtual alias
+    (mmu.c's own "map IO region" loop). Relocated to that alias,
+    cross-checked byte-for-byte against this fork's own uart.c/
+    timer.c/mailbox.h for the identical hardware. Needed on real
+    hardware too - not a QEMU-only fix.
+  - This kernel never zeroes .bss anywhere - a real, previously-latent,
+    kernel-WIDE bug, proven by console.c's own pre-existing "panicked =
+    0; // must initialize in code since the compiler does not"
+    comment/workaround. CSUD's own zero-initialized globals came up as
+    leftover garbage, permanently short-circuiting its own "no device
+    yet, scan for one" logic. Fixed with a new bss_start linker symbol
+    (kernel.ld/kernel-qemu.ld) and a bsszero() call as the literal
+    first thing cmain() does - a universal correctness fix (real
+    hardware's own pre-boot RAM contents are just as unpredictable,
+    only less consistently reproducible than under emulation).
+  - RootHubDeviceNumber (csud/source/hcd/dwc/designware20.c) is
+    declared but never assigned anywhere in upstream CSUD - confirmed
+    by grepping the whole vendored tree for every WRITE to it (not
+    just reads): there are none. HcdSumbitControlMessage's own
+    "pipe.Device == RootHubDeviceNumber" dispatch to the virtual
+    root-hub handler only matched while the virtual root hub itself
+    still had address 0 (true only during its own first couple of
+    enumeration steps, which is why HubGetStatus - called once, early
+    - succeeded). Every later poll (HubCheckForChange's own repeated
+    HubPortGetStatus calls) silently fell through to a REAL bus
+    transfer instead, and silently failed against no real device. A
+    genuine, pre-existing upstream CSUD bug, not introduced by
+    vendoring - fixed by assigning it once in usbd.c's UsbInitialise(),
+    right after the root hub's real address becomes known.
+  - HubAttach()'s own post-power-on port scan (csud/source/device/
+    hub.c) only acts on each port's STICKY "connection changed" bit -
+    correct for periodic runtime polling, wrong for a device that was
+    already connected from machine start. A "-device usb-kbd" given on
+    the QEMU command line is a permanent part of the machine's own
+    config, not something the guest ever observes "plugging in" - so
+    there is no transition to latch (confirmed directly: reading the
+    raw status showed Connected=1, Changed=0, unconditionally, even on
+    the very first read). Fixed by also force-attaching whenever a
+    port already reads Connected with nothing attached to it yet -
+    matching what a real hub driver's initial scan is supposed to do
+    on any platform (Linux's own hub_port_init() behaves the same way).
 
-So the honest options for a future session are: find and vendor real
-CSUD source (then port the usbdwc.c-style QEMU workarounds into its
-designware20.c), or write a minimal dwc2 + HID path directly against
-usbdwc.c as the model, or simply accept serial-console input as the
-input path and treat the framebuffer as an output device. Nothing about
-the current state is broken - this is a missing feature, not a bug.
+Two genuine emulation-specific gaps, gated behind a new HcdEmulating()
+(same technique as ~/principia/kernel/COMPILE/9/bcm/usbdwc.c's own
+emulating() - a runtime VendorId read: QEMU's dwc2 reports revision
+2.94a where real hardware reports 2.80a):
+
+  - QEMU's dwc2 model doesn't populate GHWCFG2.HighSpeedPhysical, which
+    without the gate made HcdInitialise() wrongly reject QEMU's own
+    controller as "incompatible hardware".
+  - QEMU's mailbox model never answers the legacy "channel 0"
+    (power-management) handshake PowerOnUsb() waits on - a real,
+    unbounded hang (confirmed via "-d int": zero further interrupt
+    activity once stuck there), not a timeout. Skipped entirely under
+    emulation (nothing to power-sequence in a QEMU guest).
+  - Split-transaction setup is also skipped under emulation (same
+    HcdEmulating() gate), matching usbdwc.c's own documented fix for
+    the identical underlying QEMU dwc2 gap (no split state machine in
+    the model at all).
+
+Current state (end of this session): HCD initializes cleanly, the
+virtual root hub attaches, and - with "-device usb-kbd" on the QEMU
+command line - the emulated downstream "QEMU USB Hub" is now detected
+and an attach is attempted (a real change: before these fixes, nothing
+past the root hub was ever even reached). It currently fails partway
+through the new device's own enumeration:
+
+  HCD: Transfer was not acknowledged.
+  HCD: Request to New Device (Not Ready) failed.
+  [x3, then:]
+  HCD: Could not send SETUP to New Device (Not Ready).
+  HUB: Could not connect to new device in USB Root Hub.Port1. Disabling.
+
+Not yet root-caused. Candidates for a future session: a settle-time
+issue (real USB spec wants ~10ms recovery time after a port reset
+before addressing a new device - HubPortReset()'s own timing hasn't
+been audited against QEMU's model specifically); or another QEMU dwc2
+model gap in the same family as the two already found (Principia's own
+usbdwc.c also documents a sticky-Hcintr interrupt storm and a
+0-length-transfer Pktcnt-not-decremented bug that this session never
+got far enough to hit or rule out). No regression risk either way: a
+plain boot with no usb-kbd device attached (every existing test/CI
+invocation) is completely unaffected - confirmed after every fix, not
+just at the end.
