@@ -26,16 +26,26 @@ Two sequential efforts, in order:
    that list, was evaluated and then removed - build-only, no QEMU
    target, no logic `forks/riscv64` didn't already have). Two more ports
    surfaced after Phase 4 was scoped - `arm-pi3` and `arm64-pi4`.
-   `arm-pi3` is now wired up (`build-arm-pi3`/`run-arm-pi3`) and boots
-   all 4 cores deep into userinit under QEMU - twelve real bugs found
-   and fixed (most recently the same missing-`-fno-pic` gap
-   `arm-pi2` had, and a trapframe fix so a Data Abort's own diagnostic
-   print shows the real fault address), one open: a non-deterministic
-   SMP hang/crash, re-characterized (not yet root-caused) in a second
-   session - now known to happen as early as right after `tvinit()`,
-   not only in the later `memmove()`/`balloc()` path session 1 first
-   found - see `notes_arch_arm_pi3.txt`'s own "Open gap" for the full
-   diagnosis and the concrete next lead. `arm64-pi4` is now wired up
+   `arm-pi3` is **done** as of 2026-09-09 (session 3) and reaches full
+   Phase-4 parity with its siblings: a real interactive shell on 20/20
+   consecutive boots (was ~1-in-6) and a full `usertests` run reporting
+   **"ALL TESTS PASSED"**. Fifteen real bugs found and fixed across
+   three sessions. The long-standing non-deterministic SMP hang - the
+   one sessions 1 and 2 chased through `memmove()`/`balloc()` and then
+   through a spurious EL2 return to QEMU's `raspi_smpboot` ROM - turned
+   out to be neither: the secondary-core boot handshake never blocked at
+   all (a bare `wfene` in `entry.S` plus a bare `wfe` in
+   `wait_for_event()`, neither in a loop, neither testing a flag), so
+   cores 1-3 enabled their MMUs against a page directory CPU0 was still
+   zeroing, printed through an uninitialized console lock, and called
+   `kalloc()` while `kmem.use_lock` was still 0. Replaced with real
+   release-flag spins; `.bss` zeroing (the same gap all three sibling Pi
+   ports had) was fixed alongside. Now fully wired up -
+   `build`/`run`/`test`/`quick-test`/`clean`/`kill-arm-pi3`, folded into
+   every `-all` umbrella, plus a Dockerfile case and a CI matrix entry.
+   See `notes_arch_arm_pi3.txt`'s own Bug 14/Bug 15, and
+   `notes_debugging_techniques.txt` item 38 for the methodology lesson
+   (read the boot ORDER before analysing the crash). `arm64-pi4` is now wired up
    **build-only** - the only arch here that is - and builds clean
    (`make build-arm64-pi4` produces both `kernel/kernel` and the
    real-hardware `kernel8.img`): two narrow `-Wno-` flags for

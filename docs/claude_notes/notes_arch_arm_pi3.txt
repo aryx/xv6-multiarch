@@ -38,6 +38,22 @@ was reverted (see armstub64.S's own "claude:" comment recording the
 dead end). See "Bug 12", "Bug 13", and the amended "Open gap" section
 below for the full session-2 diagnosis.
 
+STATUS UPDATE (2026-09-09, session 3): SOLVED. The open SMP race is
+root-caused and fixed - it was never an exotic EL2/spintable problem at
+all, it was a secondary-core boot handshake that never blocked (Bug 14
+below). This port now reaches a genuinely interactive shell on 20/20
+consecutive boots (was 1-in-6 before), accepts typed commands over
+QEMU's serial console, and passes its own full usertests suite with
+"ALL TESTS PASSED" - full Phase-4 parity with forks/arm-pi1/
+arm-pi1-bis/arm-pi2. A third real bug (Bug 15: .bss was never zeroed -
+the same bug all three siblings had) was found and fixed alongside it.
+Now fully wired up: build/run/test/quick-test/clean/kill-arm-pi3, folded
+into every "-all" umbrella target, plus a Dockerfile ARCH case and a CI
+matrix entry. See Bug 14 and Bug 15, and note that the whole "Open gap"
+section further down is retained deliberately as a record of two
+sessions' worth of wrong-tree barking - read Bug 14 first for what the
+evidence actually meant.
+
 What this is, and the naming correction
 ----------------------------------------
 forks/arm-pi3 is patha454/xv6_pi_mp (Harley Paterson, University of
@@ -371,8 +387,186 @@ change (checked before and after, matching this repo's own convention
 for every fork). Does NOT, on its own, fix the open SMP crash below -
 see that section for why this was tested and ruled out as sufficient.
 
-Open gap: a non-deterministic SMP crash/hang, re-characterized this session but still not root-caused
-------------------------------------------------------------------------------------------------------------
+Bug 14 (real, fixed): THE open SMP race - the secondary-core boot handshake never actually blocked
+--------------------------------------------------------------------------------------------------------
+This is the bug two previous sessions were chasing. It is not subtle
+once seen, and the reason it took three sessions is worth recording:
+both earlier sessions started from the CRASH (a core executing garbage,
+a core apparently back at EL2, a memmove() faulting) and tried to
+explain the mechanism, rather than starting from the BOOT ORDER printed
+in every single transcript.
+
+The tell was in plain sight in every failing log, including session 1's:
+
+    CPU 1: Booted
+    <blank>
+    Hello World from xv6
+    CPU 2: Booted
+
+"CPU 1: Booted" is aux_main()'s own first cprintf. "Hello World from
+xv6" is cmain()'s own first cprintf, immediately after consoleinit().
+A secondary core printing BEFORE CPU0 has initialised the console means
+the secondary cores were never gated at all - they were running
+concurrently with CPU0's entire single-threaded init sequence. (The
+visibly interleaved, mid-string output in some transcripts - "CPU 1:" /
+"Hello World from xv6" / " Booted" - is the same fact stated twice: no
+console lock existed yet, because cons.locking is 0 until consoleinit()
+sets it.)
+
+There were TWO independent gates, and both were bare WFEs:
+
+  1. entry.S, just before mmu_phase1:
+
+         cmp r0, #0
+         wfene
+         bne mp_continue
+
+     intended to hold cores 1-3 while CPU0 builds the master
+     translation table at K_PDX_BASE.
+
+  2. main.c's aux_main(), via wait_for_event() (exception.S: a bare
+     "wfe; bx lr"), intended to hold them while CPU0 finishes
+     mmuinit1().
+
+Neither works, for two independent architectural reasons:
+
+  - WFE returns IMMEDIATELY if the calling PE's Event Register is
+    already set, and armstub64.S executes "sev" on every core as it
+    passes through (and again per-core as each secondary reaches the
+    stub - see that file's own comment). By the time any secondary
+    executes either WFE, its Event Register is essentially always
+    already set, so the instruction is a no-op.
+  - WFE is architecturally permitted to return spuriously at ANY time.
+    Even a perfectly ordered SEV cannot make a bare WFE into a gate;
+    the ARM ARM's own WFE description says the wait must always be
+    inside a loop that re-tests a real condition. This code had no
+    loop and no condition.
+
+So cores 1-3 fell straight through both gates and, concurrently with
+CPU0's own cmain():
+
+  - enabled their MMUs against K_PDX_BASE while CPU0 was still ZEROING
+    and filling that very page directory (entry.S's own
+    "pagetable_invalidate" loop). This is the actual mechanism behind
+    session 2's most confusing observation: a core "returning to EL2"
+    and executing QEMU's raspi_smpboot ROM at physical 0x300. It never
+    returned to EL2 voluntarily - it translated through a half-built
+    page directory, fetched garbage, and the resulting cascade of
+    faults through an unpopulated vector table is what the "-d int"
+    trace captured. Chasing that trace (spintable re-release, HCR_EL2
+    routing, WFI/WFE trapping) was chasing a symptom four steps
+    downstream of the cause.
+  - called cprintf() before consoleinit() had initialised cons.lock,
+    and before gpuinit() had set up the framebuffer gpuputc() writes
+    into (source of the "Blocked re-entrant IO on MemoryRegion:
+    bcm2835-fb" QEMU warning that also shows up in the sibling ports'
+    notes).
+  - wrote cpus[] (aux_mmu_init()'s own "curr_cpu->kpgdir = ...") before
+    machinit()'s own memset(cpus, 0, ...) erased it again.
+  - ran aux_mmu_init() - which memmove()s the whole master page
+    directory into the core's own sptable[] copy - before mmuinit1()
+    had added the high-RAM mappings and dropped the identity map. That
+    is session 1's own "page-table race inside memmove()" observation,
+    now explained: the memmove wasn't racing, its SOURCE simply wasn't
+    finished yet.
+
+Fix, in three parts:
+
+  (a) entry.S: replaced the "wfene; bne mp_continue" with a real
+      release-flag spin on a new "mp_release" word (declared next to
+      cpu_sig, in .text, for the same reason cpu_sig lives there: it
+      is read with the MMU OFF, at a physical address derived by
+      subtracting VA_OFFSET). CPU0 stores 1 there, with a DSB in
+      front, at the very end of mmu_phase1. Both sides run with MMU
+      and caches disabled at that point, so no cache maintenance is
+      needed. WFE is kept inside the loop purely as a spin hint.
+
+  (b) main.c: replaced the SEV/WFE handshake with an explicit
+      monotonic "mp_stage" counter plus an mp_wait_stage() spin.
+      Stage MP_CPU0_READY is published by startothers(); stage
+      MP_INIT_DONE by cmain() right before it hands off to the
+      scheduler. signal_event() calls are kept, but purely as wake-up
+      hints - the flag is what is actually tested. mp_stage is
+      explicitly initialised to 0 so that this Makefile's own
+      -fno-zero-initialized-in-bss keeps it in .data, which IS part of
+      the loaded raw image (see Bug 15).
+
+  (c) the second gate moved LATER than the original code intended, and
+      this part matters independently: aux_main() now waits for ALL of
+      cmain()'s init, not just mmuinit1(). tvinit() - the first thing
+      a secondary runs - calls kalloc() four times, and kmem.use_lock
+      is deliberately 0 from kinit1() until kinit2() returns (standard
+      xv6: the free list is lock-free during single-threaded boot).
+      Releasing the secondaries after mmuinit1() but before kinit2()
+      therefore let up to four cores hammer an unlocked free list. That
+      really happened and was visible after fix (a)+(b) alone: 4 of 20
+      boots still failed, with
+
+          unexpected trap 4 from cpu 1 addr 80094a98 spsr 1d3 ... far 0
+          Data Fault Status Register: 0x805
+
+      on several cores at once. 0x80094a98 is inside memset()'s own
+      "str r2,[r3],#4" store loop and DFSR 0x805 decodes as a WRITE
+      (bit 11) section translation fault (FS=0b00101) at FAR 0 - i.e.
+      kalloc() returned 0 from a corrupted free list and tvinit()'s own
+      "memset(ptr, 0, PGSIZE)" dutifully wrote to address 0.
+
+Measured effect, all on the same host, same QEMU, 12s boot budget per
+attempt:
+
+    before any fix                    1/6  and 1/6 reached a shell
+    after (a) alone                   1/6                (no real change)
+    after (a)+(b)                     6/6, then 16/20
+    after (a)+(b)+(c)                 20/20, twice over
+
+Real-hardware safety: nothing here is QEMU-specific. A bare WFE is
+just as unreliable on real Broadcom silicon - more so, since real Pi
+firmware also SEVs to release the spintable - and the kalloc() window
+is pure software. Every change is additive (a flag plus a spin loop);
+no code real hardware needs was removed, and no #ifdef was introduced.
+
+Bug 15 (real, fixed): .bss was never zeroed - the same bug all three sibling ARM Pi ports had
+-----------------------------------------------------------------------------------------------
+Found by inspection while fixing Bug 14, not by a failure: "objdump -h"
+shows .bss as ALLOC-only (NOBITS, 0x11f90 bytes at 0x80124000), so
+objcopy's raw kernel7-qemu.bin does not contain it, and nothing in
+kernel.ld, entry.S or main.c ever zeroed it. Every uninitialized global
+- cpus[], sptable[], kmem, the buffer cache - started out holding
+whatever the previous occupant of that RAM left behind. Note that this
+fork's own CFLAGS carry -fno-zero-initialized-in-bss, which only moves
+EXPLICITLY zero-initialised globals to .data; it does nothing for the
+uninitialized ones, which are exactly the ones at risk.
+
+Invisible under QEMU (its RAM comes up zeroed at reset), which is why
+this port got as far as it did without it, but real Pi 3 hardware makes
+no such promise. Identical bug and identical fix to forks/arm-pi1's own
+Bug 5, forks/arm-pi1-bis's equivalent, and forks/arm-pi2's own Bug 5:
+a "PROVIDE(bss_start = .);" in kernel.ld right before ".bss :", plus a
+bsszero() in source/main.c called as cmain()'s literal first statement.
+
+One arm-pi3-specific ordering check that the sibling ports did not have
+to make: by the time cmain() runs, the secondary cores have already
+been released past entry.S's own mp_release gate (Bug 14a) and are
+spinning inside mp_wait_stage(MP_CPU0_READY). bsszero() only touches
+.bss, and mp_stage lives in .data, so zeroing cannot erase the flag
+those cores are waiting on. Recorded here because a future change that
+moves mp_stage into .bss would silently reintroduce a hang.
+
+CLOSED (was: "Open gap") - the session-1/2 investigation, kept as a record of what the evidence looked like before Bug 14
+------------------------------------------------------------------------------------------------------------------------------
+NOTE (session 3, 2026-09-09): everything below is superseded by Bug 14
+above, which root-caused and fixed this. It is kept verbatim rather than
+deleted because it is a genuinely useful worked example of a wrong
+diagnosis: two sessions of careful, correct-in-itself instruction-level
+tracing that never questioned the boot ORDER visible in the very first
+line of every transcript. The "core returns to EL2 and lands at
+raspi_smpboot's 0x300" finding below is real and was accurately
+observed - it is simply four steps downstream of the actual cause (a
+core translating through a page directory CPU0 was still zeroing).
+The concrete "next lead" it proposes (capture the FIRST fault at
+VBAR_EL2+0x600) would have worked, but was never needed. See
+notes_debugging_techniques.txt for the general lesson.
+
 Session 1 (2026-09-08) documented this as a page-table race specifically
 inside balloc()/bfree()'s own memmove(), well after "userinit: OK".
 Session 2 (2026-09-09) found the SAME underlying non-determinism
@@ -499,13 +693,34 @@ whether the USB core's ID register is safely readable before any
 power-on sequence runs, or find a DIFFERENT always-safe-to-read
 QEMU-vs-real signature reachable that early in boot.
 
-Wired up in ./configure and the top-level Makefile as build-arm-pi3/
-run-arm-pi3 only (the QEMU-only target - the fork's own Makefile's
-"armstub64.bin"/"kernel7-qemu.bin"/"qemu" targets, never touching the
-real-hardware "kernel7.bin"/"all" ones) - no test-arm-pi3/clean-arm-pi3/
-kill-arm-pi3 yet, and not folded into build-all/run-all/test-all, since
-there is no reliable pass/fail console signal to build a scripted test
-around while the open crash remains. QEMU_AARCH64_TOOLPREFIX (for
-armstub64.bin's own build step) reuses TOOLPREFIX_ARM64, already
-detected by the arm64/AArch64 section - no second toolchain detection
-added. Not added to Docker/CI for the same reason.
+Wiring (updated session 3, 2026-09-09)
+----------------------------------------
+Fully wired up in ./configure and the top-level Makefile now:
+build-arm-pi3, run-arm-pi3, test-arm-pi3, quick-test-arm-pi3,
+clean-arm-pi3, kill-arm-pi3, all folded into the build-all/test-all/
+stress-test-all/clean-all/kill-all umbrellas. Every one of them targets
+the fork's own Makefile's QEMU-only "armstub64.bin"/"kernel7-qemu.bin"/
+"qemu" rules, never the real-hardware "kernel7.bin"/"all" ones.
+QEMU_AARCH64_TOOLPREFIX (for armstub64.bin's own build step) reuses
+TOOLPREFIX_ARM64, already detected by the arm64/AArch64 section - no
+second toolchain detection added.
+
+forks/arm-pi3/test-xv6.py is a thin wrapper over scripts/qemu_console.py,
+same shape as the sibling forks', with two deliberate differences worth
+knowing:
+
+  - Enter is "\n", not the "\r" arm-pi1/arm-pi1-bis/arm-pi2 all need.
+    Verified interactively over the serial console: "ls\n" and
+    "usertests\n" both execute here.
+  - the reset_cmds build BOTH kernel7-qemu.bin and armstub64.bin, and
+    pass QEMU_AARCH64_TOOLPREFIX through - this is the only fork in the
+    repo needing two different cross toolchains for one target.
+
+kill-arm-pi3 is also the only kill-<arch> that cannot pkill on the QEMU
+binary name alone: qemu-system-aarch64 is shared with arm64 and
+arm64-pi4, so it matches '<qemu>.*raspi3b' instead.
+
+Docker/CI: added a Dockerfile ARCH case (gcc-arm-linux-gnueabihf AND
+gcc-aarch64-linux-gnu, plus qemu-system-arm - which is the package that
+ships qemu-system-aarch64) and a .github/workflows/docker.yml matrix
+entry, matching the sibling ARM ports'.

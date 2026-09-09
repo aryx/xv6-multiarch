@@ -8,16 +8,15 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only twelve
+# for the general reasoning this one reuses. Simpler here: only thirteen
 # arches are wired up so far (riscv64, i386, amd64-jserv, amd64, riscv32, arm,
-# arm-pi1, arm-pi1-bis, arm-pi2, arm64, mips, loongarch - build-and-test-plan.md's
-# Phases 1, 2, and Phase 4), not all thirteen forks/ - extend the ARCH case
-# below (both the apt-get and the build/test one) as more arches get their
-# own ./configure detection, matching build.md's own Phase 4 order. The
-# remaining ARM board port (arm-pi3) is already wired into
-# ./configure/the top-level Makefile but not added here yet - it doesn't
-# reach a passing test-<arch> on this host either, so there is nothing
-# for a CI job to assert yet (see its own notes_arch_arm_pi3.txt).
+# arm-pi1, arm-pi1-bis, arm-pi2, arm-pi3, arm64, mips, loongarch - build-and-test-plan.md's
+# Phases 1, 2, and Phase 4), not every forks/ directory - extend the ARCH
+# case below (both the apt-get and the build/test one) as more arches get
+# their own ./configure detection, matching build.md's own Phase 4 order.
+# arm64-pi4 is the one wired-up arch deliberately absent: it is build-only
+# (this host's QEMU has no raspi4b board at all), so a CI job would have
+# nothing to assert - see notes_arch_arm64_pi4.txt.
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own
@@ -93,6 +92,15 @@ RUN case "$ARCH" in \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       arm-pi2) apt-get install -y --no-install-recommends \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
+      # claude: the only fork here needing TWO toolchains: the kernel is
+      # 32-bit ARM (gcc-arm-linux-gnueabihf), but armstub64.S - the
+      # AArch64 firmware stub QEMU's raspi3b needs before it can enter a
+      # 32-bit kernel at all - is built with gcc-aarch64-linux-gnu (see
+      # forks/arm-pi3/armstub64.S's own header comment). qemu-system-arm
+      # is still the right package: it ships qemu-system-aarch64 too.
+      arm-pi3) apt-get install -y --no-install-recommends \
+                 gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu \
+                 qemu-system-arm ;; \
       # claude: ipxe-qemu (provides efi-virtio.rom) is only a Recommends
       # of qemu-system-arm, stripped by --no-install-recommends above -
       # forks/arm64's own Makefile passes "-device virtio-blk-device"
@@ -183,7 +191,7 @@ RUN ./configure
 # suite end to end - see forks/riscv/test-xv6.py and forks/x86/test-xv6.py.
 #
 # claude: ARCH=all just calls the top-level Makefile's own build-all/
-# test-all umbrella targets now - they cover the exact same twelve arches
+# test-all umbrella targets now - they cover the exact same thirteen arches
 # as this Dockerfile's own ARCH=all apt-get case above (only the order
 # differs), so spelling the list out a second time here was pure
 # duplication (this used to be a real, documented divergence back when

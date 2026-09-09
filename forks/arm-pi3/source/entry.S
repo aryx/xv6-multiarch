@@ -164,14 +164,53 @@ finished:
 	ldr	r0, =0x55555555
 	mcr	p15, 0, r0, c3, c0, 0
 
-	// Set all CPUs to wait except the primary CPU
+	// claude: hold the secondary cores until CPU0 has FINISHED building
+	// the master translation table below.
+	//
+	// The original code here was a bare "wfene; bne mp_continue" - a
+	// single WFE with no predicate and no loop. That is not a gate at
+	// all, for two independent reasons: (1) WFE returns immediately if
+	// the calling core's Event Register is already set, and armstub64.S
+	// executes "sev" on EVERY core as it releases the spintable (and
+	// again on each secondary as IT passes through the stub), so the
+	// Event Register is essentially always already set by the time a
+	// secondary reaches this instruction; (2) WFE is architecturally
+	// permitted to return spuriously at any time, so even a correctly
+	// ordered SEV cannot be relied on without re-checking a flag.
+	//
+	// The result was that cores 1-3 fell straight through to
+	// mp_continue and enabled their MMUs against K_PDX_BASE while CPU0
+	// was still ZEROING and filling that very table (mmu_phase1 below),
+	// i.e. they translated through a half-built page directory. That is
+	// the root cause of this port's long-standing non-deterministic
+	// SMP hang: the observable symptom (a core ending up back at EL2
+	// executing QEMU's raspi_smpboot ROM at physical 0x300) is just what
+	// a garbage translation looks like from the outside. It also let
+	// aux_main() run - printing through an uninitialised console lock
+	// and writing cpus[] - before cmain()'s own machinit()/consoleinit()
+	// had run, which is why boot output was visibly interleaved
+	// mid-string ("CPU 1:" / "Hello World from xv6" / " Booted").
+	//
+	// Replaced with a real release-flag spin. Both sides run with the
+	// MMU and caches OFF at this point, so the plain loads/stores below
+	// go straight to memory - no cache maintenance needed. WFE is kept
+	// purely as a power/spin hint; correctness comes from re-reading
+	// mp_release every time round.
 	mrc p15, 0, r0, c0, c0, 5
 	ubfx r0, r0, #0, #8
 	cmp r0, #0
-	
-	wfene
-	bne mp_continue
-	
+	beq mmu_phase1
+
+	ldr	r1, =mp_release
+	ldr	r2, =VA_OFFSET
+	sub	r1, r1, r2		// mp_release's physical address
+mp_wait:
+	wfe
+	ldr	r2, [r1]
+	cmp	r2, #0
+	beq	mp_wait
+	b	mp_continue
+
 	// MMU Phase 1
 	// Create master translation table (page directory index)
 mmu_phase1:
@@ -247,6 +286,19 @@ map_kernel_pages:
 	ldr	r1,=(MMIO_VA+0x200000)
 	lsr	r1, #20
 	str	r3, [r0, r1, lsl#2]
+
+	// claude: the master translation table is complete - release cores
+	// 1-3 (see the "mp_release" gate above). DSB first so the page-table
+	// stores above are globally visible before the flag that advertises
+	// them; SEV only wakes the waiters out of their WFE, the flag itself
+	// is what they actually test.
+	ldr	r1, =mp_release
+	ldr	r2, =VA_OFFSET
+	sub	r1, r1, r2
+	mov	r2, #1
+	str	r2, [r1]
+	dsb
+	sev
 
 	// All processors will start from here after waiting:
 mp_continue:
@@ -468,6 +520,15 @@ core0:	.word  0x0
 core1:	.word  0x0
 core2:	.word  0x0
 core3:	.word  0x0
+
+// claude: secondary-core release flag, set by CPU0 once the master
+// translation table is built. Lives here rather than in .bss because
+// this section IS part of the loaded raw image (.bss is NOBITS here and
+// is never zeroed by this port), and because it is read with the MMU
+// off, at a physical address derived from its VA exactly the way
+// cpu_sig's is.
+.global mp_release
+mp_release:	.word  0x0
 
 .section .data
 

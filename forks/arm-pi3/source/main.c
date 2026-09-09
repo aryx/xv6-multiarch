@@ -19,6 +19,7 @@
 #include <uspios.h>
 
 extern char end[]; // first address after kernel loaded from ELF file
+extern char bss_start[]; // claude: first address of .bss - see bsszero()
 //extern pde_t *kpgdir;
 extern volatile uint *mailbuffer;
 extern unsigned int pm_size;
@@ -92,6 +93,43 @@ void locktest(void) {
   cprintf("Lock value: 0x%x\n", lock);
 }
 
+/* claude: secondary-core boot handshake.
+ *
+ * The original code used bare SEV/WFE pairs (signal_event()/
+ * wait_for_event()) to sequence CPU0 against cores 1-3. That cannot
+ * work: WFE returns immediately when the Event Register is already set
+ * (armstub64.S broadcasts "sev" from every core as it passes through),
+ * and is architecturally allowed to return spuriously besides - so
+ * every wait_for_event() in aux_main() fell straight through. Cores 1-3
+ * therefore ran aux_main() concurrently with cmain()'s own early init,
+ * which meant they:
+ *   - called cprintf() before consoleinit() had initialised cons.lock
+ *     (hence the visibly interleaved mid-string boot output) and before
+ *     gpuinit() had set up the framebuffer gpuputc() writes to;
+ *   - wrote cpus[] (curr_cpu->kpgdir, via aux_mmu_init()) before
+ *     machinit() memset that array, so their state was silently erased;
+ *   - ran aux_mmu_init() before mmuinit1() had finished the master page
+ *     table, so each secondary copied a half-finished page directory.
+ *
+ * Replaced by an explicit monotonic stage counter that each waiter
+ * re-reads. SEV is kept only as a wake-up hint; correctness comes from
+ * the flag. Explicitly initialised to 0 so that -fno-zero-initialized-
+ * in-bss keeps it in .data (which IS part of the loaded raw image -
+ * .bss is NOBITS here and nothing zeroes it).
+ */
+#define MP_CPU0_READY   1  /* cpus[], console, bootstrap allocator, GPU up */
+#define MP_INIT_DONE    2  /* all of cmain()'s single-threaded init done */
+
+volatile int mp_stage = 0;
+
+static void
+mp_wait_stage(int stage)
+{
+  while (mp_stage < stage)
+    ;
+  dsb_barrier();
+}
+
 /**
  * Blocks the current CPU until all other cores report 
  * particular status.
@@ -119,6 +157,10 @@ void wait_on_cores(enum cpustate target)
 void startothers(void)
 {
   curr_cpu->started = CENTRY;
+  /* claude: everything a secondary needs before it may print or touch
+   * cpus[] is up by now - release them past aux_main()'s first gate. */
+  dsb_barrier();
+  mp_stage = MP_CPU0_READY;
   signal_event();
   cprintf("CPU %x: Starting other cores\n", cpu_id());
   invalidate_dcache_range((void*) cpu_sig, 20);
@@ -133,12 +175,29 @@ void startothers(void)
  */
 void aux_main(void)
 {
+  /* claude: wait for cmain() to finish machinit()/consoleinit()/kinit1()/
+   * gpuinit() - before that point cpus[] is about to be memset, cons.lock
+   * does not exist yet and gpuputc() has no framebuffer. */
+  mp_wait_stage(MP_CPU0_READY);
   cpu_sig[curr_cpu->id] = CENTRY;
   cprintf("CPU %d: Booted\n", curr_cpu->id);
-  wait_for_event();
+  /* claude: and wait for ALL of cmain()'s remaining init before running
+   * any of our own. Two separate reasons, both real:
+   *   - aux_mmu_init() copies the master page table, so it must not run
+   *     until mmuinit1() has added the high-RAM mappings and dropped the
+   *     identity map of the first MB;
+   *   - tvinit() calls kalloc() four times, and kmem.use_lock stays 0
+   *     from kinit1() all the way until kinit2() returns - i.e. the
+   *     free list is deliberately lock-free during single-threaded
+   *     boot. A secondary calling kalloc() in that window corrupts it;
+   *     the observed symptom was kalloc() handing back 0 and the very
+   *     next memset(ptr, 0, PGSIZE) taking a write translation fault at
+   *     address 0 ("unexpected trap 4 ... far 0", DFSR 0x805) on
+   *     several cores at once.
+   */
+  mp_wait_stage(MP_INIT_DONE);
   tvinit();
   cprintf("CPU %d: tvinit Ok.\n", curr_cpu->id);
-  basic_delay(1000000);
   aux_mmu_init();
   //Can secondary cores see the primary core tvint alloc? Move tvinit earlier in main?
   cprintf("CPU %d: aux_mmu_init: Ok.\n", curr_cpu->id);
@@ -147,8 +206,31 @@ void aux_main(void)
 }
 
 
+// claude: nothing in this fork ever zeroed .bss - kernel.ld only declared
+// the section, and objcopy's raw binary output omits it entirely because
+// it is NOBITS, so every uninitialized global started out holding
+// whatever the previous occupant of that RAM left behind. QEMU happens to
+// hand out zeroed RAM at reset, which is why this stayed invisible here,
+// but real Pi 3 hardware makes no such promise. Identical bug and
+// identical fix to forks/arm-pi1's own Bug 5, forks/arm-pi1-bis's
+// equivalent, and forks/arm-pi2's own Bug 5 (see their notes_arch_*.txt).
+// Safe for real hardware either way: this only makes true what the C
+// standard already guarantees for globals with no initializer.
+//
+// Runs on CPU0 only, and only ever touches .bss - the secondary cores are
+// parked in aux_main()'s own mp_wait_stage(MP_CPU0_READY) spin at this
+// point, and mp_stage itself lives in .data (see its own comment), so
+// this cannot erase the flag they are waiting on.
+void bsszero(void)
+{
+  char *p;
+  for(p = bss_start; p < end; p++)
+    *p = 0;
+}
+
 int cmain()
 {
+    bsszero();
     mmuinit0();
     machinit();
     #if defined (RPI1) || defined (RPI2)
@@ -176,7 +258,9 @@ int cmain()
     mmuinit1();
     cprintf("mmuinit1: OK\n");
     //Alert secondary cores to copy the page table and contiue.
-    signal_event();
+    /* claude: the secondaries are NOT released here any more - see
+     * aux_main()'s own MP_INIT_DONE wait for why they have to stay
+     * parked until kinit2() has switched kmem over to locked mode. */
     cprintf("ARM xv6 MP USB\n");
     pinit();
     cprintf("pinit: OK\n");
@@ -198,6 +282,14 @@ int cmain()
     timer3init();
     cprintf("timer3init: OK\n");
     enableirqminiuart();
+    /* claude: single-threaded init is over - every shared structure the
+     * secondaries touch (the master page table, kmem's now-locked free
+     * list, the buffer/inode/file tables) is built and locked. Release
+     * them into tvinit()/aux_mmu_init()/scheduler(). The flag, not the
+     * SEV, is what they actually test - see mp_wait_stage() above. */
+    dsb_barrier();
+    mp_stage = MP_INIT_DONE;
+    signal_event();
     cprintf("Handing off to scheduler...\n");
     
     scheduler();

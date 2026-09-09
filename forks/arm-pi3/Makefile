@@ -187,7 +187,7 @@ kernel7-qemu.bin: $(ASM_OBJECTS_QEMU) $(C_OBJECTS_QEMU) kernel.ld
 	$(TOOLCHAIN)ld $(ASM_OBJECTS_QEMU) $(C_OBJECTS_QEMU) -L. $(patsubst %,-l %,$(LIBRARIES)) $(QEMU_LD_OPTIONS) -Map kernel-qemu.map -o $(BUILD_QEMU)kernel-qemu.elf -T kernel.ld
 	$(TOOLCHAIN)objcopy $(BUILD_QEMU)kernel-qemu.elf -O binary kernel7-qemu.bin
 
-armstub64.bin: armstub64.S armstub64.ld $(BUILD_QEMU)
+armstub64.bin: armstub64.S armstub64.ld | $(BUILD_QEMU)
 	$(QEMU_AARCH64_TOOLPREFIX)gcc -c -DARM_ENTRY=$(QEMU_ARM_ENTRY) -o build-qemu/armstub64.o armstub64.S
 	$(QEMU_AARCH64_TOOLPREFIX)ld -T armstub64.ld -o build-qemu/armstub64.elf build-qemu/armstub64.o
 	$(QEMU_AARCH64_TOOLPREFIX)objcopy build-qemu/armstub64.elf -O binary armstub64.bin
@@ -197,21 +197,29 @@ qemu: kernel7-qemu.bin armstub64.bin
 	$(QEMU) -M raspi3b -smp 4 -nographic -kernel armstub64.bin \
 		-device loader,file=kernel7-qemu.bin,addr=$(QEMU_ARM_ENTRY),force-raw=on
 
-$(BUILD_QEMU)%.o: $(SOURCE)%.S $(BUILD_QEMU)
+$(BUILD_QEMU)%.o: $(SOURCE)%.S | $(BUILD_QEMU)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(QEMU_CC_OPTIONS) -I source $< -o $@
 
-$(BUILD_QEMU)%.o: $(SOURCE)%.c $(BUILD_QEMU)
+$(BUILD_QEMU)%.o: $(SOURCE)%.c | $(BUILD_QEMU)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(QEMU_CC_OPTIONS) $< -o $@
 
+# claude: order-only prerequisite ("| $(BUILD_QEMU)") on every rule that
+# writes into this directory, and "mkdir -p" rather than "mkdir". Both
+# matter: as a NORMAL prerequisite the directory's own mtime counts, and
+# it changes every time a file is written into it - so make can decide
+# the directory is "out of date" relative to already-built objects and
+# re-run this recipe mid-build, which plain "mkdir" then fails on. An
+# order-only prerequisite means "make sure this exists first" without
+# comparing timestamps, which is the only thing actually wanted here.
 $(BUILD_QEMU):
-	mkdir $@
+	mkdir -p $@
 
 # Build ASM files
-$(BUILD)%.o: $(SOURCE)%.S $(BUILD)
+$(BUILD)%.o: $(SOURCE)%.S | $(BUILD)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) -I source $< -o $@
 
 # Build C files
-$(BUILD)%.o: $(SOURCE)%.c $(BUILD)
+$(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) $<  -o $@
 
 loader: loader.S kernel7.bin
@@ -222,7 +230,7 @@ loader: loader.S kernel7.bin
 	-rm loader.elf  loader.o
 
 $(BUILD):
-	mkdir $@
+	mkdir -p $@
 
 .PHONY: report
 report:

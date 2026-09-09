@@ -1021,3 +1021,45 @@ right after your own script's cleanup runs) any time a test/automation
 script launches something through an intermediate wrapper process
 (`make`, a shell script, a launcher binary) rather than the target
 binary directly.
+
+38. When a crash is non-deterministic and multi-core, read the boot ORDER of the transcript before analysing the crash itself
+---------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi3's long-standing "non-deterministic SMP crash" (see
+notes_arch_arm_pi3.txt's own Bug 14) took three sessions. Sessions 1 and
+2 both started from the crash and worked backwards: session 1 landed on
+"a page-table race inside balloc()'s memmove()", session 2 on "a core
+takes a spurious return to EL2 and executes QEMU's raspi_smpboot ROM at
+physical 0x300". Both observations were real and accurately captured
+(with `-d int` tracing, gdb-multiarch, HCR_EL2/VBAR_EL2 reads - none of
+that work was sloppy). Both were four steps downstream of the cause.
+
+The cause was visible in the first three lines of EVERY transcript both
+sessions collected, including the passing ones:
+
+    CPU 1: Booted            <- aux_main()'s first cprintf (secondary)
+    Hello World from xv6     <- cmain()'s first cprintf (primary)
+
+A secondary core printing before the primary has initialised the console
+means the secondaries were never gated at all. From there the bug is a
+five-minute read of entry.S (a bare `wfene` with no loop and no
+predicate). Session 3 found it by asking "in what order did these lines
+get printed, and is that order possible if the handshake works?" before
+looking at a single register.
+
+The general point: on a multi-core bring-up, the console transcript is
+itself a partial-order trace of who ran what, when. Interleaved or
+out-of-order log lines are primary evidence about synchronisation, not
+cosmetic noise to be explained away after the "real" bug is found -
+especially since a broken lock and a broken gate both show up there
+first. Check that the ORDER is possible before you invest in
+instruction-level tracing of the failure. Corollary: garbled/interleaved
+output from a kernel that has a console lock is never benign - either
+the lock is broken or the code is running before the lock exists.
+
+A second, narrower lesson from the same bug: a bare `wfe`/`sev` pair is
+never a synchronisation primitive on ARM. WFE returns immediately if the
+Event Register is already set (any earlier SEV from any core sets it -
+here, a firmware stub's own release SEV), and is architecturally allowed
+to return spuriously regardless. Any WFE must sit inside a loop that
+re-tests a real memory flag; grep an unfamiliar ARM port's entry code
+for `wfe` with no surrounding loop as a matter of course.

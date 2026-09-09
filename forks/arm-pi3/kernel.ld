@@ -55,6 +55,11 @@ SECTIONS {
 		*.c.o(*)
 	}
 
+	/* claude: bss_start lets cmain()'s own bsszero() zero .bss at boot -
+	 * this section is NOBITS, so it is absent from the raw kernel7*.bin
+	 * objcopy produces and nothing else ever cleared it. Same fix as
+	 * forks/arm-pi1/arm-pi1-bis/arm-pi2 (see their notes_arch_*.txt). */
+	PROVIDE(bss_start = .);
 	.bss : {
 		*(.bss)
 	}
