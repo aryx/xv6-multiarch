@@ -161,17 +161,24 @@ qemu: kernel-qemu.img
 # claude: same kernel-qemu.img, but with a real GTK window instead of
 # -nographic, so the emulated HDMI/composite framebuffer this fork's own
 # gpuputc()/drawpixel() draws into (when fb_ready is true) is actually
-# visible - see notes_arch_arm_pi1.txt's "Open gap" section. Requires a
+# visible - see notes_arch_arm_pi1.txt's "Bug 7" section. Requires a
 # working $DISPLAY. "-serial mon:stdio" (not plain "-monitor stdio")
 # multiplexes BOTH the interactive serial console (the actual xv6 shell)
 # AND the QEMU monitor onto this same terminal, Ctrl-A C to switch
 # between them - same convention as -nographic's own Ctrl-A shortcuts,
 # so a shell session and a "screendump /tmp/fb.ppm" capture both work
 # from one terminal without needing a second window.
+#
+# claude: "-device usb-kbd" (added once source/timer.c's own USB
+# keyboard wiring and the csud/ fixes landed - see notes_arch_arm_pi1.txt's
+# "Bug 8" through "Bug 10") gives QEMU an actual USB keyboard attached
+# to this board's dwc2 controller, so keys typed directly into the GTK
+# window itself now reach the shell - not just the serial console.
 qemu-graphics: kernel-qemu.img
 	@echo "Serial console + QEMU monitor share this terminal - Ctrl-A C to switch to the monitor (try: screendump /tmp/fb.ppm), Ctrl-A C again to switch back"
 	@echo "Ctrl-A X (from the monitor side) to terminate"
-	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio
+	@echo "Click the QEMU window and type there for a real USB-keyboard test - the terminal keeps working as the serial console too"
+	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio -device usb-kbd
 
 $(BUILD):
 	mkdir $@
