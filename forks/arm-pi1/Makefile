@@ -121,15 +121,16 @@ qemu: kernel-qemu.img
 # -nographic, so the emulated HDMI/composite framebuffer this fork's own
 # gpuputc()/drawpixel() draws into (when fb_ready is true) is actually
 # visible - see notes_arch_arm_pi1.txt's "Open gap" section. Requires a
-# working $DISPLAY. Serial console is still reachable via the QEMU
-# window's own "View > serial0" (or -serial stdio, not used here since
-# it would fight with the GTK window for the controlling terminal) - the
-# monitor is on stdio so "screendump <file>.ppm" can be typed directly
-# into this same terminal to capture the framebuffer without leaving it.
+# working $DISPLAY. "-serial mon:stdio" (not plain "-monitor stdio")
+# multiplexes BOTH the interactive serial console (the actual xv6 shell)
+# AND the QEMU monitor onto this same terminal, Ctrl-A C to switch
+# between them - same convention as -nographic's own Ctrl-A shortcuts,
+# so a shell session and a "screendump /tmp/fb.ppm" capture both work
+# from one terminal without needing a second window.
 qemu-graphics: kernel-qemu.img
-	@echo "QEMU monitor is on this terminal - try: screendump /tmp/fb.ppm"
-	@echo "Close the QEMU window (or 'quit' at the monitor) to terminate"
-	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -monitor stdio
+	@echo "Serial console + QEMU monitor share this terminal - Ctrl-A C to switch to the monitor (try: screendump /tmp/fb.ppm), Ctrl-A C again to switch back"
+	@echo "Ctrl-A X (from the monitor side) to terminate"
+	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio
 
 $(BUILD):
 	mkdir $@
