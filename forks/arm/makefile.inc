@@ -38,10 +38,16 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # plain ARM, matching entry.S's own mode and matching what already
 # avoided this class of bug in the sibling forks/rpi2 port (whose own
 # CFLAGS happens to default to ARM for its own -mcpu=cortex-a7 choice).
-CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector -marm
+# claude: -MD added - this was the ONE wired-up ARM port generating no
+# header dependencies at all, so touching a header rebuilt nothing and
+# an incremental build was quietly wrong. See
+# docs/claude_notes/notes_build_system.txt. The .d lands next to the
+# object (build/foo.d for build/foo.o) and is read back by the
+# "-include" at the bottom of Makefile.
+CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector -marm -MD
 LDFLAGS = -L.
 #ASFLAGS = -march=armv7-a
-ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft
+ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft -MD
 
 LIBGCC = $(shell $(CC) -print-libgcc-file-name)
 

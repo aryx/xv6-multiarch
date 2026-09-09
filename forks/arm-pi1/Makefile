@@ -211,6 +211,24 @@ qemu-graphics: kernel-qemu.img
 	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -serial mon:stdio -device usb-kbd $(QMP_OPTS)
 
 
+# claude: pull in the per-object header dependencies gcc already writes.
+# CFLAGS above has carried "-MD" all along, so every compile emits a
+# "$(BUILD)<name>.d" listing the headers that object really includes -
+# but nothing ever read them, so editing a header rebuilt NOTHING and an
+# incremental build was quietly wrong. That is what made forks/arm-pi1
+# test-xv6.py reach for a "make clean" before every test run (a
+# from-scratch build being the only way to be sure), which in turn made
+# "make test-all" recompile this port from scratch even right after a
+# full "make build-all".
+#
+# "-include" (leading dash) ignores the files when they do not exist yet,
+# i.e. on the very first build, when there is nothing to be stale about.
+# This is the same mechanism forks/riscv64, forks/loongarch, forks/mips
+# and forks/arm64-pi4 already use, and the modern replacement for an
+# explicit "make depend" pass: the deps are produced by the same compile
+# that produces the object, so they can never go stale.
+-include $(BUILD)*.d $(BUILD)csud/*.d $(BUILD)csud/*/*.d $(BUILD)csud/*/*/*.d
+
 $(BUILD):
 	mkdir $@
 

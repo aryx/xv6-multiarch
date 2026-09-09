@@ -93,6 +93,19 @@ build/fs.img:
 	make -C tools
 	make -C usr
 
+
+# claude: read back the per-object header dependencies gcc writes next to
+# each object ("-MD" in makefile.inc's CFLAGS/ASFLAGS). Without this the
+# .d files were either never generated (forks/arm) or generated and
+# thrown away (every other Pi port), so editing a header rebuilt NOTHING
+# - which is exactly why this port's test-xv6.py used to run "make clean"
+# before every test run, and why "make test-all" recompiled from scratch
+# even straight after "make build-all". The leading "-" ignores the files
+# on a first build, when they do not exist yet. See
+# docs/claude_notes/notes_build_system.txt for why this replaces an
+# explicit "make depend" pass rather than adding one.
+-include build/*.d build/*/*.d
+
 clean: 
 	rm -rf build
 	rm -f *.o *.d *.asm *.sym vectors.S bootblock entryother \
