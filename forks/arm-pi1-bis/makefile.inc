@@ -36,7 +36,7 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # (not Thumb) instruction generation outright, removing the
 # state-switch question entirely - simplest, most robust fix for a
 # freestanding kernel with no reason to ever be in Thumb state.
-CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft
+CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft
 LDFLAGS = -L.
 # claude: added -mfloat-abi=soft - this modern arm-linux-gnueabihf- cross
 # toolchain defaults to "-march=armv7-a+fp -mfloat-abi=hard" (confirmed

@@ -77,7 +77,7 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp
-CFLAGS += -MD
+CFLAGS += -MD -MP
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
@@ -106,7 +106,7 @@ CFLAGS += -fno-pie -nopie
 endif
 
 LDFLAGS = -z max-page-size=4096
-ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -I.
+ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -MP -I.
 # claude: upstream had "ASFLAGS += -DRPI4_QEMU" here, and a README step
 # telling you to delete this line by hand before building for a real Pi 4.
 # kernel/entry.S now reads CurrentEL at runtime instead, so one kernel8.img

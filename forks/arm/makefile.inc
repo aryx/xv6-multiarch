@@ -44,10 +44,10 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # docs/claude_notes/notes_build_system.txt. The .d lands next to the
 # object (build/foo.d for build/foo.o) and is read back by the
 # "-include" at the bottom of Makefile.
-CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector -marm -MD
+CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector -marm -MD -MP
 LDFLAGS = -L.
 #ASFLAGS = -march=armv7-a
-ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft -MD
+ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft -MD -MP
 
 LIBGCC = $(shell $(CC) -print-libgcc-file-name)
 

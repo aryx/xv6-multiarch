@@ -74,7 +74,7 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -I.
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
 # "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -

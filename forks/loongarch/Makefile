@@ -61,7 +61,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 
 ASFLAGS = -march=loongarch64 -mabi=lp64s
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
-CFLAGS += -MD
+CFLAGS += -MD -MP
 CFLAGS += -march=loongarch64 -mabi=lp64s
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I. -fno-stack-protector
@@ -114,7 +114,7 @@ $U/_forktest: $U/forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
 	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
 
-SH_FLAGS = -O -fno-omit-frame-pointer -ggdb -MD -march=loongarch64 -mabi=lp64s -ffreestanding -fno-common -nostdlib -I. -fno-stack-protector -fno-pie -no-pie -c -o
+SH_FLAGS = -O -fno-omit-frame-pointer -ggdb -MD -MP -march=loongarch64 -mabi=lp64s -ffreestanding -fno-common -nostdlib -I. -fno-stack-protector -fno-pie -no-pie -c -o
 
 $U/_sh: $U/sh.c $(ULIB)
 	$(CC) $(SH_FLAGS) $U/sh.o $U/sh.c
