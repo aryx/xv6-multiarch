@@ -1,31 +1,31 @@
 OBJS = \
-	bio.o\
-	console.o\
-	exec.o\
-	file.o\
-	fs.o\
-	ide.o\
-	kalloc.o\
-	kbd.o\
-	log.o\
-	main.o\
-	mp.o\
-	picirq.o\
-	pipe.o\
-	proc.o\
-	procasm.o\
-	spinlock.o\
-	string.o\
-	swtch.o\
-	syscall.o\
-	sysfile.o\
-	sysproc.o\
-	timer.o\
-	trapasm.o\
-	trap.o\
-	uart.o\
-	vectors.o\
-	vm.o\
+	kernel/bio.o\
+	kernel/console.o\
+	kernel/exec.o\
+	kernel/file.o\
+	kernel/fs.o\
+	kernel/ide.o\
+	kernel/kalloc.o\
+	kernel/kbd.o\
+	kernel/log.o\
+	kernel/main.o\
+	kernel/mp.o\
+	kernel/picirq.o\
+	kernel/pipe.o\
+	kernel/proc.o\
+	kernel/procasm.o\
+	kernel/spinlock.o\
+	kernel/string.o\
+	kernel/swtch.o\
+	kernel/syscall.o\
+	kernel/sysfile.o\
+	kernel/sysproc.o\
+	kernel/timer.o\
+	kernel/trapasm.o\
+	kernel/trap.o\
+	kernel/uart.o\
+	kernel/vectors.o\
+	kernel/vm.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 TOOLPREFIX = mipsel-sde-elf-
@@ -74,7 +74,7 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -I.
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
 # "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -
@@ -89,25 +89,25 @@ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 &
 # defaulted -mabicalls off for a bare-metal target; this modern Ubuntu
 # Linux-userspace-oriented cross toolchain does not.
 CFLAGS += -mno-abicalls
-ASFLAGS = -gdwarf-2 -I. -G0 -march=mips4 -mno-abicalls
+ASFLAGS = -gdwarf-2 -Ikernel -G0 -march=mips4 -mno-abicalls
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m elf32ltsmip -L. -G0
 
-xv6memfs.img: kernelmemfs
+xv6memfs.img: kernel/kernelmemfs
 	dd if=/dev/zero of=xv6memfs.img count=10000
-	dd if=kernelmemfs of=xv6memfs.img seek=1 conv=notrunc
+	dd if=kernel/kernelmemfs of=xv6memfs.img seek=1 conv=notrunc
 
-xv6.img: kernel fs.img
+xv6.img: kernel/kernel fs.img
 	dd if=/dev/zero of=xv6.img count=10000
-	dd if=kernel of=xv6.img seek=1 conv=notrunc
+	dd if=kernel/kernel of=xv6.img seek=1 conv=notrunc
 
-bootblock: bootasm.S bootmain.c
-	$(CC) $(CFLAGS) -fno-pic -O -nostdinc -I. -c bootmain.c
-	$(CC) $(CFLAGS) -fno-pic -nostdinc -I. -c bootasm.S
+bootblock: kernel/bootasm.S kernel/bootmain.c
+	$(CC) $(CFLAGS) -fno-pic -O -nostdinc -Ikernel -c kernel/bootmain.c
+	$(CC) $(CFLAGS) -fno-pic -nostdinc -Ikernel -c kernel/bootasm.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0x7C00 -o bootblock.o bootasm.o bootmain.o
 	$(OBJDUMP) -S bootblock.o > bootblock.asm
 	$(OBJCOPY) -S -O binary -j .text bootblock.o bootblock
-	./sign.pl bootblock
+	./tools/sign.pl bootblock
 
 # claude: also strip .reginfo, not just .MIPS.abiflags - both get placed
 # by the default MIPS linker script at a virtual address ~4MB away from
@@ -120,16 +120,30 @@ bootblock: bootasm.S bootmain.c
 # the kernel's own `end` symbol past main.c's hardcoded 4MB kinit1()
 # phase-1 boundary and made every very first kfree() call fail its own
 # "v < end" sanity check (see docs/claude_notes/notes_arch_mips.txt).
-initcode: initcode.S
-	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
+# claude: the generated "initcode" blob deliberately stays at the fork
+# root rather than moving into kernel/ with its source. "ld -b binary"
+# derives its three synthetic symbols from the FILE PATH it was given,
+# mangling non-alphanumerics to underscores, so "kernel/initcode" yields
+# _binary_kernel_initcode_start/_end/_size - while proc.c's userinit()
+# refers to _binary_initcode_start/_size. Relocating the blob would mean
+# editing that C, which is a source change and not what a layout move is
+# allowed to do. Only the .S moved; the output path is load-bearing.
+initcode: kernel/initcode.S
+	$(CC) $(CFLAGS) -nostdinc -Ikernel -c kernel/initcode.S -o initcode.o
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o initcode.out initcode.o
 	$(OBJCOPY) -R .MIPS.abiflags -R .reginfo -S -O binary initcode.out initcode
 	$(OBJDUMP) -S initcode.o > initcode.asm
 
-kernel: $(OBJS) entry.o initcode kernel.ld
-	$(LD) $(LDFLAGS) -T kernel.ld -o kernel entry.o $(OBJS) -b binary initcode
-	$(OBJDUMP) -S kernel > kernel.asm
-	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
+# claude: target renamed "kernel" -> "kernel/kernel" (and kernelmemfs
+# likewise below): a make target named "kernel" cannot coexist with the
+# kernel/ directory this port now has - the directory exists, so make
+# would treat the target as already built and never relink. Same place
+# forks/riscv64 puts it, and forks/mips/.gitignore now anchors
+# "/kernel/kernel" to match.
+kernel/kernel: $(OBJS) kernel/entry.o initcode kernel/kernel.ld
+	$(LD) $(LDFLAGS) -T kernel/kernel.ld -o kernel/kernel kernel/entry.o $(OBJS) -b binary initcode
+	$(OBJDUMP) -S kernel/kernel > kernel/kernel.asm
+	$(OBJDUMP) -t kernel/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel/kernel.sym
 
 # kernelmemfs is a copy of kernel that maintains the
 # disk image in memory instead of writing to a disk.
@@ -137,19 +151,25 @@ kernel: $(OBJS) entry.o initcode kernel.ld
 # exploring disk buffering implementations, but it is
 # great for testing the kernel on real hardware without
 # needing a scratch disk.
-MEMFSOBJS = $(filter-out ide.o,$(OBJS)) memide.o
-kernelmemfs: $(MEMFSOBJS) entry.o initcode kernel.ld fs.img
-	$(LD) $(LDFLAGS) -T kernel.ld -o kernelmemfs entry.o  $(MEMFSOBJS) -b binary initcode fs.img
-	$(OBJDUMP) -S kernelmemfs > kernelmemfs.asm
-	$(OBJDUMP) -t kernelmemfs | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernelmemfs.sym
+MEMFSOBJS = $(filter-out kernel/ide.o,$(OBJS)) kernel/memide.o
+kernel/kernelmemfs: $(MEMFSOBJS) kernel/entry.o initcode kernel/kernel.ld fs.img
+	$(LD) $(LDFLAGS) -T kernel/kernel.ld -o kernel/kernelmemfs kernel/entry.o  $(MEMFSOBJS) -b binary initcode fs.img
+	$(OBJDUMP) -S kernel/kernelmemfs > kernel/kernelmemfs.asm
+	$(OBJDUMP) -t kernel/kernelmemfs | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel/kernelmemfs.sym
+
+# claude: alias so the top-level Makefile's build-mips and this fork's own
+# test-xv6.py keep asking for plain "kernelmemfs" - the layout move stays
+# contained inside this fork.
+.PHONY: kernelmemfs
+kernelmemfs: kernel/kernelmemfs
 
 tags: $(OBJS) _init
-	etags *.S *.c
+	etags kernel/*.S kernel/*.c user/*.c tests/*.c ulib/*.c ulib/*.S
 
-vectors.S: vectors.pl
-	perl vectors.pl > vectors.S
+kernel/vectors.S: tools/vectors.pl
+	perl tools/vectors.pl > kernel/vectors.S
 
-ULIB = lib/ulib.o lib/usys.o lib/printf.o lib/umalloc.o
+ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 
 # claude: "-T user.ld" added (was just "-N -e main -Ttext 0") - see
 # user.ld's own header comment for why: the default MIPS linker script
@@ -162,20 +182,30 @@ ULIB = lib/ulib.o lib/usys.o lib/printf.o lib/umalloc.o
 # "-R .MIPS.abiflags" is a harmless no-op) but left in place since it's
 # still needed to produce $@ from the $*.o intermediate ld actually
 # writes to.
-_%: usr/%.o $(ULIB) user.ld
-	$(LD) $(LDFLAGS) -N -e main -T user.ld -o $*.o $< $(ULIB)
+# claude: two pattern rules now, one per source directory - user/ for the
+# real programs, tests/ for the test ones. GNU make picks whichever rule's
+# prerequisites can actually be made, and a given program's .c exists in
+# exactly one of the two, so the choice is unambiguous.
+_%: user/%.o $(ULIB) ulib/user.ld
+	$(LD) $(LDFLAGS) -N -e main -T ulib/user.ld -o $*.o $< $(ULIB)
 	$(OBJCOPY) -R .MIPS.abiflags $*.o $@
 	$(OBJDUMP) -S $*.o > $*.asm
 	$(OBJDUMP) -t $*.o | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
-_forktest: usr/forktest.o $(ULIB) user.ld
+_%: tests/%.o $(ULIB) ulib/user.ld
+	$(LD) $(LDFLAGS) -N -e main -T ulib/user.ld -o $*.o $< $(ULIB)
+	$(OBJCOPY) -R .MIPS.abiflags $*.o $@
+	$(OBJDUMP) -S $*.o > $*.asm
+	$(OBJDUMP) -t $*.o | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+
+_forktest: tests/forktest.o $(ULIB) ulib/user.ld
 	# forktest has less library code linked in - needs to be small
 	# in order to be able to max out the proc table.
-	$(LD) $(LDFLAGS) -N -e main -T user.ld -o _forktest usr/forktest.o lib/ulib.o lib/usys.o
+	$(LD) $(LDFLAGS) -N -e main -T ulib/user.ld -o _forktest tests/forktest.o ulib/ulib.o ulib/usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
-mkfs: tools/mkfs.c fs.h
-	gcc -g -Werror -Wall -std=gnu99 -o mkfs tools/mkfs.c -idirafter .
+tools/mkfs: tools/mkfs.c kernel/fs.h
+	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs tools/mkfs.c -idirafter kernel
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
@@ -206,18 +236,22 @@ UPROGS=\
 	_zombie\
 
 
-fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+fs.img: tools/mkfs README $(UPROGS)
+	./tools/mkfs fs.img README $(UPROGS)
 
--include *.d
+-include kernel/*.d user/*.d tests/*.d ulib/*.d
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*.o *.d *.asm *.sym vectors.S bootblock \
-	initcode initcode.out kernel xv6.img fs.img kernelmemfs mkfs \
+	*.o *.d *.asm *.sym bootblock \
+	xv6.img xv6memfs.img fs.img tools/mkfs \
 	$(UPROGS) \
-	lib/*.o lib/*.d \
-	usr/*.o usr/*.d usr/*.sym usr/*.asm
+	initcode initcode.out \
+	kernel/vectors.S kernel/kernel kernel/kernelmemfs \
+	kernel/*.o kernel/*.d kernel/*.asm kernel/*.sym \
+	ulib/*.o ulib/*.d \
+	user/*.o user/*.d user/*.sym user/*.asm \
+	tests/*.o tests/*.d tests/*.sym tests/*.asm
 
 # try to generate a unique GDB port
 GDBPORT = $(shell expr `id -u` % 5000 + 25000)
@@ -232,14 +266,14 @@ endif
 # claude: "-M mips" no longer exists in modern QEMU ("unsupported machine
 # type"; see notes_arch_mips.txt) - "-M malta" is the still-supported
 # board this port actually boots on.
-QEMUOPTS = -hdb fs.img -kernel kernel -smp 1 -m 256 -M malta
-QEMUOPTSMEMFS = -kernel kernelmemfs -smp 1 -m 256 -M malta
+QEMUOPTS = -hdb fs.img -kernel kernel/kernel -smp 1 -m 256 -M malta
+QEMUOPTSMEMFS = -kernel kernel/kernelmemfs -smp 1 -m 256 -M malta
 
-qemu: fs.img kernel
+qemu: fs.img kernel/kernel
 	@echo -e "\033[0;31m'make qemu' is not implemented at current. Run 'make qemu-memfs'!\033[0m"
 	$(QEMU) -serial mon:stdio $(QEMUOPTS)
 
-qemu-memfs: kernelmemfs
+qemu-memfs: kernel/kernelmemfs
 	$(QEMU) -serial mon:stdio $(QEMUOPTSMEMFS)
 
 # claude: upstream never paired -nographic with the memfs boot path (only
@@ -249,25 +283,25 @@ qemu-memfs: kernelmemfs
 # initialized the display (yet)") since this kernel only ever writes to
 # the serial port, never a framebuffer - the window is empty by design,
 # not a hang, but it's not what "make run-mips" should show.
-qemu-nox-memfs: kernelmemfs
+qemu-nox-memfs: kernel/kernelmemfs
 	$(QEMU) -nographic $(QEMUOPTSMEMFS)
 
 qemu-nox: fs.img xv6.img
 	$(QEMU) -nographic $(QEMUOPTS)
 
-#.gdbinit: .gdbinit.tmpl
+#.gdbinit: tools/.gdbinit.tmpl
 #	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
 
 #qemu-gdb: fs.img xv6.img .gdbinit
 #	@echo "*** Now run 'gdb'." 1>&2
 #	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
 
-qemu-gdb: fs.img kernel .gdbinit
+qemu-gdb: fs.img kernel/kernel .gdbinit
 	@echo -e "\033[0;31m'make qemu-gdb' is not implemented at current. Run 'make qemu-memfs-gdb'!\033[0m"
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
 
-qemu-memfs-gdb: kernelmemfs .gdbinit
+qemu-memfs-gdb: kernel/kernelmemfs .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -serial mon:stdio $(QEMUOPTSMEMFS) -S $(QEMUGDB)
 

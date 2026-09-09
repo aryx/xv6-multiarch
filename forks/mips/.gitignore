@@ -3,7 +3,7 @@
 # words - a bare "kernel"/"mkfs" pattern also matches a DIRECTORY of
 # that name, which the kernel/ and tools/ layout needs to exist. Same
 # shape as forks/riscv64/.gitignore's own "/kernel/kernel", "/mkfs/mkfs".
-/kernel/initcode
-/kernel/initcode.out
+/initcode
+/initcode.out
 /kernel/kernel
 /tools/mkfs

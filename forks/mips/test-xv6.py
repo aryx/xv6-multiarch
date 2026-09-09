@@ -4,7 +4,7 @@
 # orphan-recovery test programs either, so a usertests run is the whole
 # test.
 #
-# claude: usr/usertests.c has several sub-tests commented out (see that
+# claude: tests/usertests.c has several sub-tests commented out (see that
 # file's own "claude:" comments right above each call site, and
 # docs/claude_notes/notes_arch_mips.txt's own "Gap" section) - sbrktest,
 # validatetest, mem, preempt, exitwait, and forktest all hang for real
