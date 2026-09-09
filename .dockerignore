@@ -48,20 +48,24 @@ Makefile.config
 **/out/
 
 # Generated kernel/filesystem images. Unlike the extensions above, a few
-# .img/.bin files ARE checked in (font tables, and the two ports that ship a
-# prebuilt source/fs.img), so those are negated back in below - order
+# .bin files ARE checked in - the font bitmap tables several Pi ports
+# .incbin into the kernel - so those are negated back in below; order
 # matters here, later patterns win.
+#
+# No source/fs.img is negated: every port that embeds a filesystem image now
+# GENERATES it from its own uprogs/ during the build (arm-pi1, arm-pi2 and
+# arm-pi3 all have a "source/fs.img: uprogs-fs-img" rule), so shipping a
+# host-built copy into the container would be the same stale-artifact
+# mistake this file exists to prevent.
 **/*.img
 **/*.bin
 !forks/arm-pi1/source/font.bin
 !forks/arm-pi1/source/font1.bin
-!forks/arm-pi1/source/fs.img
 !forks/arm-pi1-bis/font1.bin
 !forks/arm-pi2/source/font.bin
 !forks/arm-pi2/source/font1.bin
 !forks/arm-pi3/source/font.bin
 !forks/arm-pi3/source/font1.bin
-!forks/arm-pi3/source/fs.img
 
 # Other build outputs named in .gitignore: compiled user programs (xv6's
 # "_name" convention), the generated trap-vector table, boot sector,
