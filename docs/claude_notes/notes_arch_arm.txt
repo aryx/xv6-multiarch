@@ -491,3 +491,94 @@ Timer IRQ" bit. Latent bug, pre-existing, just never reachable before.
 
 Result: "preempt: kill... wait... preempt ok", and test-arm passes with
 preempt() enabled.
+
+
+Bug 16 (root-caused 2026-09-09, NOT fixed): sbrktest() - exceptions run on shared per-mode stacks, in the wrong processor mode
+--------------------------------------------------------------------------------------------------------------------------------
+This is the "sbrktest" half of Gap 3 above, which had been recorded as
+"crashes entirely inside sbrktest()'s can-we-read-the-kernel's-memory
+loop ... not a newly-introduced problem" and left there. It is now
+understood. It is still skipped: the fix is structural and was
+deliberately not attempted in the same session that found it.
+
+Symptom, deterministic (same pids every run):
+
+    sbrk test
+    data abort: pid 533 usertests instruction 0x386c, fault addr 0x80000000, reason 0xd
+    data abort: pid 3   usertests instruction 0x4854, fault addr 0x88000000, reason 0x5
+    zombie!
+
+The pid 533 fault is the test working: a child dereferencing KERNBASE,
+permission fault, killed as intended. pid 3 is the PARENT and is the
+bug.
+
+Narrowing it, in order:
+ - trap_asm.S's trap_dabort does "SUB r14, r14, #8", so r->pc is already
+   adjusted and 0x4854 really is the faulting instruction.
+ - 0x4854 is "pop {r4}" - i.e. "ldr r4, [sp], #4" - the instruction
+   immediately after "svc 0" in the write() stub. So the fault address
+   0x88000000 IS the user SP, and "push {r4}" six instructions earlier
+   had not faulted. The user SP was valid going into the syscall and
+   invalid coming out.
+ - 0x88000000 is not random: it is KERNBASE + 128MB, the exact top of
+   this port's kernel direct map (PHYSTOP), so a translation fault
+   (reason 0x5) is precisely what a pointer walking off the end of the
+   mapped kernel window produces.
+ - Dumping the trapframe on the user-mode data-abort path showed the
+   parent's proc->tf at 0x865ddeec while its proc->kstack was
+   0x87fe4000 - a trapframe pointer inside a DIFFERENT process's kernel
+   stack (0x865dd000, the child pid 533's). Its saved registers showed
+   write() being called with a buffer pointer of 0x865ddf3b, also inside
+   that kernel stack: the parent was already running with a corrupted
+   user stack before this syscall.
+
+Cause: trap_init() allocates ONE globally shared page per processor mode
+(FIQ, IRQ, ABT, UND) as that mode's stack, and trap_asm.S builds each
+exception's trapframe on the current mode's stack while still IN that
+mode. So a data abort is handled in ABT mode on the shared ABT stack -
+and dabort_handler() then calls exit() from there. exit() -> sched() ->
+swtch() saves proc->context as a pointer into the shared ABT stack and
+switches stacks while in the wrong processor mode. sbrktest() is simply
+the only test that drives that path hard: its kernel-read loop forks 40
+children in a row, each of which deliberately faults and is killed
+through exactly this code.
+
+The author already half-saw this. trap.c's dabort_handler carries their
+own comment on the exit() call: "workaround to avoid crash (this kill
+the process and its parent?) it seems to raise the 'zombie!' message on
+userinit" - and "zombie!" is exactly what the transcript above ends
+with.
+
+The fix, and why the sibling ports do not have this bug: switch to SVC
+mode on exception ENTRY, so every exception is handled on the faulting
+process's own kernel stack. forks/arm-pi2 does exactly that -
+source/exception.S routes do_und/do_pabt/do_dabt/do_irq through a common
+_switchtosvc that does
+
+    mrs lr, cpsr
+    bic lr, #0x1F
+    orr lr, #0x80          /* disable IRQ */
+    orr lr, #0x13          /* PSR_MODE_SVC */
+    msr cpsr, lr           /* switch to svc */
+
+before building the trapframe. That is why arm-pi2 runs sbrktest()
+uncommented and passes, and why its source/trap.c can safely assign
+curr_proc->tf and call exit() from an abort. Same board family, same
+test, opposite outcome - the difference is entirely in the entry
+sequence.
+
+A dead end worth recording so it is not retried: irq_handler()'s
+"proc->tf = r" IS separately wrong for the same underlying reason (an
+IRQ trapframe lives on the shared IRQ stack, never in proc->kstack, so
+this repoints proc->tf at transient shared memory - and arm-pi2's own
+trap() assigns curr_proc->tf in the T_SYSCALL branch ONLY, never for
+IRQs). It was tried as a one-line fix and does NOT fix sbrktest -
+verified on a confirmed-rebuilt xv6.img, identical failure. It is a real
+latent defect, but it is downstream of the same root cause and is
+subsumed by the SVC-mode-entry fix, so it was reverted rather than left
+in as an unverified change.
+
+Scope note: this rewrite touches hand-written exception entry in a port
+that currently passes everything else, including a full usertests run
+with preempt() enabled (Bug 14/15). Worth doing, worth doing carefully,
+and worth doing with arm-pi2's exception.S open alongside.

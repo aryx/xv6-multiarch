@@ -130,9 +130,33 @@ nine:
     where a real failure was observed; worth doing once for all ports
     when factorization unifies `umalloc.c`.
 
-`sbrktest`, `validatetest`, `exitwait` and `forktest` (all `mips`, plus
-`sbrktest` in `arm`) are root-caused only as far as *where* they hang,
-never *why*; `notes_arch_mips.txt` has the gdb backtraces.
+- **`sbrktest` in `forks/arm`: ROOT-CAUSED 2026-09-09, not yet fixed.**
+  Not memory pressure and not a usertests problem. `trap_init()` gives
+  FIQ/IRQ/ABT/UND **one globally shared page each** as their mode stack,
+  and `trap_asm.S` builds each trapframe on that shared stack *while
+  still in the exception's own processor mode*. `dabort_handler()` then
+  calls `exit()` from ABT mode, so `sched()`/`swtch()` save
+  `proc->context` into the shared ABT stack and switch stacks in the
+  wrong mode. `sbrktest()` is just the only test that drives it hard —
+  its kernel-read loop forks 40 children that each deliberately fault.
+  The parent then resumes userspace with a user SP pointing into a
+  kernel stack and dies on the `pop {r4}` after its own `svc`
+  (fault addr `0x88000000` = the top of the kernel direct map).
+  - **The fix is structural**: switch to SVC mode on exception entry so
+    exceptions run on the faulting process's own kernel stack — exactly
+    what `forks/arm-pi2`'s `source/exception.S` `_switchtosvc` does, and
+    the reason it runs `sbrktest()` uncommented and passes. Same board
+    family, same test, opposite outcome, difference entirely in the
+    entry sequence. Deliberately not attempted in the session that
+    diagnosed it: it rewrites hand-written exception entry in a port
+    that otherwise passes everything. See `notes_arch_arm.txt` Bug 16,
+    which also records one tried-and-reverted dead end.
+
+`validatetest`, `exitwait` and `forktest` (all `mips`) are root-caused
+only as far as *where* they hang, never *why*; `notes_arch_mips.txt` has
+the gdb backtraces. `mips`'s own `sbrktest` has not been checked against
+the `arm` finding above — the two ports share no exception code, so it
+is a separate question.
 
 **Definition of done:** every `usertests.c` in the tree has zero
 `claude:`-commented-out test calls, and `stress-test-all` still passes.
