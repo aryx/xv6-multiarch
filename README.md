@@ -56,9 +56,17 @@ build of QEMU and is deliberately kept out of `test-all` and CI. Its
 **build** is in `build-all` like every other port.
 
 \* Three ports reach "ALL TESTS PASSED" with some `usertests` sub-tests
-commented out and individually diagnosed: `mips` skips six, `arm` two,
-`arm-pi2` one. Each skip is recorded in that port's own `usertests.c` and
-written up in its `docs/claude_notes/notes_arch_*.txt`.
+commented out and individually diagnosed: `mips` skips five
+(`sbrktest`, `validatetest`, `mem`, `exitwait`, `forktest`), `arm` one
+(`sbrktest`), `arm-pi2` one (`mem`). Each skip is recorded in that
+port's own `usertests.c` and written up in its
+`docs/claude_notes/notes_arch_*.txt`. **No port skips `preempt()` any
+more** — both ports that did were fixed 2026-09-09, and neither was the
+"multi-process timing under emulation" they had been written off as:
+`arm` had no working timer interrupt at all (it drove the SP804, which
+QEMU stubs out), and `mips` had the interrupt but a yield condition
+comparing the MIPS CP0 Cause register against an x86 constant, so it
+could never fire.
 
 Getting there took dozens of separately diagnosed bugs — modern-GCC
 breakage, missing `.bss` zeroing, SMP boot races, a Top-Byte-Ignore setting
