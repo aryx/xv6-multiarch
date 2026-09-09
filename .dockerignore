@@ -1,2 +1,79 @@
+# Keep the host's build output OUT of the image.
+#
+# "COPY . ." would otherwise ship every object, kernel image and - the one
+# that actually breaks the build - every gcc-generated .d dependency file
+# from the developer's own tree into the container. Those .d files name
+# host absolute paths for toolchain headers:
+#
+#   build/proc.o: source/proc.c /usr/arm-linux-gnueabihf/include/stdc-predef.h ...
+#
+# and a path that does not exist inside the image, with no rule to make it,
+# is a hard error rather than a rebuild:
+#
+#   make[1]: *** No rule to make target
+#     '/usr/arm-linux-gnueabihf/include/stdc-predef.h', needed by 'build/proc.o'
+#
+# This was latent for a long time and was being masked: the eight ports whose
+# test-xv6.py used to run "make clean" first wiped the stale artifacts inside
+# the container before anything read them. Dropping that clean (so "make
+# test-all" could reuse "make build-all") exposed it. The Makefiles now also
+# pass "-MP" alongside "-MD", which emits a phony target per header so a
+# vanished header is a rebuild rather than an error - that is the general fix
+# and it covers a renamed/deleted header locally too. This file is the other
+# half: a container build should compile from SOURCE, not inherit whatever
+# the host happened to leave lying around, which also keeps the build context
+# small and the image reproducible.
+#
+# Mirrors the repo's own .gitignore patterns - keep the two in step.
+
 .git
 Makefile.config
+
+# Object files, dependency files, archives, and linker/debug byproducts.
+# None of these are tracked in git (verified: "git ls-files | grep -E
+# '\.(o|d|a|elf|asm|sym|map|dis)$'" is empty), so excluding them wholesale
+# is safe.
+**/*.o
+**/*.d
+**/*.a
+**/*.elf
+**/*.asm
+**/*.sym
+**/*.map
+**/*.dis
+
+# Per-port object directories.
+**/build/
+**/build-qemu/
+**/out/
+
+# Generated kernel/filesystem images. Unlike the extensions above, a few
+# .img/.bin files ARE checked in (font tables, and the two ports that ship a
+# prebuilt source/fs.img), so those are negated back in below - order
+# matters here, later patterns win.
+**/*.img
+**/*.bin
+!forks/arm-pi1/source/font.bin
+!forks/arm-pi1/source/font1.bin
+!forks/arm-pi1/source/fs.img
+!forks/arm-pi1-bis/font1.bin
+!forks/arm-pi2/source/font.bin
+!forks/arm-pi2/source/font1.bin
+!forks/arm-pi3/source/font.bin
+!forks/arm-pi3/source/font1.bin
+!forks/arm-pi3/source/fs.img
+
+# Other build outputs named in .gitignore: compiled user programs (xv6's
+# "_name" convention), the generated trap-vector table, boot sector,
+# secondary-CPU trampoline, the memfs kernel variant, and mkfs itself.
+**/_*
+**/vectors.S
+**/bootblock
+**/entryother
+**/kernelmemfs
+**/mkfs/mkfs
+**/.gdbinit
+
+# Editor and tooling leftovers.
+**/*~
+**/__pycache__/
