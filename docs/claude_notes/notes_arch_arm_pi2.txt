@@ -27,7 +27,7 @@ superseded) still accurately describes Bug 1/2's own history.
 
 Written: 2026-09-07, against commit 1865287 (the rpi1 bring-up commit),
 during the rpi2 bring-up itself. Phase 4 of
-docs/claude_notes/plan_build_and_test.md, tenth port attempted from that
+docs/claude_notes/done/plan_build_and_test.md, tenth port attempted from that
 phase's list, fourth and last of the four ARM board ports. Status: NOT
 fully working under QEMU yet - one real bug fixed (identical to rpi1's
 own delay() busy-wait bug), a safe additive QEMU build path added

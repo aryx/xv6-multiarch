@@ -1,11 +1,23 @@
 # Plan: factoring the thirteen architectures together
 
-**Status:** proposed, not started.
-**Blocked on:** [plan_build_and_test.md](plan_build_and_test.md). Do not start
-this without a working per-arch build and boot check. Merging files you cannot
-verify is precisely how `gitlab.com/xv6-multiarch` — the abandoned project
-this repo descends from — died. It got the architectures into one tree and
-then stalled at exactly this step.
+**Status:** proposed, not started — but **no longer blocked** as of
+2026-09-09.
+**Was blocked on:** [done/plan_build_and_test.md](done/plan_build_and_test.md),
+which is now done: all 14 ports build, boot to a shell under QEMU and pass
+their own `usertests`, and `make test-all` re-checks every one of them in
+about a minute. That is the safety net this plan required. The residue that
+plan left behind — a few skipped `usertests` sub-tests, `arm64-pi4`'s boot
+kept out of CI, no real-hardware verification — is tracked in
+[plan_build_and_test_2.md](plan_build_and_test_2.md) and does **not** block
+this work; see that file's own header for why.
+
+The rule that produced the block still stands, though, and now applies
+per-commit rather than per-phase: do not merge a file you cannot rebuild and
+re-boot afterwards. Merging files you cannot verify is precisely how
+`gitlab.com/xv6-multiarch` — the abandoned project this repo descends
+from — died. It got the architectures into one tree and then stalled at
+exactly this step. Run `make test-all` after every merge commit, and
+`stress-test-all` before trusting a batch of them.
 
 ## Goal
 

@@ -38,7 +38,7 @@ fifteenth port, `forks/d1` (michaelengel/xv6-d1, RISC-V64, Allwinner D1), was
 imported, evaluated and then removed (commit `c233d3b`) once bring-up showed
 it was build-only on real hardware with no QEMU machine model and no
 kernel-logic difference from `forks/riscv64` worth keeping — see
-`docs/claude_notes/plan_build_and_test.md`.
+`docs/claude_notes/done/plan_build_and_test.md`.
 
 Several ports target the same instruction set independently: `amd64` and
 `amd64-jserv` are unrelated x86-64 efforts (`amd64` is MIT's own abandoned
@@ -334,7 +334,7 @@ Per-arch commit counts are in the "Commit counts by fork" table above.
 - **No build or boot verification at merge time.** Blobs were byte-identical
   to their sources, so nothing should have broken structurally — but the real
   answer is now tracked separately in
-  `docs/claude_notes/plan_build_and_test.md`.
+  `docs/claude_notes/done/plan_build_and_test.md`.
 
 ## Future work: factoring the architectures together
 

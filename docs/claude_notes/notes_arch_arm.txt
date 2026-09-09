@@ -8,7 +8,7 @@ shell prompt, then to make it genuinely interactive, then to get
 usertests to a real "ALL TESTS PASSED" and wire up build-arm/run-arm/
 test-arm/clean-arm/kill-arm (this port claimed the bare "arm" name, see
 CLAUDE.md/./configure/Makefile's own comments on why) plus CI/Docker.
-Phase 4 of docs/claude_notes/plan_build_and_test.md, eighth port
+Phase 4 of docs/claude_notes/done/plan_build_and_test.md, eighth port
 attempted from that phase's list, second of the four ARM board ports.
 
 STATUS (updated): FULLY WORKING, and the clear winner among this repo's

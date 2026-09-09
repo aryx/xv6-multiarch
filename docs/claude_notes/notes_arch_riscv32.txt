@@ -4,7 +4,7 @@ notes_arch_riscv32.txt
 Written: 2026-09-06, against commit 9f43752 (the amd64 commit), during
 the rv32 bring-up itself. Updated 2026-09-07 once bug 4 (below) was
 root-caused and fixed in a follow-up session. Phase 4 of
-docs/claude_notes/plan_build_and_test.md, third port attempted from that
+docs/claude_notes/done/plan_build_and_test.md, third port attempted from that
 phase's list. Status: FULLY WORKING - four real bugs found and fixed (a
 missing PMP setup, a missing user-program linker script, a corrupt
 ELF32 program-header struct, and a missing user-program start() wrapper

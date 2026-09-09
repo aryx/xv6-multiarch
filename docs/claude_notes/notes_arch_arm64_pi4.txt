@@ -2,13 +2,13 @@ notes_arch_arm64_pi4.txt
 ========================
 
 Written: 2026-09-09, against commit d532e35, across one session. Phase 4
-of docs/claude_notes/plan_build_and_test.md - the fourteenth and last
+of docs/claude_notes/done/plan_build_and_test.md - the fourteenth and last
 fork in the repo to be brought up.
 
 Status: FULLY WORKING. Boots to a genuinely interactive shell under
 QEMU on all 4 cores, and a full unmodified `usertests` run reports
 "ALL TESTS PASSED" (245s, no tests skipped or commented out - notably
-including preempt(), which three sibling ports here skipped rather than
+including preempt(), which two sibling ports here skipped rather than
 root-caused; see Bug 3).
 
 Four real bugs found and fixed - a compile-time-vs-runtime hardware/QEMU
@@ -216,12 +216,21 @@ would have shown up as three cores that can run compute-bound processes
 but never preempt them.
 
 Worth knowing: this same preempt() hang was independently hit and
-SKIPPED, never root-caused, in three sibling ports - forks/arm (see
-notes_arch_arm.txt's "Gap 3"), forks/mips, and forks/arm-pi2. Their
-kernels are 32-bit and use different interrupt controllers, so this is
-not automatically the same bug; but "preempt() hangs" being a per-CPU
-timer-enable bug once is a strong hint about where to look if any of
-those is ever revisited.
+SKIPPED, never root-caused, in two sibling ports - forks/arm (see
+notes_arch_arm.txt's "Gap 3") and forks/mips. Their kernels are 32-bit
+and use different interrupt controllers, so this is not automatically
+the same bug; but "preempt() hangs" being a per-CPU timer-enable bug
+once is a strong hint about where to look if either is ever revisited.
+
+  claude, 2026-09-09: this paragraph and the file header above BOTH
+  originally said THREE sibling ports and named forks/arm-pi2 as the
+  third. That was wrong, and is corrected here: arm-pi2's own
+  uprogs/usertests.c calls preempt() uncommented (only its mem() is
+  skipped), as do arm-pi1, arm-pi1-bis and arm-pi3. arm-pi2 passes it
+  because it already ticks off the BCM2835 System Timer
+  (source/timer.c's timer3init()/timer3intr()) rather than the SP804
+  "ARM timer" QEMU stubs out with create_unimp() - which is exactly the
+  lead being followed for forks/arm. See plan_build_and_test_2.md item 1.
 
 Bug 4 (real, fixed): the scheduler flushed the whole address space every timeslice
 ----------------------------------------------------------------------------------

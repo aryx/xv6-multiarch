@@ -3,7 +3,7 @@ notes_arch_i386.txt
 
 Written: 2026-09-05, against commit 78876cc (the riscv64 build+boot commit,
 parent of the commit adding i386 support to ./configure/Makefile and this
-file). This is Phase 2 of docs/claude_notes/plan_build_and_test.md: one arch
+file). This is Phase 2 of docs/claude_notes/done/plan_build_and_test.md: one arch
 from the OTHER layout family (see plan_factorization.md's own "two families"
 finding) - forks/i386, MIT's original xv6-public (2006-2020), the ancestor
 every other port in this tree ultimately traces back to. All claims below

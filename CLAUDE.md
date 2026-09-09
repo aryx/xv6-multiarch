@@ -16,10 +16,23 @@ material here - read it there.
 
 ## Current status and goal
 
+**Effort 1 below is DONE as of 2026-09-09.** All 14 `forks/<name>/` ports
+build, boot to a real interactive shell under QEMU and pass their own
+`usertests`; `make test-all` re-checks every one of them in about a
+minute, and the status matrix is in the root `README.md`. Its plan
+therefore moved to `docs/claude_notes/done/plan_build_and_test.md` (with
+an "Outcome" section recording where reality departed from it), and the
+residue it left behind - a few skipped `usertests` sub-tests, `arm64-pi4`'s
+boot kept out of CI, and no real-hardware verification yet - is tracked
+separately in `docs/claude_notes/plan_build_and_test_2.md`, which does
+NOT block anything. **Effort 2 (factorization) is consequently unblocked
+and is the active work now.** The per-port detail below is kept because
+it records what each port actually needed, not because it is still open.
+
 Two sequential efforts, in order:
 
-1. **`docs/claude_notes/plan_build_and_test.md`** - get each of the
-   14 `forks/<name>/` ports actually building and booting under
+1. **`docs/claude_notes/done/plan_build_and_test.md`** (DONE) - get each
+   of the 14 `forks/<name>/` ports actually building and booting under
    QEMU on this machine, with the result pinned reproducibly. **Phases 1
    (riscv64), 2 (i386), 3 (Docker), and 5 (CI) are done, and Phase 4's
    original ten-port list is done too** (`forks/d1`, the eleventh item on
@@ -70,7 +83,12 @@ Two sequential efforts, in order:
    never preempted and `kill()`ed spinners never died (measured: 108/0/
    0/0 IRQs per CPU before, 382/351/351/350 after). Worth knowing that
    the same `preempt()` hang was independently hit and skipped, never
-   root-caused, in `arm`, `mips` and `arm-pi2`. And (4) - unmasked by
+   root-caused, in `arm` and `mips`. (An earlier version of this
+   paragraph named `arm-pi2` as a third - that was wrong, and corrected
+   2026-09-09: `arm-pi1`, `arm-pi1-bis`, `arm-pi2` and `arm-pi3` all run
+   `preempt()` uncommented, `arm-pi2` because it already ticks off the
+   BCM2835 System Timer rather than the SP804 QEMU stubs out. Only `arm`
+   and `mips` skip it - see `plan_build_and_test_2.md` item 1.) And (4) - unmasked by
    (3), which is the useful kind of regression - `scheduler()` flushed
    the process's **entire** address space (`dc cvau`/`ic ivau` per page,
    O(`p->sz`)) on *every* context switch while holding `p->lock`, which
@@ -130,12 +148,14 @@ Two sequential efforts, in order:
 2. **`docs/claude_notes/plan_factorization.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).
-   **Blocked on (1)** - do not start merging files across ports before
-   they're each independently verified to build and boot; that is
-   exactly how this repo's abandoned predecessor
-   (`gitlab.com/xv6-multiarch`) died.
+   **Was blocked on (1); no longer, as of 2026-09-09** - the rule that
+   produced the block still stands but now applies per commit: do not
+   merge a file you cannot rebuild and re-boot afterwards, and run `make
+   test-all` after each merge commit (`stress-test-all` before trusting
+   a batch). Merging files nobody has verified is exactly how this repo's
+   abandoned predecessor (`gitlab.com/xv6-multiarch`) died.
 
-Read both plans before doing substantial work in this repo - they encode
+Read the plans before doing substantial work in this repo - they encode
 real decisions (why riscv64 first, why per-arch files beat `#ifdef`, the
 blame-preservation rule for the eventual merge) that are easy to
 re-litigate by accident otherwise.
@@ -217,11 +237,15 @@ via `git log --follow`/`git blame -C` after each one):
    `docs/provenance.md` for the upstream-repo -> current-forks-path
    mapping table.
 
-## Adding a new arch (Phase 4)
+## Adding a new arch (the Phase 4 recipe)
 
-Repeat, in order, for the next arch in `plan_build_and_test.md`'s Phase 4
+**That list is exhausted** - every port in `forks/` is wired up, so this
+is now a reference recipe rather than a queue. Follow it in order if a
+new fork is ever added (or if an existing one needs re-wiring); the
+original queue it was written for was `plan_build_and_test.md`'s Phase 4
 list (`x86_64`, `amd64`, `rv32`, `aarch64`, `loongarch`, `mips`, the four
-ARM Raspberry Pi ports, then `d1` build-only):
+ARM Raspberry Pi ports, then `d1` build-only, the last of which was
+dropped rather than brought up):
 
 1. Read that port's own `Makefile` - its `TOOLPREFIX`/`CROSS_COMPILE` and
    `QEMU` auto-detect logic, if any, and whether it already ships its own
@@ -331,7 +355,10 @@ behave.
 
 - `README.md` - short pitch, current build/boot status, build commands
 - `docs/provenance.md` - the evidence behind each fork point
-- `docs/claude_notes/plan_build_and_test.md` - the build/boot/CI plan (this file's own "Current status" section tracks progress against it)
-- `docs/claude_notes/plan_factorization.md` - the later Linux-style-unification plan, blocked on the above
+- `docs/claude_notes/done/` - plans that are finished; each keeps its original text plus an "Outcome" section saying how it actually went
+- `docs/claude_notes/done/plan_build_and_test.md` - the build/boot/CI plan, DONE 2026-09-09
+- `docs/claude_notes/plan_build_and_test_2.md` - what that plan left behind (skipped usertests sub-tests, `arm64-pi4` out of CI, no real-hardware verification). Blocks nothing
+- `docs/claude_notes/plan_factorization.md` - the Linux-style-unification plan, unblocked and now the active work
+- `docs/claude_notes/plan_lattepanda.md`, `plan_orange_pi.md` - proposed real-hardware bring-ups on the user's own boards
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
 - `docs/claude_notes/notes_debugging_techniques.txt` - general debugging methodology, grown from real investigations in this repo

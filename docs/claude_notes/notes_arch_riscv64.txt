@@ -3,7 +3,7 @@ notes_arch_riscv.txt
 
 Written: 2026-09-05, against commit 7237b41 (parent of the commit adding
 this file, ./configure, and the top-level Makefile). This is Phase 1 of
-docs/claude_notes/plan_build_and_test.md: get one arch - the riscv-family
+docs/claude_notes/done/plan_build_and_test.md: get one arch - the riscv-family
 mainline, forks/riscv64 (MIT's own current xv6-riscv) - building and booting
 under QEMU before replicating the shape to the other twelve forks/<name>
 trees. All claims below are VERIFIED on this machine (Ubuntu 24.04.2 LTS,
@@ -26,7 +26,7 @@ Toolchain: already installed, no cross-compiler bring-up needed
 Both `riscv64-unknown-elf-gcc` and `riscv64-linux-gnu-gcc` were already on
 this host (confirmed via `dpkg -l | grep riscv`) - this machine had
 already had the cross-toolchain packages from
-docs/claude_notes/plan_build_and_test.md's own table installed previously.
+docs/claude_notes/done/plan_build_and_test.md's own table installed previously.
 forks/riscv64/Makefile's own TOOLPREFIX auto-detect (an `ifndef` block
 probing riscv64-unknown-elf-, riscv64-elf-, riscv64-none-elf-,
 riscv64-linux-gnu-, riscv64-unknown-linux-gnu-, in that order, via each

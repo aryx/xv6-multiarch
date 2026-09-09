@@ -1,8 +1,55 @@
 # Plan: building and testing all thirteen architectures
 
-**Status:** proposed, not started. This is a prerequisite for
-[plan_factorization.md](plan_factorization.md) — merging files you cannot
-build is how the gitlab predecessor of this project died.
+**Status: DONE** (2026-09-09), which is why this file now lives under
+`docs/claude_notes/done/`. Everything below is the plan **as written**
+before any of it was attempted, kept verbatim as the record of what was
+predicted; the outcome, and where reality departed from the prediction,
+is summarised in the next section. The residue that is *not* done — a
+handful of skipped `usertests` sub-tests, one port's boot kept out of
+CI, and real-hardware verification — moved to
+[plan_build_and_test_2.md](../plan_build_and_test_2.md).
+
+This was a prerequisite for
+[plan_factorization.md](../plan_factorization.md) — merging files you
+cannot build is how the gitlab predecessor of this project died. That
+gate is now open.
+
+## Outcome (written 2026-09-09, after the fact)
+
+All **14** `forks/<name>/` ports build, boot to a real shell under QEMU,
+and pass their own `usertests` suite. `make test-all` is green on this
+host. Per-port findings are in each `docs/claude_notes/notes_arch_*.txt`;
+the honest status matrix the "Definition of done" below asks for is in
+the root `README.md`.
+
+Four things went differently from the plan below, all deliberate:
+
+- **The `tools/` harness was never built.** The shape the "Test harness"
+  section sketches (`tools/arches/<name>.conf`, `build.sh`, `boot.sh`,
+  `smoke.py`, `matrix.sh`) was replaced by `./configure` +
+  `Makefile.config` + a top-level `Makefile` with per-arch
+  `build-`/`run-`/`test-`/`quick-test-`/`clean-`/`kill-` targets, plus a
+  per-fork `test-xv6.py` built on `scripts/qemu_console.py`. Same job,
+  but it reuses each port's own build system instead of describing it
+  twice in a manifest, and `make` gives the umbrella targets for free.
+  Consequently there is no `tools/matrix.sh`: the matrix is maintained
+  in `README.md` and checked by `make test-all` / CI.
+- **`test-all` was split** into `test-all` (each arch's
+  `quick-test-<arch>`, boot-to-prompt, ~1 min total) and
+  `stress-test-all` (each arch's full `test-<arch>`, ~25 min). A single
+  arch's `test-<arch>` still means the full run.
+- **`d1` was dropped, not brought up** — see the note by its own row in
+  the per-architecture table below.
+- **Two ports were added after the fact** that the Phase 4 list never
+  named: `arm-pi3` (`forks/pi_mp`) and `arm64-pi4` (`forks/rpi4`), both
+  taken to the same bar as their siblings.
+
+The plan's own expectation — "this will not be thirteen green ticks" —
+turned out to be too pessimistic. Every port reached `boots`, none
+stayed at `builds` or `broken`. It cost dozens of real, individually
+diagnosed bugs across the tree to get there — the per-port bug counts are
+in each `notes_arch_*.txt`'s own header, and `arm-pi3` alone accounts for
+fifteen.
 
 ## Which machine?
 

@@ -8,7 +8,7 @@ and found four more real bugs while pushing on to a real usertests run.
 Updated again 2026-09-08 in a second follow-up session that root-caused
 (as far as "where," not "why") and pragmatically skipped six real
 usertests hangs, then wired up test-mips/CI - see "Gap, resolved
-pragmatically" below. Phase 4 of docs/claude_notes/plan_build_and_test.md,
+pragmatically" below. Phase 4 of docs/claude_notes/done/plan_build_and_test.md,
 fifth port attempted from that phase's list. Status: FULLY WORKING -
 genuinely interactive shell, and `usertests` reports "ALL TESTS PASSED"
 (with six known-hanging sub-tests skipped, each root-caused as far as

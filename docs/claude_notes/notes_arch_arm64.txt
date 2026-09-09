@@ -6,7 +6,7 @@ during the aarch64 bring-up itself. Updated 2026-09-08 once the "sh
 crashes shortly after printing its prompt" bug below was root-caused
 and fixed in a follow-up session - it WAS the exact same bug as rv32's
 own bug 4, not merely a structurally similar pattern; see "Bug 3" below.
-Phase 4 of docs/claude_notes/plan_build_and_test.md, fourth port
+Phase 4 of docs/claude_notes/done/plan_build_and_test.md, fourth port
 attempted from that phase's list. Status: FULLY WORKING - one real bug
 fixed proactively before it was even hit (missing user/user.ld, the
 same class rv32 needed), one GCC false positive fixed, and now the

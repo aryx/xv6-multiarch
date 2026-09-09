@@ -3,7 +3,7 @@ notes_arch_arm_pi1.txt
 
 Written: 2026-09-07, against commit eb760b5 (the armv7-rpi bring-up
 commit), during the rpi1 bring-up itself. Phase 4 of
-docs/claude_notes/plan_build_and_test.md, ninth port attempted from that
+docs/claude_notes/done/plan_build_and_test.md, ninth port attempted from that
 phase's list, third of the four ARM board ports.
 
 STATUS (updated 2026-09-09): FULLY WORKING, INCLUDING GRAPHICS AND A
