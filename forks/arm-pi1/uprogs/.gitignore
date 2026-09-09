@@ -1,0 +1,11 @@
+# claude: the root .gitignore's broad "_*"/"*.o"/"*.d"/"*.sym"/"*.asm"
+# patterns already cover most of this directory's own build output, but
+# not these specific bare names. Scoped here rather than at the repo root
+# so the patterns stay narrow - "fs.img" in particular is a name this
+# repo has in several places, and only THIS one plus ../source/fs.img
+# (the copy of it the kernel embeds - see the fork-level .gitignore) are
+# build output.
+/fs.img
+/mkfs
+/initcode
+/initcode.out
