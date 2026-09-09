@@ -99,8 +99,8 @@ QEMU_ARM_PI3 ?= qemu-system-aarch64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
         build-i386 run-i386 run-i386-qemu-graphics test-i386 clean-i386 kill-i386 check-i386-toolchain \
-        build-amd64-jserv run-amd64-jserv test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
-        build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
+        build-amd64-jserv run-amd64-jserv run-amd64-jserv-qemu-graphics test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
+        build-amd64 run-amd64 run-amd64-qemu-graphics test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
         build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
         build-mips run-mips test-mips clean-mips kill-mips check-mips-toolchain \
@@ -237,6 +237,16 @@ build-amd64-jserv: check-amd64-jserv-toolchain
 run-amd64-jserv: check-amd64-jserv-toolchain
 	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 qemu-nox
 
+# claude: same build, but a real GTK window (forks/amd64-jserv/Makefile's
+# own "qemu" target, no -nographic) - same shape as run-i386-qemu-graphics
+# and run-arm-pi1-qemu-graphics. Real PS/2 keyboard emulation (this is a
+# standard PC machine, not a "virt"/board model with no input device), so
+# typing in the window reaches this fork's own kbd.c the same way it does
+# on real hardware. Same CPUS=2 override as run-amd64-jserv above, same
+# reason. Requires $DISPLAY; not folded into build-all/test-all.
+run-amd64-jserv-qemu-graphics: check-amd64-jserv-toolchain
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 qemu
+
 # Unlike forks/riscv64's/forks/i386's own QEMU vars, forks/amd64-jserv/
 # Makefile's is "QEMU ?= qemu-system-x86_64" (a conditional default) - so
 # QEMU genuinely threads through the environment correctly here, not
@@ -270,6 +280,13 @@ build-amd64: check-amd64-toolchain
 
 run-amd64: check-amd64-toolchain
 	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) qemu-nox
+
+# claude: same build, but a real GTK window (forks/amd64/Makefile's own
+# "qemu" target, no -nographic) - same shape as run-i386-qemu-graphics.
+# Real PS/2 keyboard emulation, same as run-amd64-jserv-qemu-graphics
+# above. Requires $DISPLAY; not folded into build-all/test-all.
+run-amd64-qemu-graphics: check-amd64-toolchain
+	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
 # forks/riscv64's/forks/i386's own test-<arch> targets (forks/amd64/
