@@ -30,10 +30,24 @@ Two sequential efforts, in order:
    all 4 cores deep into userinit under QEMU - ten real bugs found and
    fixed, one open (a secondary-core page-table race) - see
    `notes_arch_arm_pi3.txt`. `arm64-pi4` still needs QEMU 9.1+ for
-   `-M raspi4b` (not packaged on this host) and hasn't been started; see
-   "Adding a new arch" below for the recipe, and
-   `docs/claude_notes/notes_arch_*.txt` for what's been verified about
-   each arch so far.
+   `-M raspi4b` (not packaged on this host, still 8.2.2 as of
+   2026-09-09) and hasn't been started; see "Adding a new arch" below
+   for the recipe, and `docs/claude_notes/notes_arch_*.txt` for what's
+   been verified about each arch so far.
+
+   Beyond Phase 4's own "build and boot" bar: `arm-pi1` was taken all
+   the way to a genuinely interactive shell under QEMU, with a real
+   emulated HDMI framebuffer console (`make run-arm-pi1-qemu-graphics`)
+   and a working USB keyboard (`-device usb-kbd`, typed keystrokes
+   execute real shell commands, verified end to end) - ten real bugs
+   found and fixed across four sessions, see `notes_arch_arm_pi1.txt`.
+   `arm-pi1-bis` and `arm-pi2` - the same real-hardware board family,
+   both still stuck before any console output at all - are the most
+   likely next candidates for the same treatment: `arm-pi1-bis`'s own
+   notes already show the identical `bcm2835-fb` re-entrant-IO QEMU
+   warning that turned out, for `arm-pi1`, to be caused by this
+   kernel's own missing `.bss` zeroing - a strong, transferable lead,
+   not yet investigated for either sibling.
 2. **`docs/claude_notes/factorization-plan.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).
