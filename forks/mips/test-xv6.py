@@ -52,7 +52,17 @@ MAKEVARS = [
 def make_qemu(reset=True):
     return QEMU(
         reset_cmds=[
-            ["make", *MAKEVARS, "clean"],
+            # claude: NO "make clean" here - it used to be the first reset
+            # command, and made "make test-all" recompile this port from
+            # scratch even straight after a full "make build-all". Unlike
+            # the Pi ports it was not even compensating for anything:
+            # this Makefile already both generated (-MD) and read
+            # (-include) its header dependencies, so an incremental build
+            # was already trustworthy and the clean was pure waste.
+            # Nothing else needs resetting either - this port boots with
+            # "-kernel" and its filesystem is embedded in the kernel
+            # image, so guest writes land in RAM and die with QEMU.
+            # See docs/claude_notes/notes_build_system.txt.
             ["make", *MAKEVARS, "kernelmemfs"],
         ],
         qemu_argv=["make", *MAKEVARS, "qemu-nox-memfs"],
