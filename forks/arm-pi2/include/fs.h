@@ -19,7 +19,29 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
-#define NDIRECT 12
+// claude: kept in lockstep with ../uprogs/fs.h - a SEPARATE, duplicate
+// copy of this file (uprogs/mkfs.c's own "#include "fs.h"" is
+// unqualified, so it picks up that local copy, not this one) - update
+// both together if this ever changes again.
+//
+// NDIRECT was 12 (this fork's original value) - too small for
+// a modern-toolchain build: MAXFILE*BSIZE (the largest file this
+// filesystem can hold) worked out to 71680 bytes, and this fork's own
+// compiled usertests binary is 72156 bytes (needs -marm - see
+// uprogs/Makefile's own CFLAGS comment - and ARM's fixed 4-byte
+// instruction encoding is less compact than the Thumb-2 code this
+// toolchain would otherwise default to), so mkfs's own iappend() hit
+// "assert(fbn < MAXFILE)" packing it into fs.img. Same root cause and
+// same fix shape as forks/amd64-jserv's own fs.h (see that file's own
+// long comment for the full reasoning) - NDIRECT can't be just any
+// larger value: mkfs.c's own "assert((512 % sizeof(struct dinode)) ==
+// 0)" requires dinode's own size (12 fixed bytes + 4*(NDIRECT+1) for
+// addrs[]) to divide BSIZE(512) evenly. NDIRECT=28 (dinode=128 bytes)
+// technically clears 72156 bytes (MAXFILE*BSIZE=79872) but with under
+// 11% headroom; NDIRECT=60 (dinode=256 bytes, IPB=512/256=2) gives
+// MAXFILE*BSIZE=96256 - comfortable margin, same dinode size
+// amd64-jserv's own fix landed on.
+#define NDIRECT 60
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 

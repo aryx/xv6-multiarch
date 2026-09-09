@@ -16,7 +16,14 @@
 int nblocks = 985;
 int nlog = LOGSIZE;
 int ninodes = 200;
-int size = 1024;
+// claude: size was 1024 (nblocks(985) + usedblocks(29) + nlog(10),
+// this file's own main() asserts they sum exactly) - fs.h's own
+// NDIRECT 12->60 bump (see that file's own comment) shrank IPB from
+// 8 to 2 (dinode grew 64->256 bytes), which alone grew usedblocks'
+// own "ninodes/IPB" term from 25 to 100 blocks (+75) - bumped size by
+// the same +75 (985+104+10=1099) to keep main()'s own balance
+// assertion true; nblocks (the actual DATA block budget) is untouched.
+int size = 1099;
 
 int fsfd;
 struct superblock sb;

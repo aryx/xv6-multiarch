@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [i386, amd64, amd64-jserv, riscv64, riscv32, arm, arm-pi1, arm-pi1-bis, arm64, mips, loongarch]
+        arch: [i386, amd64, amd64-jserv, riscv64, riscv32, arm, arm-pi1, arm-pi1-bis, arm-pi2, arm64, mips, loongarch]
     steps:
       - uses: actions/checkout@v4
       # optional if don't need multi-arch build

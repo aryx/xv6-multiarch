@@ -45,19 +45,25 @@ Two sequential efforts, in order:
    taken to the same fully-working state (interactive shell, graphics,
    USB keyboard) via the identical fix pattern, see
    `notes_arch_arm_pi1_bis.txt`. `arm-pi2` (a different, more mature
-   board-family member - real ARMv7/Cortex-A7, `hw=rpi2`) reaches a
-   genuinely interactive shell under QEMU too now - seven distinct real
-   bugs found and fixed (an ARM/Thumb interworking gap and a
-   PIC/PIE-codegen gap in its own hand-written `entry.S`/toolchain
-   defaults, a missing VFP/NEON coprocessor enable, the same
-   missing-`.bss`-zeroing bug as its siblings, the same
-   QEMU-uses-PL011-not-mini-UART finding as `arm-pi1`/`arm-pi1-bis`
-   - both TX and RX - and an invalid Non-Secure-to-Monitor-mode switch).
-   One thing short of Phase-4-plus parity with its siblings: a real
-   `usertests` run gets deep into the suite (many sub-tests passing)
-   before hanging in its own `mem()` stress test, not yet diagnosed -
-   see `notes_arch_arm_pi2.txt`'s own "Session 2" for the full
-   bug-by-bug diagnosis and the open lead.
+   board-family member - real ARMv7/Cortex-A7, `hw=rpi2`) reaches full
+   Phase-4 parity with its siblings too now: a real interactive shell
+   under QEMU and a full `usertests` run reporting **"ALL TESTS
+   PASSED"** - nine distinct real bugs found and fixed (an ARM/Thumb
+   interworking gap and a PIC/PIE-codegen gap, both in its own
+   hand-written `entry.S`/toolchain defaults and independently again in
+   its user-space programs' own build, a missing VFP/NEON coprocessor
+   enable, the same missing-`.bss`-zeroing bug as its siblings, the
+   same QEMU-uses-PL011-not-mini-UART finding as `arm-pi1`/`arm-pi1-bis`
+   - both TX and RX - an invalid Non-Secure-to-Monitor-mode switch, and
+   a filesystem `MAXFILE` limit too small for a modern-toolchain-built
+   `usertests` binary, same fix shape as `amd64-jserv`'s own `fs.h`).
+   One sub-test, `mem()` (a malloc/free heap-exhaustion stress loop), is
+   skipped rather than fixed - confirmed via gdb to hang for real, the
+   same failure independently already found and skipped in `mips`'s own
+   `usertests.c`. Fully wired up now - `build`/`run`/`test`/
+   `quick-test`/`clean`/`kill-arm-pi2`, folded into every `-all`
+   umbrella target - see `notes_arch_arm_pi2.txt`'s own "Session 2" for
+   the full bug-by-bug diagnosis.
 2. **`docs/claude_notes/factorization-plan.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
    (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).

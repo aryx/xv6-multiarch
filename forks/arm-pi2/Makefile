@@ -151,6 +151,13 @@ ASM_OBJECTS = $(patsubst $(SOURCE)%.S,$(BUILD)%.o,$(wildcard $(SOURCE)*.S))
 
 C_OBJECTS = $(patsubst $(SOURCE)%.c,$(BUILD)%.o,$(wildcard $(SOURCE)*.c))
 
+# claude: "all" MUST stay the first real target rule in this file - it's
+# what a bare "make hw=rpi2 TOOLCHAIN=..." (no explicit target, exactly
+# what the top-level Makefile's own build-arm-pi2 does) falls back to as
+# Make's own implicit default goal. The source/fs.img rule below was
+# originally placed HERE instead and silently became the new default
+# goal - bare "make" started stopping after just regenerating fs.img,
+# never actually building the kernel at all. Kept below "all" instead.
 # Rule to make everything.
 all : $(TARGET)
 
@@ -159,6 +166,33 @@ $(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
 	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(LD_OPTIONS) -Map kernel.map -o $(BUILD)kernel.elf -T kernel.ld
 	$(TOOLCHAIN)objdump -d $(BUILD)kernel.elf > kernel.list
 	$(TOOLCHAIN)objcopy $(BUILD)kernel.elf -O binary $(TARGET)
+
+# claude: source/fs.img is not checked into git - it's the OUTPUT of
+# uprogs/'s own separate build (mkfs + every UPROGS binary), regenerated
+# here on every build rather than committed as a binary blob that could
+# silently drift from uprogs/*.c (see notes_arch_arm_pi2.txt's own
+# "Bug 11"/"Bug 12" - this repo's own uprogs/ build already needed real
+# fixes once actually exercised, exactly the kind of bit-rot a
+# checked-in fs.img would hide indefinitely). uprogs/'s own Makefile
+# names its toolchain variable "TOOLPREFIX" (not this Makefile's own
+# "TOOLCHAIN") - passed through under its own name.
+#
+# Marked ".PHONY" (rather than listing every uprogs/*.c as a real
+# prerequisite, which would drift from uprogs/Makefile's own file list)
+# so this recipe runs on every build unconditionally - up-to-date
+# checking is delegated to uprogs/'s own recursive "make fs.img" (its
+# own objects are individually timestamp-tracked via "-MD"), which is a
+# no-op print ("'fs.img' is up to date.") when nothing changed there,
+# rather than trying to duplicate that tracking here.
+.PHONY: source/fs.img
+source/fs.img:
+	$(MAKE) -C uprogs TOOLPREFIX=$(TOOLCHAIN) fs.img
+	cp uprogs/fs.img source/fs.img
+
+# entry.S is the only source file that actually embeds fs.img (via its
+# own ".incbin \"fs.img\"", source/entry.S) - only ITS object needs the
+# dependency, not every .S file the generic pattern rule below covers.
+$(BUILD)entry.o: source/fs.img
 
 # claude: QEMU-only target, added alongside the real-hardware ones above
 # rather than replacing anything - "all"/"$(TARGET)" (what a real

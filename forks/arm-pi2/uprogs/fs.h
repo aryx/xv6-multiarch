@@ -19,7 +19,13 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
-#define NDIRECT 12
+// claude: kept in lockstep with ../include/fs.h (this file is a
+// SEPARATE, duplicate copy - uprogs/ programs and the kernel each
+// include their own local "fs.h" by unqualified #include, so mkfs.c
+// picks up THIS one, not ../include/fs.h) - see that file's own long
+// comment for the full NDIRECT=12->60 reasoning (a modern-toolchain
+// usertests binary no longer fits the original 71680-byte MAXFILE).
+#define NDIRECT 60
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 

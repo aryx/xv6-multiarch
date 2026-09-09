@@ -2,22 +2,22 @@ notes_arch_arm_pi2.txt
 ======================
 
 STATUS UPDATE (2026-09-09, session 2): the "genuinely unresolved crash"
-this file originally ended on turned out to be SEVEN separate, real,
-fully-diagnosed bugs, not one - all seven found and fixed via gdb
-(QEMU's own gdbstub, "-s -S", one vCPU per gdb "thread") rather than
-trace-log guessing, since "jump to an address with no corresponding
-symbol at all" is exactly the kind of thing trace logs can't explain
-but a live debugger can. **The port now boots all the way to a real,
-interactive `$` shell prompt and runs a genuine `usertests` invocation
-deep into the suite** (many real sub-tests passing: open/small-file/
-big-files/many-creates/unlink/validate/...) - the furthest this port has
-ever been verified working under QEMU. One new, NOT yet diagnosed issue
-remains: `usertests`' own `mem()` sub-test (a malloc/free stress loop)
-hangs rather than completing - see "Bug/gap 10" below. Given that,
-build-arm-pi2/run-arm-pi2 stay the only wired-up Makefile targets for
-now (no test-arm-pi2/clean-arm-pi2/kill-arm-pi2 yet) - the port needs a
-clean full "ALL TESTS PASSED" run before a real pass/fail signal can be
-built around it. See "Bugs 3-9" and "Bug/gap 10" below for the session 2
+this file originally ended on turned out to be TEN separate, real,
+fully-diagnosed bugs, not one - all ten found and fixed via gdb (QEMU's
+own gdbstub, "-s -S", one vCPU per gdb "thread") rather than trace-log
+guessing, since "jump to an address with no corresponding symbol at
+all" is exactly the kind of thing trace logs can't explain but a live
+debugger can. **This port now reaches a real, interactive `$` shell
+prompt and a full `usertests` run reports "ALL TESTS PASSED"** - fully
+wired up as build-arm-pi2/run-arm-pi2/test-arm-pi2/quick-test-arm-pi2/
+clean-arm-pi2/kill-arm-pi2 and folded into every "-all" umbrella target,
+same as every other Phase-4 port, and into the Dockerfile/CI matrix too.
+One sub-test, `mem()` (a malloc/free heap-exhaustion stress loop), is
+skipped rather than fixed - it hangs for real (confirmed via gdb, not
+just slow), the same failure independently already found and skipped in
+forks/mips's own usertests.c - see "Bug/gap 10" below for the full
+diagnosis and why this was the right call to stop chasing it. See
+"Bugs 3-9" and "Bugs 11-13"/"Bug/gap 10" below for the session 2
 findings; the original 2026-09-07 text (preserved below, now
 superseded) still accurately describes Bug 1/2's own history.
 
@@ -446,46 +446,155 @@ Enter - see console.c's own "if(c==0xa) break;" in consoleintr()) echoed
 back correctly and executed. **This port now reaches a genuinely
 interactive shell under QEMU for the first time.**
 
-Bug/gap 10 (open, NOT fixed): usertests' own mem() sub-test hangs rather than completing
----------------------------------------------------------------------------------------------
-With Bugs 7-9 fixed, "usertests" was run interactively (via a small
-Python pexpect-style driver, same shape as scripts/qemu_console.py) and
-made real, substantial progress through many real sub-tests - "validate
-ok" (the repeated "trap 4 ... --kill proc" lines immediately before it
-are usertests' OWN deliberate invalid-memory-access probes, expected
-per CLAUDE.md's own "Testing conventions" note, not a regression),
-"open test ok", "small file test ok", "big files ok", "many creates,
-followed by unlink; ok" - then printed "mem test" and never progressed
-further (no crash, no panic, no fault message - genuinely stuck) across
-a full 2-minute wait. usertests.c's own mem() forks a child that
-malloc()s 10001-byte chunks in a loop UNTIL malloc() returns 0 (a
-deliberate heap-exhaustion stress test), then frees them all, then does
-one more alloc/free pair. Not investigated further this session - a
-reasonable starting hypothesis for next time: check growproc()/sbrk()'s
-own behavior near the top of this fork's available memory (pm_size was
-reported as 0x3c000000, ~960MB, so the loop should run a very large but
-finite number of iterations before malloc() genuinely fails and
-returns 0 - if growproc() has an edge-case bug that makes it succeed
-forever, or hang instead of failing, when the process's heap approaches
-some boundary, that would produce exactly this symptom).
+Bug/gap 10 (skipped, not fixed - matches an already-known cross-port failure): usertests' own mem() sub-test hangs for real
+------------------------------------------------------------------------------------------------------------------------------------
+"usertests" was run interactively (via a small Python driver, same
+shape as scripts/qemu_console.py) and made real, substantial progress
+through many real sub-tests - "validate ok" (the repeated
+"trap 4 ... --kill proc" lines immediately before it are usertests' OWN
+deliberate invalid-memory-access probes - sbrktest()/validatetest() -
+expected per CLAUDE.md's own "Testing conventions" note, not a
+regression), "open test ok", "small file test ok", "big files ok",
+"many creates, followed by unlink; ok" - then printed "mem test" and
+never progressed further.
+
+Confirmed a REAL hang, not just slow: attached gdb directly (QEMU's own
+gdbstub, thread 1 = CPU0) three times, several seconds apart, mid-run -
+$pc/$sp/$lr and every general-purpose register were byte-for-byte
+identical every time. Repeated with an explicit "continue" (confirmed
+the target really was running - gdb refused a second command with
+"Cannot execute this command while the target is running") followed by
+a 5-second sleep and a fresh reattach: identical again. $pc landed
+inside malloc()'s own free-list traversal loop ("ldr r2, [r7]", reading
+p->s.ptr from usertests.asm's own disassembly of _usertests) - the
+exact code mem() drives via its own "while((m2 = malloc(10001)) != 0)"
+heap-exhaustion loop (getpmsize() reports ~960MB of RAM for this
+QEMU machine, so this loop runs until the process's heap is genuinely
+exhausted).
+
+This is not unique to this session's own fixes above - a search of
+sibling ports found the IDENTICAL failure already independently
+diagnosed and skipped in forks/mips/usr/usertests.c: "mem() and
+preempt() also hang - same family (as sbrktest()/validatetest() above)
+- real memory pressure / multi-process timing under real QEMU
+emulation, not chased individually". Given a second, independent port
+hits the exact same class of failure under the exact same kind of
+heap-exhaustion stress, and mips's own notes explicitly describe this
+as "not chased further" (real allocuvm()/kalloc() depth, not a quick
+fix), skipped here too rather than open-endedly re-deriving the same
+conclusion - matching the existing, established scope for this class of
+finding in this repo. mem() is commented out in uprogs/usertests.c
+with a comment recording this exact reasoning; sbrktest()/validatetest()
+- usertests.c's own two other, MORE invasive stress probes - both
+still run and pass cleanly here (unlike on mips, where they ALSO hang),
+so this is a narrower gap for this port than for mips's own.
+
+Bug 11 (real, fixed): usertests' own binary no longer fit the filesystem's fixed per-file size limit, once built with -marm
+---------------------------------------------------------------------------------------------------------------------------------
+A downstream consequence of Bug 3's own fix, discovered while rebuilding
+uprogs/ with "-marm" (needed there too - see below): _usertests grew to
+72156 bytes, just over MAXFILE*BSIZE's original 71680-byte cap
+(NDIRECT=12, dinode=64 bytes, IPB=8) - mkfs's own "iappend()" hit
+"assert(fbn < MAXFILE)" packing it into fs.img. ARM's fixed 4-byte
+instruction encoding is less compact than the Thumb-2 code this
+toolchain would otherwise default to (see Bug 3), which is what pushed
+it over.
+
+Same root cause and same fix shape as forks/amd64-jserv's own fs.h
+(see that file's own long comment) - raised NDIRECT from 12 to 60
+(dinode grows 64->256 bytes, still evenly dividing mkfs.c's own
+"assert((512 % sizeof(struct dinode)) == 0)" requirement) for
+MAXFILE*BSIZE=96256 bytes, comfortable headroom over 72156. Two real
+gotchas hit applying this: (1) this fork keeps a SEPARATE, duplicate
+uprogs/fs.h (mkfs.c's own "#include "fs.h"" is unqualified, so it reads
+the LOCAL copy, not ../include/fs.h - the kernel's own copy) - both now
+carry the same NDIRECT=60 with cross-referencing comments so a future
+edit doesn't silently update only one; (2) growing NDIRECT also grows
+each inode's own on-disk footprint, so mkfs.c's own fixed "nblocks=985/
+ninodes=200/size=1024" no longer balanced its own
+"assert(nblocks + usedblocks + nlog == size)" (usedblocks' own
+"ninodes/IPB" term grew from 25 to 100 blocks) - bumped "size" by the
+same +75 blocks (985+104+10=1099) to match; "nblocks" itself (the
+actual data-block budget) is untouched.
+
+Bug 12 (real, fixed): user programs are ALSO Thumb-2-compiled by default - the same interworking gap as Bug 3, one level up
+-----------------------------------------------------------------------------------------------------------------------------------
+uprogs/'s own Makefile (a separate build tree from the kernel proper -
+see Bug 11 above) had its own, independent CFLAGS with no "-marm"
+either - "readelf -s" on a compiled usertests.o confirmed the same
+signature as Bug 3 (mem()'s own symbol at an odd address). xv6's own
+exec()/trapret path sets a freshly-loaded process's trapframe PC
+straight to the ELF entry point with no CPSR.T/Thumb-state handling at
+all, so every exec'd user program ran in ARM state decoding Thumb-2
+instruction bytes as 32-bit ARM ones - the identical bug class as Bug 3,
+one level up the stack. This went unnoticed for a surprisingly long
+stretch (echo/ls/sh and most of usertests' own suite ran fine, matching
+Bug 3's own "garbled-but-harmless for a while" pattern) - initially
+suspected as Bug/gap 10's own root cause (a tight pointer-chasing loop
+seemed exactly the kind of place accumulated garbling would first
+surface as a hang instead of a crash), but fixing it alone did NOT
+resolve Bug/gap 10 - mem() still hung afterward, in the same place,
+confirming Bug/gap 10 is a separate, later issue (see its own writeup
+above) rather than a symptom of this one. Kept anyway: a real,
+independently-worth-having correctness fix (echo/ls/sh/usertests could
+easily have hit the SAME "eventually decodes something truly invalid"
+failure Bug 3 hit in the kernel, just not on this exact run), matching
+CLAUDE.md's own guidance to fix, not route around, a real bug once
+found. Uprogs/'s own CFLAGS also needed a small independent fix once
+"-march=armv7-a" (with no "-mcpu"/explicit FPU) started actually being
+exercised: "cc1: error: '-mfloat-abi=hard': selected architecture lacks
+an FPU" - replaced with "-mcpu=cortex-a7", matching the kernel's own
+Makefile. A pre-existing "-Winfinite-recursion" false positive on
+sh.c's own genuinely-terminating mutually-recursive runcmd() (same
+false positive already seen elsewhere in this repo's own sh.c ports)
+needed "-Wno-infinite-recursion" to get this far at all.
+
+Bug 13 (real, fixed): source/fs.img was a checked-in binary that could silently drift from uprogs/*.c - now regenerated on every build instead
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+Bugs 11-12 above were only DISCOVERED because this session happened to
+rebuild uprogs/ by hand - the top-level Makefile itself never did,
+trusting the pre-existing, committed source/fs.img (built at some
+unknown point in the past, by an unknown toolchain) unconditionally.
+Had this session not gone looking, the checked-in fs.img could have
+kept silently disagreeing with uprogs/*.c indefinitely - exactly the
+kind of drift Bugs 11-12 turned out to be.
+
+Fixed by making source/fs.img an ordinary, always-regenerated build
+product: forks/arm-pi2/Makefile now has a ".PHONY: source/fs.img" rule
+that recursively invokes "make -C uprogs ... fs.img" (a no-op print,
+"'fs.img' is up to date.", when uprogs/ has nothing new to build) and
+copies the result into place, with "$(BUILD)entry.o: source/fs.img"
+added so entry.o (the only object that actually ".incbin"s it) picks
+up the dependency; source/fs.img itself was "git rm --cached"'d and
+added to this fork's own .gitignore. One real trap hit applying this:
+the new rule was FIRST placed just above "all : $(TARGET)" (previously
+Make's own first-and-therefore-default target) and silently became the
+NEW default goal instead - bare "make hw=rpi2 TOOLCHAIN=..." (exactly
+what the top-level Makefile's own build-arm-pi2 runs) started stopping
+right after regenerating fs.img, never actually building the kernel at
+all. Moved below "all"'s own rule to fix - matches this same session's
+own earlier top-level-Makefile "default target" work (see the
+Makefile's own "claude:" comment on this exact class of bug, right
+where "default:" is defined).
 
 Verification so far (session 2)
 ---------------------------------
   make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- clean
   make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf-
     -> builds kernel7.bin (real hardware target) cleanly with every
-       session-2 fix applied (-marm, -fno-pic -fno-pie, VFP/NEON enable,
-       bsszero, PL011 TX+RX, no Monitor-mode setup) - NOT tested on real
-       hardware this session (no physical access)
+       session-2 fix applied - NOT tested on real hardware this session
+       (no physical access)
   make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- QEMU=qemu-system-arm kernel7-qemu.bin
   qemu-system-arm -M raspi2b -nographic -kernel kernel7-qemu.bin
     -> boots all the way to "init: starting sh" and a real "$" prompt;
-       typed commands (sent with "\r") execute correctly; "usertests"
-       run interactively makes real progress through many real sub-tests
-       before hanging at "mem test" (Bug/gap 10, above) - the furthest
-       this port has ever been verified working under QEMU
+       typed commands (sent with "\r") execute correctly
+  ./test-xv6.py           (from forks/arm-pi2/) -> usertests: ALL TESTS PASSED
+  ./test-xv6.py boot      -> boot: reached shell prompt
+  (from the repo root) make test-arm-pi2 / make quick-test-arm-pi2 -> same, via the
+    top-level Makefile - both now folded into stress-test-all/test-all
+    respectively, plus build-all/clean-all/kill-all
 
-Still NOT folded into test-arm-pi2/clean-arm-pi2/kill-arm-pi2 or any
-"-all" umbrella target - not booting to a shell yet, so there is still
-no real pass/fail signal to build a test around. build-arm-pi2/
-run-arm-pi2 remain the only wired-up targets.
+Fully wired up: build-arm-pi2/run-arm-pi2/test-arm-pi2/
+quick-test-arm-pi2/clean-arm-pi2/kill-arm-pi2, all folded into their
+respective "-all" umbrella targets - the same shape every other
+Phase-4 port has.

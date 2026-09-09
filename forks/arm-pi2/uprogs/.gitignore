@@ -1,0 +1,9 @@
+# claude: the root .gitignore's broad "_*"/"*.o"/"*.d"/"*.sym"/"*.asm"
+# patterns already cover most of this directory's own build output, but
+# not these specific bare names - scoped here, not at the repo root,
+# since "fs.img" also exists (checked in, intentionally) as
+# ../source/fs.img - see that fork-level .gitignore's own comment.
+/fs.img
+/mkfs
+/initcode
+/initcode.out

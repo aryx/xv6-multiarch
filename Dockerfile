@@ -8,16 +8,16 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only eleven
+# for the general reasoning this one reuses. Simpler here: only twelve
 # arches are wired up so far (riscv64, i386, amd64-jserv, amd64, riscv32, arm,
-# arm-pi1, arm-pi1-bis, arm64, mips, loongarch - build-and-test-plan.md's
+# arm-pi1, arm-pi1-bis, arm-pi2, arm64, mips, loongarch - build-and-test-plan.md's
 # Phases 1, 2, and Phase 4), not all thirteen forks/ - extend the ARCH case
 # below (both the apt-get and the build/test one) as more arches get their
 # own ./configure detection, matching build.md's own Phase 4 order. The
-# remaining ARM board ports (arm-pi2, arm-pi3) are already wired into
-# ./configure/the top-level Makefile but not added here yet - they don't
+# remaining ARM board port (arm-pi3) is already wired into
+# ./configure/the top-level Makefile but not added here yet - it doesn't
 # reach a passing test-<arch> on this host either, so there is nothing
-# for a CI job to assert yet (see their own notes_arch_*.txt).
+# for a CI job to assert yet (see its own notes_arch_arm_pi3.txt).
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own
@@ -90,6 +90,8 @@ RUN case "$ARCH" in \
       arm-pi1) apt-get install -y --no-install-recommends \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       arm-pi1-bis) apt-get install -y --no-install-recommends \
+                 gcc-arm-linux-gnueabihf qemu-system-arm ;; \
+      arm-pi2) apt-get install -y --no-install-recommends \
                  gcc-arm-linux-gnueabihf qemu-system-arm ;; \
       # claude: ipxe-qemu (provides efi-virtio.rom) is only a Recommends
       # of qemu-system-arm, stripped by --no-install-recommends above -
@@ -202,7 +204,7 @@ RUN ./configure
 # .github/workflows/docker.yml's own matrix uses (one real arch per job,
 # never ARCH=all), so CI's actual coverage is untouched by this change.
 RUN if [ "$ARCH" = all ]; then \
-      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm-pi1-bis build-arm64 build-mips build-loongarch; \
+      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm-pi1-bis build-arm-pi2 build-arm64 build-mips build-loongarch; \
     else \
       make "build-$ARCH"; \
     fi

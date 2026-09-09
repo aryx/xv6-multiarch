@@ -13,7 +13,28 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 #CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -march=armv7-a
+# claude: -marm added - this toolchain defaults to Thumb-2 (confirmed
+# via "readelf -s": usertests.c's own mem() function landed at an ODD
+# address, the ELF convention for a Thumb interworking target), but
+# xv6's own exec()/trapret path just sets the trapframe's PC to the
+# ELF entry point with no CPSR.T/Thumb-state handling at all - so every
+# exec'd program ran in ARM state decoding Thumb-2 instruction bytes as
+# 32-bit ARM ones, the exact same bug class already found and fixed in
+# the kernel proper (see notes_arch_arm_pi2.txt's own "Bug 3"). This
+# went unnoticed for a surprisingly long stretch (echo/ls/sh and most
+# of usertests' own suite ran fine) until usertests' own mem() test - a
+# tight malloc()/free() pointer-chasing loop - hung indefinitely rather
+# than crashing outright, exactly like the kernel-side bug's own
+# behavior before it was diagnosed. "-march=armv7-a" alone also lacks
+# an FPU (broke with "-mfloat-abi=hard": selected architecture lacks an
+# FPU" once this Makefile was actually exercised) - replaced with
+# "-mcpu=cortex-a7", matching the kernel's own Makefile.
+# claude: -Wno-infinite-recursion added - sh.c's own genuinely-
+# terminating mutually-recursive runcmd() (parses a real command tree
+# and recurses over BOTH sides of pipes/lists/backgrounds, not itself
+# unconditionally) trips a GCC false positive, same one already seen
+# elsewhere in this repo's own sh.c ports.
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard
 
 all: mkfs initcode fs.img
 

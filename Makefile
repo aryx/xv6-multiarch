@@ -100,7 +100,7 @@ default:
 	@echo "  make kill-all         clean up any orphaned qemu-system-* left running"
 	@echo ""
 	@echo "  make build-<arch>        build one arch (riscv64, i386, amd64, amd64-jserv, riscv32,"
-	@echo "                           arm64, mips, loongarch, arm, arm-pi1, arm-pi1-bis)"
+	@echo "                           arm64, mips, loongarch, arm, arm-pi1, arm-pi1-bis, arm-pi2)"
 	@echo "  make run-<arch>          build + boot that arch interactively (-nographic; Ctrl-A X to quit)"
 	@echo "  make quick-test-<arch>   build + boot headless + assert a shell prompt, that arch"
 	@echo "  make test-<arch>         build + boot headless + assert ALL TESTS PASSED, that arch"
@@ -167,7 +167,7 @@ QMP_QEMUEXTRA := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)now
         build-arm-pi1-bis run-arm-pi1-bis run-arm-pi1-bis-qemu-graphics test-arm-pi1-bis quick-test-arm-pi1-bis clean-arm-pi1-bis kill-arm-pi1-bis check-arm-pi1-bis-toolchain \
         build-arm run-arm test-arm quick-test-arm clean-arm kill-arm check-arm-toolchain \
         build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 quick-test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
-        build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
+        build-arm-pi2 run-arm-pi2 test-arm-pi2 quick-test-arm-pi2 clean-arm-pi2 kill-arm-pi2 check-arm-pi2-toolchain \
         build-arm-pi3 run-arm-pi3 check-arm-pi3-toolchain \
         build-all test-all stress-test-all clean-all kill-all test-all-graphics build-docker \
         default all clean
@@ -708,12 +708,6 @@ kill-arm-pi1:
 # Makefile's own toolchain variable is "TOOLCHAIN" and DOES expect the
 # trailing "-" (matching every other TOOLPREFIX_<ARCH> in this repo) -
 # passed through as-is, no stripping needed.
-#
-# No test-arm-pi2/clean-arm-pi2/kill-arm-pi2 yet, not folded into
-# build-all/run-all/test-all: boots cleanly under QEMU through the full
-# firmware handoff and well into real kernel logic, but hits an
-# unresolved crash before reaching any console output - see
-# notes_arch_arm_pi2.txt.
 check-arm-pi2-toolchain:
 	@if [ "$(TOOLPREFIX_ARM_PI2)" = NONE ] || [ "$(QEMU_ARM_PI2)" = NONE ]; then \
 		echo "Makefile: arm-pi2 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
@@ -725,6 +719,18 @@ build-arm-pi2: check-arm-pi2-toolchain
 
 run-arm-pi2: check-arm-pi2-toolchain
 	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) qemu
+
+test-arm-pi2: check-arm-pi2-toolchain
+	cd forks/arm-pi2 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) ./test-xv6.py
+
+quick-test-arm-pi2: check-arm-pi2-toolchain
+	cd forks/arm-pi2 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) ./test-xv6.py boot
+
+clean-arm-pi2:
+	$(MAKE) -C forks/arm-pi2 clean
+
+kill-arm-pi2:
+	-pkill -f '$(QEMU_ARM_PI2)' 2>/dev/null || true
 
 ###############################################################################
 # arm-pi3 (forks/arm-pi3, patha454/xv6_pi_mp - renamed from forks/pi_mp)
@@ -765,7 +771,7 @@ run-arm-pi3: check-arm-pi3-toolchain
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-arm-pi1-bis build-mips
+build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-arm-pi1-bis build-arm-pi2 build-mips
 
 # claude: "test-all" is the quick/boot-only umbrella (~1 min combined,
 # each arch just booting to a shell - see each fork's own test-xv6.py
@@ -779,13 +785,13 @@ build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 
 # keeps its pre-existing meaning: full usertests, unchanged, since
 # .github/workflows/docker.yml's Dockerfile calls it by that exact name
 # and CLAUDE.md's "Testing conventions" documents it that way).
-test-all: quick-test-riscv64 quick-test-i386 quick-test-amd64-jserv quick-test-amd64 quick-test-riscv32 quick-test-arm64 quick-test-loongarch quick-test-arm quick-test-arm-pi1 quick-test-arm-pi1-bis quick-test-mips
+test-all: quick-test-riscv64 quick-test-i386 quick-test-amd64-jserv quick-test-amd64 quick-test-riscv32 quick-test-arm64 quick-test-loongarch quick-test-arm quick-test-arm-pi1 quick-test-arm-pi1-bis quick-test-arm-pi2 quick-test-mips
 
-stress-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-arm-pi1-bis test-mips
+stress-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-arm-pi1-bis test-arm-pi2 test-mips
 
-clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-arm-pi1-bis clean-mips
+clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-arm-pi1-bis clean-arm-pi2 clean-mips
 
-kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-arm-pi1-bis kill-mips
+kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-arm-pi1-bis kill-arm-pi2 kill-mips
 
 # claude: opens a real GTK window per arch (see scripts/README.md) - needs
 # $DISPLAY, so it's separate from test-all rather than folded into it.
