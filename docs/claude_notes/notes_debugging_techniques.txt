@@ -1302,3 +1302,31 @@ Result: `preempt()` uncommented, and `forks/mips` reports ALL TESTS
 PASSED. Two ports in one session had `preempt()` skipped as a timing
 artifact and neither was - `forks/arm` had no timer interrupt at all
 (item 40), `forks/mips` had the interrupt but no yield.
+
+44. When a build redoes work, ask what the build is TRACKING, not what it is doing
+----------------------------------------------------------------------------------
+`make build-all` followed by `make test-all` recompiled most of the tree
+a second time. The visible cause was a `make clean` in eight ports' own
+test-xv6.py; the useful question was why anyone had written it. Answer:
+those Makefiles never read the header dependencies they were generating,
+so an incremental build was silently wrong, and cleaning was the only
+way to trust the result. Fixing the workaround without fixing the
+tracking would have traded visible waste for invisible staleness.
+
+Two habits from this, both cheap:
+
+- Run the build twice and diff. A correct build is idempotent: the
+  second run must do nothing. Two consecutive `make build-all` runs
+  recompiling two ports completely was the tell that found the
+  order-only-prerequisite and phony-prerequisite bugs, and it needs no
+  hypothesis to try.
+- Verify dependency tracking by touching a header and checking a .o
+  mtime, never by counting compiler lines in the log. forks/arm and
+  forks/arm-pi1-bis print "  CC  build/proc.o" via a `quiet-command`
+  macro and never name the compiler, so a grep for "gcc" returns zero
+  and a broken build looks like a clean one - the same
+  validate-your-measurement-tool point as item 42.
+
+The full write-up, including why a `make depend` target is the wrong
+fix and what Linux does instead, is in
+docs/claude_notes/notes_build_system.txt.

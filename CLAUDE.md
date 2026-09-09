@@ -375,3 +375,4 @@ behave.
 - `docs/claude_notes/plan_lattepanda.md`, `plan_orange_pi.md` - proposed real-hardware bring-ups on the user's own boards
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
 - `docs/claude_notes/notes_debugging_techniques.txt` - general debugging methodology, grown from real investigations in this repo
+- `docs/claude_notes/notes_build_system.txt` - how the ports' Makefiles behave as builds: header dependency tracking (and why `make depend` is the wrong fix), order-only vs normal prerequisites, and what `test-<arch>` legitimately needs to redo
