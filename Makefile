@@ -107,7 +107,7 @@ QEMU_ARM_PI3 ?= qemu-system-aarch64
         build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
         build-arm-pi1-bis run-arm-pi1-bis check-arm-pi1-bis-toolchain \
         build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
-        build-arm-pi1 run-arm-pi1 test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
+        build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
         build-arm-pi3 run-arm-pi3 check-arm-pi3-toolchain \
         build-all test-all clean-all kill-all build-docker
@@ -535,6 +535,15 @@ build-arm-pi1: check-arm-pi1-toolchain
 
 run-arm-pi1: check-arm-pi1-toolchain
 	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) qemu
+
+# claude: same build, but a real GTK window (no -nographic) so the
+# emulated framebuffer console is actually visible - see
+# forks/arm-pi1/Makefile's own "qemu-graphics" target comment and
+# notes_arch_arm_pi1.txt's "Open gap" section. Requires $DISPLAY; not
+# folded into build-all/test-all (nothing headless-CI can assert against
+# a GTK window).
+run-arm-pi1-qemu-graphics: check-arm-pi1-toolchain
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) qemu-graphics
 
 test-arm-pi1: check-arm-pi1-toolchain
 	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py

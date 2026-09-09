@@ -117,6 +117,20 @@ qemu: kernel-qemu.img
 	@echo "Press Ctrl-A and then X to terminate QEMU session"
 	$(QEMU) -M raspi1ap -nographic -kernel kernel-qemu.img
 
+# claude: same kernel-qemu.img, but with a real GTK window instead of
+# -nographic, so the emulated HDMI/composite framebuffer this fork's own
+# gpuputc()/drawpixel() draws into (when fb_ready is true) is actually
+# visible - see notes_arch_arm_pi1.txt's "Open gap" section. Requires a
+# working $DISPLAY. Serial console is still reachable via the QEMU
+# window's own "View > serial0" (or -serial stdio, not used here since
+# it would fight with the GTK window for the controlling terminal) - the
+# monitor is on stdio so "screendump <file>.ppm" can be typed directly
+# into this same terminal to capture the framebuffer without leaving it.
+qemu-graphics: kernel-qemu.img
+	@echo "QEMU monitor is on this terminal - try: screendump /tmp/fb.ppm"
+	@echo "Close the QEMU window (or 'quit' at the monitor) to terminate"
+	$(QEMU) -M raspi1ap -kernel kernel-qemu.img -monitor stdio
+
 $(BUILD):
 	mkdir $@
 
