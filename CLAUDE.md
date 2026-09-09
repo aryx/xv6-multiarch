@@ -88,12 +88,15 @@ Two sequential efforts, in order:
    source build** (11.1.50 here; `./configure` looks for a >= 9.1
    `qemu-system-aarch64` on PATH and then in a few well-known local
    build locations, deliberately without putting it on PATH). Because
-   of that, `arm64-pi4` has the full
-   `build`/`run`/`test`/`quick-test`/`clean`/`kill` set but is
-   **deliberately absent from every `-all` umbrella and from the
-   Dockerfile and CI matrix** - Docker and GitHub Actions take their
-   QEMU from a distro package and cannot be expected to have this one.
-   See `notes_arch_arm64_pi4.txt`.
+   of that, the split is along **build vs. boot**, not "is this port
+   finished": `build-arm64-pi4` IS in `build-all` (and `clean-arm64-pi4`
+   in `clean-all`) - compiling needs only an aarch64 cross-compiler,
+   which every host and image wired up for `arm64`/`arm-pi3` already
+   has - but its boot targets are **deliberately absent from
+   `test-all`/`stress-test-all` and from the Dockerfile and CI matrix**,
+   since Docker and GitHub Actions take their QEMU from a distro package
+   and cannot be expected to have this one. See
+   `notes_arch_arm64_pi4.txt`.
 
    Beyond Phase 4's own "build and boot" bar: `arm-pi1` was taken all
    the way to a genuinely interactive shell under QEMU, with a real

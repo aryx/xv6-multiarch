@@ -828,11 +828,13 @@ fi
 # 11.1.50 (v11.1.0-1268-g1df256f596), where forks/arm64-pi4 boots to a
 # shell and passes its own usertests - see notes_arch_arm64_pi4.txt.
 #
-# Because that qemu is a local build rather than a package, arm64-pi4 is
-# deliberately left out of the test-all/stress-test-all umbrellas and out
-# of the Dockerfile/CI matrix entirely (see the top-level Makefile's own
-# arm64-pi4 section): neither the pinned Docker image nor GitHub Actions
-# can reasonably be expected to have it.
+# Because that qemu is a local build rather than a package, arm64-pi4's
+# BOOT targets are deliberately left out of the test-all/stress-test-all
+# umbrellas and out of the Dockerfile/CI matrix entirely (see the
+# top-level Makefile's own arm64-pi4 section): neither the pinned Docker
+# image nor GitHub Actions can reasonably be expected to have it. Its
+# BUILD needs only the toolchain above, so build-arm64-pi4 IS part of
+# build-all and does run everywhere.
 #
 # (Upstream developed the port against k-mrm's own qemu fork,
 # qemu-patch-raspberry4, whose board is spelled "raspi4b1g". Mainline
@@ -983,6 +985,6 @@ echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi2's o
 echo "  or: make build-arm-pi3 && make run-arm-pi3 (boots to userinit under QEMU, all 4"
 echo "      cores; a secondary-core page-table race crashes it before reaching a shell -"
 echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi3's own Makefile)"
-echo "  or: make build-arm64-pi4        && make run-arm64-pi4 (needs a"
+echo "  or: make build-arm64-pi4        && make run-arm64-pi4 (BOOTING it needs a"
 echo "      qemu-system-aarch64 >= 9.1 for its -M raspi4b board - a local source"
-echo "      build on this host, so arm64-pi4 is left out of test-all and of CI)"
+echo "      build on this host, so it is in build-all but not in test-all or CI)"

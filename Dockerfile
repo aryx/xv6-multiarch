@@ -14,16 +14,19 @@
 # Phases 1, 2, and Phase 4), not every forks/ directory - extend the ARCH
 # case below (both the apt-get and the build/test one) as more arches get
 # their own ./configure detection, matching build.md's own Phase 4 order.
-# arm64-pi4 is the one wired-up arch deliberately absent, and it is NOT
-# because the port is unfinished - it boots to a shell and passes its own
-# usertests. It is the emulator: qemu only grew a Raspberry Pi 4 board
-# ("-M raspi4b") in 9.1, ubuntu:24.04 packages 8.2.2, and no apt line
-# fixes that. The qemu it needs is a local source build, which is exactly
-# the kind of thing a reproducible image should not be doing, so
-# arm64-pi4 is run directly on a dev machine instead. Same reason it is
-# absent from .github/workflows/docker.yml's matrix and from the
-# top-level Makefile's "-all" umbrella targets. See
-# notes_arch_arm64_pi4.txt.
+# arm64-pi4 is the one wired-up arch with no case of its own below, and
+# it is NOT because the port is unfinished - it boots to a shell and
+# passes its own usertests. It is the emulator: qemu only grew a
+# Raspberry Pi 4 board ("-M raspi4b") in 9.1, ubuntu:24.04 packages
+# 8.2.2, and no apt line fixes that. The qemu it needs is a local source
+# build, which is exactly the kind of thing a reproducible image should
+# not be doing, so arm64-pi4's BOOT is run directly on a dev machine
+# instead - same reason it has no .github/workflows/docker.yml matrix
+# entry and is not in the top-level Makefile's test-all/stress-test-all.
+# Its BUILD is a different matter and is covered here: it needs only
+# gcc-aarch64-linux-gnu, which the ARCH=all case below already installs
+# for arm64/arm-pi3, and build-arm64-pi4 is part of build-all - so the
+# ARCH=all path does compile it. See notes_arch_arm64_pi4.txt.
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own

@@ -19,8 +19,10 @@ switch - plus two modern-GCC false positives.
 
 The remaining catch is the emulator, not the port: qemu only grew a
 Raspberry Pi 4 board in 9.1, this Ubuntu packages 8.2.2, so the qemu
-used here is a LOCAL SOURCE BUILD - which is why arm64-pi4 is
-deliberately absent from the -all umbrella targets and from Docker/CI.
+used here is a LOCAL SOURCE BUILD - which is why arm64-pi4's BOOT
+targets are deliberately absent from test-all/stress-test-all and from
+Docker/CI. Its BUILD needs only an aarch64 cross-compiler, so
+build-arm64-pi4 is in build-all like every other arch.
 
 What this is
 ------------
@@ -306,12 +308,30 @@ Things that are NOT bugs, for the next reader
 
 Wiring
 ------
-Full build/run/test/quick-test/clean/kill set, but DELIBERATELY not in
-build-all/test-all/stress-test-all/clean-all/kill-all, and deliberately
-not in the Dockerfile or .github/workflows/docker.yml matrix. Those
-three environments get their qemu from a distro package; this port needs
-one newer than any of them ship, built from source. Adding it there
-would just produce a confusing red CI square. Run its targets directly.
+Full build/run/test/quick-test/clean/kill set. The umbrella split is
+along BUILD vs BOOT, not along "is this port finished":
+
+  build-all   includes build-arm64-pi4   (and clean-all includes
+              clean-arm64-pi4, since build-all now leaves artifacts
+              here). Compiling needs only an aarch64 cross-compiler,
+              which every host and image already wired up for
+              forks/arm64 or forks/arm-pi3 has - including the
+              Dockerfile's own ARCH=all case, which installs
+              gcc-aarch64-linux-gnu for those two already. So this is
+              free build coverage.
+
+  test-all    does NOT include quick-test-arm64-pi4, and
+  stress-test-all does NOT include test-arm64-pi4. Nor is there a
+              Dockerfile per-arch case or a
+              .github/workflows/docker.yml matrix entry. Those three
+              environments get their qemu from a distro package, and
+              this port needs one newer than any of them ship, built
+              from source. Adding it there would just produce a
+              confusing red CI square.
+
+Run the boot/test targets directly on a dev machine that has the newer
+qemu. (kill-all is untouched: kill is the counterpart of run/test, and
+no umbrella runs this arch.)
 
 ./configure's checks are split, because the toolchain and the emulator
 fail independently: build-arm64-pi4 needs only TOOLPREFIX_ARM64_PI4 and

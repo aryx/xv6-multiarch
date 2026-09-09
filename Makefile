@@ -78,12 +78,14 @@
 # upstream-repo name. See docs/provenance.md for the upstream-repo ->
 # current-forks-path mapping table.
 
-# forks/arm64-pi4 (k-mrm/xv6-rpi4) has the full build/run/test set but is
-# deliberately OUT of every "-all" umbrella target and out of the
-# Dockerfile/CI matrix: it needs a qemu >= 9.1 for its "-M raspi4b" board,
-# which this Ubuntu does not package, so the working binary is a local
-# source build that Docker and GitHub Actions cannot be expected to have.
-# See its own section below, and notes_arch_arm64_pi4.txt.
+# forks/arm64-pi4 (k-mrm/xv6-rpi4) has the full build/run/test set and
+# builds everywhere, so it is in build-all/clean-all - but its BOOT
+# targets are deliberately out of test-all/stress-test-all and out of the
+# Dockerfile/CI matrix: running it needs a qemu >= 9.1 for its
+# "-M raspi4b" board, which this Ubuntu does not package, so the working
+# binary is a local source build that Docker and GitHub Actions cannot be
+# expected to have. See its own section below, and
+# notes_arch_arm64_pi4.txt.
 
 # claude: "default" (below) is the first real TARGET RULE in this file
 # (everything above it is comments/blank lines - variable assignments
@@ -108,15 +110,16 @@ default:
 	@echo ""
 	@echo "  make build-<arch>        build one arch (riscv64, i386, amd64, amd64-jserv, riscv32,"
 	@echo "                           arm64, mips, loongarch, arm, arm-pi1, arm-pi1-bis, arm-pi2,"
-	@echo "                           arm-pi3, arm64-pi4 - though arm64-pi4 needs a qemu 9.1+"
-	@echo "                           for -M raspi4b, so it is not in the -all umbrellas)"
+	@echo "                           arm-pi3, arm64-pi4 - though BOOTING arm64-pi4 needs a"
+	@echo "                           qemu 9.1+ for -M raspi4b, so it builds in build-all but"
+	@echo "                           is not in test-all)"
 	@echo "  make run-<arch>          build + boot that arch interactively (-nographic; Ctrl-A X to quit)"
 	@echo "  make quick-test-<arch>   build + boot headless + assert a shell prompt, that arch"
 	@echo "  make test-<arch>         build + boot headless + assert ALL TESTS PASSED, that arch"
 	@echo ""
 	@echo "  make run-<arch>-qemu-graphics   real GTK window + keyboard instead of -nographic"
-	@echo "                                  (i386, amd64, amd64-jserv, arm-pi1, arm-pi1-bis)"
-	@echo "  make test-all-graphics          regression test for those five (needs \$$DISPLAY) - see scripts/README.md"
+	@echo "                                  (i386, amd64, amd64-jserv, arm-pi1, arm-pi1-bis, arm-pi3)"
+	@echo "  make test-all-graphics          regression test for those six (needs \$$DISPLAY) - see scripts/README.md"
 	@echo ""
 	@echo "  make build-docker [ARCH=<arch>]   same, inside the pinned Dockerfile (default: all)"
 	@if [ ! -f Makefile.config ]; then \
@@ -179,7 +182,7 @@ QMP_QEMUEXTRA := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)now
         build-arm run-arm test-arm quick-test-arm clean-arm kill-arm check-arm-toolchain \
         build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 quick-test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 test-arm-pi2 quick-test-arm-pi2 clean-arm-pi2 kill-arm-pi2 check-arm-pi2-toolchain \
-        build-arm-pi3 run-arm-pi3 test-arm-pi3 quick-test-arm-pi3 \
+        build-arm-pi3 run-arm-pi3 run-arm-pi3-qemu-graphics test-arm-pi3 quick-test-arm-pi3 \
         clean-arm-pi3 kill-arm-pi3 check-arm-pi3-toolchain \
         build-arm64-pi4 run-arm64-pi4 test-arm64-pi4 quick-test-arm64-pi4 \
         clean-arm64-pi4 kill-arm64-pi4 \
@@ -781,6 +784,19 @@ build-arm-pi3: check-arm-pi3-toolchain
 run-arm-pi3: check-arm-pi3-toolchain
 	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) qemu
 
+# claude: same build, but a real GTK window (no -nographic) so the
+# emulated bcm2835 framebuffer this kernel's own gpuinit()/gpuputc()
+# draw into is actually visible, plus "-device usb-kbd" for a real
+# emulated USB keyboard - see forks/arm-pi3/Makefile's own
+# "qemu-graphics" target comment and notes_arch_arm_pi3.txt's Bugs
+# 17-20 (four real bugs stood between "USB stack bails out" and a
+# working keyboard). Requires $DISPLAY; not folded into
+# build-all/test-all (nothing headless-CI can assert against a GTK
+# window) - scripts/test_qemu_graphics.py is what drives it
+# automatically, via the optional QMP_SOCK.
+run-arm-pi3-qemu-graphics: check-arm-pi3-toolchain
+	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
+
 test-arm-pi3: check-arm-pi3-toolchain
 	cd forks/arm-pi3 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
 
@@ -812,13 +828,16 @@ kill-arm-pi3:
 # find a new-enough one on PATH (see its own arm64-pi4 section, which
 # also has the four commands to build one).
 #
-# That is why arm64-pi4 is deliberately absent from build-all/test-all/
-# stress-test-all/clean-all/kill-all and from the Dockerfile and
-# .github/workflows/docker.yml matrix, unlike every other fully-working
-# arch here: those three environments get their qemu from a distro
-# package, and none of them can be expected to have a hand-built one.
-# Run its targets directly instead. Everything else about it is the
-# normal shape - build/run/quick-test/test/clean/kill all exist.
+# So the split is along BUILD vs RUN, not along "is this port finished":
+# build-arm64-pi4 IS in build-all (and clean-arm64-pi4 in clean-all,
+# since build-all now leaves artifacts here) - compiling it needs only
+# an aarch64 cross-compiler, which every host and image wired up for
+# forks/arm64 or forks/arm-pi3 already has. But quick-test/test-arm64-pi4
+# are deliberately NOT in test-all/stress-test-all, and arm64-pi4 has no
+# entry in the Dockerfile's per-arch case or in
+# .github/workflows/docker.yml's matrix: those take their qemu from a
+# distro package and cannot be expected to have a hand-built one. Run
+# the boot/test targets directly on a dev machine instead.
 #
 # The checks are split in two, because the toolchain and the emulator
 # fail independently here: build-arm64-pi4 needs only TOOLPREFIX and
@@ -886,7 +905,15 @@ kill-arm64-pi4:
 # wired up above.
 ###############################################################################
 
-build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-arm-pi1-bis build-arm-pi2 build-arm-pi3 build-mips
+# claude: build-arm64-pi4 IS here, but quick-test/test-arm64-pi4 are
+# deliberately absent from test-all/stress-test-all below. Building it
+# needs only an aarch64 cross-compiler, which any host wired up for
+# forks/arm64 or forks/arm-pi3 already has (and which the Dockerfile's
+# own ARCH=all case already installs); RUNNING it needs a qemu >= 9.1
+# for "-M raspi4b", which no distro here packages. So the build is cheap
+# coverage worth having everywhere, and the boot is the part that has to
+# stay opt-in.
+build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-arm-pi1-bis build-arm-pi2 build-arm-pi3 build-mips build-arm64-pi4
 
 # claude: "test-all" is the quick/boot-only umbrella (~1 min combined,
 # each arch just booting to a shell - see each fork's own test-xv6.py
@@ -904,7 +931,10 @@ test-all: quick-test-riscv64 quick-test-i386 quick-test-amd64-jserv quick-test-a
 
 stress-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-arm-pi1-bis test-arm-pi2 test-arm-pi3 test-mips
 
-clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-arm-pi1-bis clean-arm-pi2 clean-arm-pi3 clean-mips
+# claude: clean-arm64-pi4 follows build-arm64-pi4 above - build-all
+# produces artifacts in forks/arm64-pi4, so clean-all has to remove them.
+# "make clean" there needs no toolchain and no qemu.
+clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-arm-pi1-bis clean-arm-pi2 clean-arm-pi3 clean-mips clean-arm64-pi4
 
 kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-arm-pi1-bis kill-arm-pi2 kill-arm-pi3 kill-mips
 
