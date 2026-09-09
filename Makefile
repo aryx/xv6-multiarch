@@ -98,7 +98,7 @@ TOOLPREFIX_ARM_PI3 ?=
 QEMU_ARM_PI3 ?= qemu-system-aarch64
 
 .PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
-        build-i386 run-i386 test-i386 clean-i386 kill-i386 check-i386-toolchain \
+        build-i386 run-i386 run-i386-qemu-graphics test-i386 clean-i386 kill-i386 check-i386-toolchain \
         build-amd64-jserv run-amd64-jserv test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
         build-amd64 run-amd64 test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
         build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
@@ -172,6 +172,17 @@ build-i386: check-i386-toolchain
 
 run-i386: check-i386-toolchain
 	$(MAKE) -C forks/i386 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) qemu-nox
+
+# claude: same build, but a real GTK window (forks/i386/Makefile's own
+# "qemu" target, no -nographic) so the emulated VGA console is actually
+# visible, same as run-arm-pi1-qemu-graphics. forks/i386's "qemu" also
+# keeps "-serial mon:stdio" so the QEMU monitor stays reachable from this
+# shell; xv6's interactive shell itself is read from the graphical
+# window's keyboard, not from stdio. Requires $DISPLAY; not folded into
+# build-all/test-all (nothing headless-CI can assert against a GTK
+# window).
+run-i386-qemu-graphics: check-i386-toolchain
+	$(MAKE) -C forks/i386 TOOLPREFIX=$(TOOLPREFIX_I386) QEMU=$(QEMU_I386) qemu
 
 # forks/i386/test-xv6.py (this repo's own, not upstream - see its own header
 # comment) drives plain "make qemu-nox" the same way forks/riscv64's does -
