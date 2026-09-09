@@ -56,16 +56,23 @@ void dabort_handler (struct trapframe *r)
     myproc()->killed = 1;
     */
     
-    // on arm: (r14_svc == pc if SWI) 
-    // - the proc in swi is in kernel space
-    // - the proc not in swi is in user space
-    // so: we need to compare tp->r14_svc with tp->pc
-    // they need to be diferent to proc be in user space
+    // claude: was "proc == 0 && r->r14_svc == r->pc". That second test was
+    // vacuous: the old trap_dabort pushed r14 TWICE, once as pc and once
+    // as r14_svc, so the two were always equal by construction and the
+    // condition reduced to "proc == 0". It cannot be used at all now -
+    // trap_asm.S's trap_dabort switches to SVC mode and stores the real
+    // r14_svc there, exactly as trap_irq already did.
+    //
+    // The correct test is the one the x86 original was making with
+    // "(tf->cs & 3) == 0": did this fault come from user mode? The SPSR
+    // saved on entry holds the pre-exception processor mode, so ask it
+    // directly. Keeping "proc == 0" as well, since a fault with no
+    // current process is a kernel bug however it is reached.
     
     uint dfs, fa;
     extern void show_callstk (char *s);
 
-    if(proc == 0 && (r->r14_svc) == (r->pc)) {
+    if(proc == 0 || (r->spsr & MODE_MASK) != USR_MODE) {
       // In kernel, it must be our mistake.
       // put second part of original code
       cli();

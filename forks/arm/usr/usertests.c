@@ -1676,35 +1676,20 @@ main(int argc, char *argv[])
     // problem and still hangs the run here, so this is unchanged, not
     // overlooked. The original upstream author documented the same
     // failure by their own observation; see notes_arch_arm.txt.
-    // claude: still skipped - but ROOT-CAUSED 2026-09-09, which the
-    // older note above (and notes_arch_arm.txt's "Gap 3") never managed.
-    // It is not memory pressure and not a usertests problem. It is this
-    // port's exception entry: trap_init() gives FIQ/IRQ/ABT/UND one
-    // GLOBALLY SHARED page each as their mode stack, and trap_asm.S
-    // builds each trapframe on that shared stack while still in the
-    // exception's own processor mode. dabort_handler() then calls exit()
-    // from ABT mode, so sched()/swtch() save proc->context as a pointer
-    // into the shared ABT stack and switch stacks in the wrong mode.
-    //
-    // sbrktest()'s "can we read the kernel's memory?" loop forks 40
-    // children that each deliberately fault, so it drives that path 40
-    // times in a row; the parent eventually resumes userspace with a
-    // user SP pointing into a kernel stack (observed: printf passing a
-    // buffer at 0x865ddf3b, inside another process's kstack) and dies on
-    // the "pop {r4}" after its own "svc" with fault addr 0x88000000, the
-    // top of the kernel's direct map. The author's own comment in
-    // trap.c's dabort_handler ("workaround to avoid crash (this kill the
-    // process and its parent?) ... raises the 'zombie!' message")
-    // describes the same damage.
-    //
-    // The fix is structural: switch to SVC mode on exception entry so
-    // every exception runs on the faulting process's own kernel stack,
-    // which is exactly what the sibling forks/arm-pi2 does
-    // (source/exception.S's _switchtosvc) and why sbrktest() passes
-    // there and not here. Deliberately not attempted in the session that
-    // diagnosed it - it is a rewrite of hand-written exception entry in
-    // a port that otherwise passes everything. See notes_arch_arm.txt.
-    // sbrktest();
+    // claude: re-enabled 2026-09-09 - fixed in the kernel, not skipped.
+    // This port handled data aborts in ABT mode on the single globally
+    // shared ABT stack that trap_init() allocates, and dabort_handler()
+    // calls exit() from there, which never returns - so every user data
+    // abort permanently leaked ~72 bytes of that one 4096-byte page.
+    // After roughly 56 faults the ABT stack walked off its own page into
+    // neighbouring kalloc'd memory, and abort trapframes started landing
+    // inside other processes' kernel stacks. sbrktest() is what exposed
+    // it, because its "can we read the kernel's memory?" loop forks 40
+    // children that each deliberately fault. trap_asm.S's trap_dabort now
+    // switches to SVC mode first, exactly as trap_irq in the same file
+    // already did - and as all four sibling ARM ports do for every
+    // exception. See notes_arch_arm.txt Bug 16.
+    sbrktest();
 
     exectest();
 

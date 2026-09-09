@@ -31,7 +31,7 @@ hidden — but it is the one place where the matrix in `README.md` is
 | port | skipped | where it's written up |
 |---|---|---|
 | `forks/mips` | ~~`preempt`~~, ~~`mem`~~ (both fixed 2026-09-09), `sbrktest`, `validatetest`, `exitwait`, `forktest` | `notes_arch_mips.txt` Bug 7 / Bug 8 |
-| `forks/arm` | ~~`preempt`~~ (fixed 2026-09-09), `sbrktest` | `notes_arch_arm.txt`, "Gap 3" + Bug 14/15 |
+| `forks/arm` | ~~`preempt`~~, ~~`sbrktest`~~ (both fixed 2026-09-09) — **none left** | `notes_arch_arm.txt` Bug 14/15/16 |
 | `forks/arm-pi2` | ~~`mem`~~ (fixed 2026-09-09) — **none left** | `notes_arch_arm_pi2.txt` Bug 12 |
 
 **`preempt()` and `mem()` are both gone from every port.** None of the
@@ -130,7 +130,7 @@ nine:
     where a real failure was observed; worth doing once for all ports
     when factorization unifies `umalloc.c`.
 
-- **`sbrktest` in `forks/arm`: ROOT-CAUSED 2026-09-09, not yet fixed.**
+- **`sbrktest` in `forks/arm`: DONE 2026-09-09.**
   Not memory pressure and not a usertests problem. `trap_init()` gives
   FIQ/IRQ/ABT/UND **one globally shared page each** as their mode stack,
   and `trap_asm.S` builds each trapframe on that shared stack *while
@@ -142,15 +142,28 @@ nine:
   The parent then resumes userspace with a user SP pointing into a
   kernel stack and dies on the `pop {r4}` after its own `svc`
   (fault addr `0x88000000` = the top of the kernel direct map).
-  - **The fix is structural**: switch to SVC mode on exception entry so
-    exceptions run on the faulting process's own kernel stack — exactly
-    what `forks/arm-pi2`'s `source/exception.S` `_switchtosvc` does, and
-    the reason it runs `sbrktest()` uncommented and passes. Same board
-    family, same test, opposite outcome, difference entirely in the
-    entry sequence. Deliberately not attempted in the session that
-    diagnosed it: it rewrites hand-written exception entry in a port
-    that otherwise passes everything. See `notes_arch_arm.txt` Bug 16,
-    which also records one tried-and-reverted dead end.
+  - The killer detail is that nothing ever *popped* that stack:
+    `dabort_handler()` calls `exit()`, which never returns, so every user
+    data abort permanently leaked ~72 bytes of one 4096-byte page —
+    about **56 faults** before it ran off its own page into neighbouring
+    `kalloc`'d memory. That is why the port looked fine for years (normal
+    programs don't fault) and why the parent died on the *first* child of
+    `sbrktest`'s loop rather than the fiftieth: earlier fault-provoking
+    tests had already nearly exhausted the page.
+  - **Fixed** by making `trap_asm.S`'s `trap_dabort` switch to SVC mode
+    before building the trapframe — the identical sequence `trap_irq` in
+    the same file already used. `dabort_handler`'s kernel-vs-user test
+    had to change with it: `r14_svc == pc` was vacuous (the old entry
+    pushed `r14` twice), so it now reads the pre-exception mode out of
+    the saved SPSR, which is the question x86's `(tf->cs & 3) == 0` was
+    asking. **All four** sibling ARM ports already switch to SVC on
+    exception entry and all four run `sbrktest()` uncommented; `forks/arm`
+    was the only one that didn't, and the only one that skipped it.
+    `sbrk test OK`, `ALL TESTS PASSED`, `make test-arm` EXIT=0.
+    **`forks/arm` now has no skipped sub-tests.** See
+    `notes_arch_arm.txt` Bug 16, which also records a tried-and-reverted
+    dead end (`irq_handler`'s `proc->tf = r` — `trap_irq` already switched
+    to SVC, so that path was never the problem).
 
 `validatetest`, `exitwait` and `forktest` (all `mips`) are root-caused
 only as far as *where* they hang, never *why*; `notes_arch_mips.txt` has

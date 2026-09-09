@@ -493,13 +493,12 @@ Result: "preempt: kill... wait... preempt ok", and test-arm passes with
 preempt() enabled.
 
 
-Bug 16 (root-caused 2026-09-09, NOT fixed): sbrktest() - exceptions run on shared per-mode stacks, in the wrong processor mode
+Bug 16 (real, FIXED 2026-09-09): sbrktest() - data aborts ran on a shared per-mode stack, in the wrong processor mode
 --------------------------------------------------------------------------------------------------------------------------------
 This is the "sbrktest" half of Gap 3 above, which had been recorded as
 "crashes entirely inside sbrktest()'s can-we-read-the-kernel's-memory
-loop ... not a newly-introduced problem" and left there. It is now
-understood. It is still skipped: the fix is structural and was
-deliberately not attempted in the same session that found it.
+loop ... not a newly-introduced problem" and left there. Now understood
+and FIXED - sbrktest() is re-enabled and test-arm passes with it.
 
 Symptom, deterministic (same pids every run):
 
@@ -582,3 +581,89 @@ Scope note: this rewrite touches hand-written exception entry in a port
 that currently passes everything else, including a full usertests run
 with preempt() enabled (Bug 14/15). Worth doing, worth doing carefully,
 and worth doing with arm-pi2's exception.S open alongside.
+
+
+Bug 16, continued: the fix, and why the original ever appeared to work
+----------------------------------------------------------------------
+The leak is the part that explains the timing, and it was only spotted
+when asked whether the original code was broken or merely lucky.
+
+Old trap_dabort pushed, on the shared ABT stack:
+
+    STMFD r13!, {r0-r12, r14}    56 bytes
+    STMFD r13!, {r2}              4
+    STMFD r13!, {r14}             4
+    STMFD r13, {sp, lr}^ / SUB    8    = 72 bytes
+
+and then called dabort_handler(), which for a user fault calls exit()
+and NEVER RETURNS. Nothing ever pops those 72 bytes. So every user data
+abort permanently consumed ~72 bytes of one 4096-byte page: about 56
+faults before the ABT stack pointer walked off the bottom of its own
+page into whatever kalloc() had handed out next to it. From then on,
+abort trapframes were being built on top of other processes' kernel
+stacks - which is exactly what the trapframe dump showed (proc->tf at
+0x865ddeec while proc->kstack was 0x87fe4000).
+
+That is why the port looked fine for years: a data abort is not
+something normal programs do. Only tests that deliberately fault reach
+this path at all, and usertests provokes enough of them before
+sbrktest() that the page was already nearly exhausted by the time
+sbrktest()'s own 40-fork kernel-read loop started - hence the parent
+dying on the very first child of that loop, not the fiftieth.
+
+Fix: trap_asm.S's trap_dabort now switches to SVC mode before building
+the trapframe, using the identical sequence trap_irq in the same file
+already used (save r0-r2/r14 as scratch, reset the ABT stack with
+"ADD r13, r13, #16", MRS/BIC/ORR/MSR into SVC_MODE, then build the
+trapframe on the process's own kernel stack). Nothing leaks, because
+that stack is freed with the process, and exit()/sched()/swtch() now run
+in SVC mode on a per-process stack like every other kernel path.
+
+A second, required change came with it: dabort_handler's kernel-vs-user
+test was "proc == 0 && r->r14_svc == r->pc", and that second clause was
+vacuous - the old entry pushed r14 twice, once as pc and once as
+r14_svc, so they were equal by construction. With a real SVC switch
+r14_svc holds the actual SVC link register, so the test now asks the
+question the x86 original asked with "(tf->cs & 3) == 0": read the
+pre-exception mode out of the saved SPSR,
+"(r->spsr & MODE_MASK) != USR_MODE".
+
+Cross-check that this is the right shape rather than an invention: ALL
+FOUR sibling ARM ports switch to SVC mode on exception entry -
+arm-pi1 and arm-pi1-bis at exception.s:106 ("orr lr, #0x00000013 /*
+PSR_MODE_SVC */; msr cpsr, lr"), arm-pi2 and arm-pi3 via their
+_switchtosvc - and all four run sbrktest() uncommented and pass.
+forks/arm was the only ARM fork here that did not, and the only one
+that skipped the test.
+
+Verified: "sbrk test OK" with the 40 children faulting and being killed
+in sequence (pids 533-537...) while the parent survives, and
+"ALL TESTS PASSED"; make test-arm exits 0. forks/arm now has NO skipped
+usertests sub-tests.
+
+
+Bug 17 (real, fixed 2026-09-09): the same umalloc morecore() fragmentation as arm-pi2/mips - and it was most of this port's test runtime
+----------------------------------------------------------------------------------------------------------------------------------------
+Applied here after it was found and fixed in forks/arm-pi2 (Bug 12) and
+forks/mips (Bug 8): usr/umalloc.c's morecore() asked sbrk for
+max(nunits, 4096) units, and a request that does not divide that chunk
+strands a permanently unusable tail on the free list every time. See
+those files for the full diagnosis and forks/arm/usr/umalloc.c's own
+comment for the four-line fix.
+
+Unlike those two ports this one always PASSED mem(), because PHYSTOP is
+only 128MB and the quadratic term stayed small enough. It was still
+costing real time, and it mattered once sbrktest() was enabled
+(Bug 16) and the suite got longer:
+
+    make test-arm, sbrktest enabled, unfixed morecore():  timed out at 600s
+    make test-arm, sbrktest enabled, fixed morecore():    46.6s, EXIT=0
+
+(The first of those also had a stray QEMU from a debugging session
+competing for the host, so the fix is not worth the whole difference -
+but the run is now comfortably inside its budget instead of at the edge
+of it, with more tests enabled than before.)
+
+Worth generalising: "this port passes the test" was not the same as
+"this port does not have the bug". Twelve other forks still carry the
+unmodified morecore(); they pass mem() for the same reason this one did.

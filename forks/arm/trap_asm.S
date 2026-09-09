@@ -119,12 +119,56 @@ trap_iabort:
     BL      iabort_handler
     B       .
 
+# claude: unlike trap_und/trap_iabort above, this one switches to SVC MODE
+# before building the trapframe - the same sequence trap_irq already uses,
+# copied deliberately rather than invented.
+#
+# It has to, because dabort_handler() is the only exception handler here
+# that calls exit(): a user process that faults is killed on the spot.
+# exit() calls sched() -> swtch(), and the old code ran all of that in ABT
+# mode on the ABT stack. trap_init() allocates ONE globally shared page per
+# processor mode (FIQ/IRQ/ABT/UND), so that stack is shared by every
+# process - swtch() was saving proc->context as a pointer into shared
+# memory and switching stacks in the wrong processor mode. The damage shows
+# up later and elsewhere: a process resumes userspace with a user SP
+# pointing into some other process's kernel stack.
+#
+# usertests' sbrktest() is what exposed it, because its "can we read the
+# kernel's memory?" loop forks 40 children that each deliberately fault and
+# are killed through exactly this path; the parent eventually died on the
+# "pop {r4}" after its own "svc" with a fault address of 0x88000000, the
+# top of the kernel's direct map. The original author saw the symptom -
+# dabort_handler still carries their comment calling the exit() a
+# "workaround to avoid crash (this kill the process and its parent?)" that
+# "seems to raise the 'zombie!' message on userinit".
+#
+# The sibling forks/arm-pi2 has never had this bug because its
+# source/exception.S routes EVERY exception through a common _switchtosvc
+# before touching a stack, which is why it runs sbrktest() uncommented and
+# passes. See docs/claude_notes/notes_arch_arm.txt Bug 16.
 trap_dabort:
     SUB     r14, r14, #8            // lr: instruction causing the abort
-    STMFD   r13!, {r0-r12, r14}
-    MRS     r2, spsr                // copy spsr to r2
-    STMFD   r13!, {r2}              // save r2(spsr) to the stack
-    STMFD   r13!, {r14}             // save r14 again (it is not really correct)
+    STMFD   r13!, {r0-r2, r14}      // scratch regs on the ABT stack
+    MRS     r1, spsr                // save spsr_abt before the mode switch
+    MOV     r0, r13                 // r0 -> the four words just saved
+    ADD     r13, r13, #16           // reset the ABT stack
+
+    # switch to the SVC mode (r0-r12 are not banked, so r0/r1/r2 carry over)
+    MRS     r2, cpsr
+    BIC     r2, r2, #MODE_MASK
+    ORR     r2, r2, #SVC_MODE
+    MSR     cpsr_cxsf, r2
+
+    # now in SVC mode: build the trapframe on the faulting process's OWN
+    # kernel stack, laid out exactly as struct trapframe
+    LDR     r2, [r0, #12]           // the saved r14 = faulting instruction
+    STMFD   r13!, {r2}              // -> pc
+    STMFD   r13!, {r3-r12}          // -> r3..r12 (untouched originals)
+    LDMFD   r0, {r3-r5}             // copy r0-r2 over from the abt stack
+    STMFD   r13!, {r3-r5}           // -> r0, r1, r2
+    STMFD   r13!, {r1}              // -> spsr
+    STMFD   r13!, {lr}              // -> r14_svc
+
     STMFD   r13, {sp, lr}^          // save user mode sp and lr
     SUB     r13, r13, #8
 

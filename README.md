@@ -34,7 +34,7 @@ re-checks all of it in about a minute:
 | `forks/riscv32` | RV32 | `-M virt` | ✅ | ✅ |
 | `forks/arm64` | AArch64 | `-M virt,gic-version=3` | ✅ | ✅ |
 | `forks/arm64-pi4` | AArch64 | `-M raspi4b` † | ✅ | ✅ |
-| `forks/arm` | ARM32 | `-M raspi2b` | ✅ | ✅ * |
+| `forks/arm` | ARM32 | `-M raspi2b` | ✅ | ✅ |
 | `forks/arm-pi1` | ARM32 | `-M raspi1ap` | ✅ | ✅ |
 | `forks/arm-pi1-bis` | ARM32 | `-M raspi1ap` | ✅ | ✅ |
 | `forks/arm-pi2` | ARM32 | `-M raspi2b` | ✅ | ✅ |
@@ -55,14 +55,16 @@ this distro ships 8.2.2, so its **boot** is verified against a local source
 build of QEMU and is deliberately kept out of `test-all` and CI. Its
 **build** is in `build-all` like every other port.
 
-\* Two ports reach "ALL TESTS PASSED" with some `usertests` sub-tests
+\* One port reaches "ALL TESTS PASSED" with some `usertests` sub-tests
 commented out and individually diagnosed: `mips` skips four
-(`sbrktest`, `validatetest`, `exitwait`, `forktest`) and `arm` one
-(`sbrktest`). Each skip is recorded in that port's own `usertests.c` and
-written up in its `docs/claude_notes/notes_arch_*.txt`.
+(`sbrktest`, `validatetest`, `exitwait`, `forktest`). Each skip is
+recorded in that port's own `usertests.c` and written up in
+`docs/claude_notes/notes_arch_mips.txt`. **Thirteen of the fourteen
+ports now run `usertests` with nothing skipped at all.**
 
-**No port skips `preempt()` or `mem()` any more** — all three of those
-skips were fixed 2026-09-09, and none was what it had been recorded as.
+**No port skips `preempt()`, `mem()` or (outside `mips`) `sbrktest()`
+any more** — all four of those skips were fixed 2026-09-09, and none was
+what it had been recorded as.
 `arm` had no working timer interrupt at all (it drove the SP804, which
 QEMU stubs out with `create_unimp()`). `mips` had the interrupt but a
 yield condition comparing the CP0 Cause register against an x86
@@ -71,7 +73,11 @@ constant, so it could never fire. And `mem()`, skipped in two ports as
 `morecore()` stranded an unusable fragment on the free list per chunk,
 making the whole thing quadratic in RAM — which is why ports with small
 fixed `PHYSTOP` passed it and ports that size memory from real firmware
-did not.
+did not. And `arm`'s `sbrktest()` was a leak: data aborts were handled in
+ABT mode on a single globally shared stack page that `exit()` never
+unwound, so ~56 deliberate faults ran it off its own page into other
+processes' kernel stacks. All four sibling ARM ports switch to SVC mode
+on exception entry; `forks/arm` was the only one that didn't.
 
 Getting there took dozens of separately diagnosed bugs — modern-GCC
 breakage, missing `.bss` zeroing, SMP boot races, a Top-Byte-Ignore setting
