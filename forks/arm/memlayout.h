@@ -212,6 +212,11 @@ extern rpi_irq_controller_t* RPI_GetIrqController( void  );
 #define VIC_BASE (0x3F00B200)
 
 #define PIC_TIMER0         0
+// claude: BCM2835 System Timer compare-3 match, GPU IRQ 3 (so it lives in
+// the GPU0 enable/pending bank, not the ARM "basic" one PIC_TIMER0 uses).
+// This is the tick source now - see device/timer.c's own comment on
+// timer3_init() for why the SP804 ARM timer above could not stay.
+#define PIC_TIMER3         3
 //#define RPI_INTERRUPT_CONTROLLER_BASE   (0x3F00B200+KERNBASE)
 
 #define PIC_UART0           29

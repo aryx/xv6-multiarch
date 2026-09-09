@@ -1625,13 +1625,19 @@ main(int argc, char *argv[])
     
     mem();
     pipe1();
-    // claude: preempt() hangs indefinitely under QEMU's raspi2b (4 emulated
-    // cores) - see notes_arch_armv7_rpi.txt's "Gap 3" for the investigation
-    // so far (confirmed stuck 500+ seconds, not chased further since it
-    // wasn't blocking the interactive-shell work at the time). Commented
-    // out so the rest of usertests can run to completion and test-arm has
-    // a real "ALL TESTS PASSED" signal to assert on; not a fix.
-    // preempt();
+    // claude: preempt() used to hang here indefinitely and was commented
+    // out as "not chased" (see notes_arch_arm.txt's own "Gap 3"). It is
+    // re-enabled because the cause was found and fixed, in the kernel,
+    // not worked around: this port had NO working timer interrupt under
+    // QEMU at all - device/timer.c drove the SP804 "ARM timer", which
+    // QEMU registers as an unimplemented-device stub that never fires
+    // (measured: 1 IRQ vs 7214 SVCs across a whole run). With no timer
+    // there is no preemption, so preempt()'s CPU-bound children never
+    // yielded. Now ticks come from the BCM2835 System Timer instead -
+    // real hardware either way, and the same source the sibling
+    // forks/arm-pi2 port uses for this identical board. Verified:
+    // "preempt: kill... wait... preempt ok".
+    preempt();
     exitwait();
     
     rmdot();
@@ -1665,6 +1671,11 @@ main(int argc, char *argv[])
     // exec("echo", echoargv) - this file's own "ALL TESTS PASSED" signal,
     // see line ~12) actually gets reached; not a fix. See
     // notes_arch_armv7_rpi.txt.
+    // claude: still commented out, and RETESTED after the timer fix above
+    // (which did fix preempt()) - sbrktest() is a genuinely separate
+    // problem and still hangs the run here, so this is unchanged, not
+    // overlooked. The original upstream author documented the same
+    // failure by their own observation; see notes_arch_arm.txt.
     // sbrktest();
 
     exectest();

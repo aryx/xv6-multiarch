@@ -66,7 +66,14 @@ void kmain (void)
     ideinit ();					// ide (memory block device)
     _puts("ideinit kmain\r\n");
     //timer_init (HZ);			// the timer (ticker)
-    timer_init ();      // the timer (ticker)
+    // claude: timer3_init(), not timer_init() - the SP804 "ARM timer" the
+    // latter programs is a QEMU unimplemented-device stub and never
+    // interrupts, so this kernel had no preemption at all under QEMU.
+    // See device/timer.c's own comment on timer3_init(). timer_init() is
+    // deliberately left in the tree, and correct for real hardware, just
+    // not registered as an interrupt source any more - calling both would
+    // double-count ticks on a real Pi.
+    timer3_init ();     // the timer (ticker)
     _puts("timer_init kmain\r\n");
     sti ();
     _puts("sti kmain\r\n");

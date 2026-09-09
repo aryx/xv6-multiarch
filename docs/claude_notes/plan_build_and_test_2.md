@@ -52,19 +52,31 @@ nine:
   that is wrong, and corrected in both — `arm-pi1`,
   `arm-pi1-bis`, `arm-pi2` and `arm-pi3` all run `preempt()`
   uncommented. Only `arm` and `mips` skip it.)
-  - *In progress at the time of writing:* `forks/arm` has an uncommitted
-    working-tree change doing exactly that — `-d int` measured **one**
-    IRQ across a full boot plus 150s of usertests, i.e. no preemption at
-    all, because the SP804 "ARM timer" this port programs is
-    `create_unimp()`'d in QEMU's `bcm2835_peripherals.c` and never
-    interrupts. The replacement is the BCM2835 System Timer channel 3
+  - **`forks/arm`: DONE 2026-09-09.** Exactly as sketched above. `-d int`
+    measured **one** IRQ across a full boot plus 150s of usertests, i.e.
+    no preemption at all, because the SP804 "ARM timer" this port
+    programs is `create_unimp()`'d in QEMU's `bcm2835_peripherals.c` and
+    never interrupts. Replaced with the BCM2835 System Timer channel 3
     (`SYSTIMER`, 1MHz, compare-3, GPU IRQ 3) — the same tick source
     `forks/arm-pi2` already uses on this same board
     (`source/timer.c`'s `timer3init()`/`timer3intr()`), which is exactly
-    why `arm-pi2` runs `preempt()` successfully and `arm` does not. So it
-    is real hardware, not a QEMU workaround. Finish, verify with
-    `preempt()` re-enabled, and fold the finding into
-    `notes_arch_arm.txt` before starting anything else here.
+    why `arm-pi2` ran `preempt()` successfully and `arm` did not. Real
+    hardware, not a QEMU workaround; the SP804 code stays in the tree,
+    correct but no longer registered, since ticking both would
+    double-count on a real Pi. Enabling it uncovered a second, latent
+    bug in `device/gic.c`'s dispatcher — it tested the whole BASIC
+    pending word as "ARM timer fired", but bits 8/9 of that register
+    mean "GPU pending 1/2 is non-empty", so every System Timer IRQ was
+    also dispatched to `isrs[PIC_TIMER0]` ("unhandled interrupt: 0");
+    fixed to test bit 0. `preempt()` is uncommented and
+    `make test-arm` is green: `preempt: kill... wait... preempt ok`,
+    `ALL TESTS PASSED`, `EXIT=0`. Written up as Bug 14/Bug 15 in
+    `notes_arch_arm.txt`. **`sbrktest` in `arm` is unchanged** — it was
+    explicitly retested on a clean rebuild after this fix and still
+    hangs, so it is a genuinely separate problem, not a leftover of this
+    one.
+  - *Still open:* `forks/mips`'s own `preempt()`. Apply the same first
+    step there — count interrupts before reading scheduler code.
 - **`mem()` — heap-exhaustion `malloc`/`free` loop hangs for real.**
   Skipped in `mips` and `arm-pi2`, confirmed via gdb in both (hung, not
   merely slow), found independently in each. Two ports failing the same

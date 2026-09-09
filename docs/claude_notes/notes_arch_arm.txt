@@ -323,22 +323,24 @@ independent interactive test harnesses: "ls" produces a real directory
 listing and "echo hello-interactive" echoes correctly - genuinely
 interactive, not just a static prompt.
 
-Gap 3 (originally open, now worked around, not truly fixed): usertests hangs on "preempt", then crashes on "sbrktest"
+Gap 3 (preempt: NOW FIXED, 2026-09-09; sbrktest: still open): usertests hangs on "preempt", then crashes on "sbrktest"
 --------------------------------------------------------------------------------------------------------------------------
 Originally discovered as "usertests hangs partway through, on the
 'preempt' sub-test" (500+ seconds stuck, confirmed via a scripted wait)
 - NOT investigated at the time, left for a future session. Revisited in
 this third session specifically to get test-arm to a real pass/fail
-signal.
+signal, and worked around by commenting out the call.
 
-preempt() (usr/usertests.c) forks three CPU-bound children, expects
-them to be preempted by the timer under multi-core QEMU, then kills and
-reaps them - not root-caused why it hangs specifically (plausibly
-related to bug 8's SMP boot-gate or the scheduler's yield() path, as
-originally guessed, but genuinely not chased). Commented out the single
-`preempt();` call site in usr/usertests.c's main() (with a "claude:"
-comment explaining why, citing this file), NOT a fix - the underlying
-hang is still there, just no longer in the path "usertests" runs.
+RESOLVED 2026-09-09 (fourth session): root-caused and fixed in the
+kernel, and preempt() is re-enabled - see "Bug 14" below. The earlier
+guesses recorded here (bug 8's SMP boot-gate, the scheduler's yield()
+path) were both wrong; the real answer was that this kernel had no
+working timer interrupt at all under QEMU. Left as written above for
+the record of what was believed at the time.
+
+sbrktest() is a genuinely separate problem and is STILL commented out.
+It was explicitly retested after the timer fix, on a clean rebuild, and
+still hangs the run - so its skip is a current fact, not an oversight.
 
 With preempt() skipped, usertests progresses much further, but then
 crashes entirely inside sbrktest()'s own "can we read the kernel's
@@ -419,3 +421,73 @@ into build-all/test-all/clean-all/kill-all. Also added: an "arm" case
 in the Dockerfile's ARCH build-arg (reuses gcc-arm-linux-gnueabihf/
 qemu-system-arm, both already verified toolchain/qemu) and an "arm"
 entry in .github/workflows/docker.yml's matrix.
+
+
+Bug 14 (real, fixed 2026-09-09): no working timer interrupt under QEMU - the SP804 "ARM timer" is a QEMU stub
+--------------------------------------------------------------------------------------------------------------
+Found while acting on the arm64-pi4 bring-up's own finding that a
+hanging usertests preempt() is usually a timer/preemption bug rather
+than the "real memory pressure / multi-process timing under emulation"
+this repo had assumed for it in three separate ports (see
+notes_arch_arm64_pi4.txt's Bug 3).
+
+Symptom: usertests' preempt() hangs forever, printing "preempt: " and
+never reaching "kill... ". So the parent was stuck in read() on the
+pipe, meaning the third child never ran to write to it - i.e. the two
+CPU-bound children ahead of it were never taken off the CPU.
+
+Measurement, which made it obvious - boot plus 150s of usertests under
+"-M raspi2b" with "-d int", counting exception kinds:
+
+    7214 Taking exception 2 [SVC]
+       4 Taking exception 13 [Secure Monitor Call]
+       1 Taking exception 5 [IRQ]
+
+ONE interrupt for the entire run, and it was early in boot. This kernel
+was running purely on cooperative scheduling through syscalls. Anything
+that yields via a syscall works, which is why the port boots to a shell
+and passes nearly all of usertests; anything CPU-bound wedges the
+machine.
+
+Cause: device/timer.c drives the SP804-style "ARM timer" at 0x3F00B400.
+That peripheral is real on a Raspberry Pi, but QEMU does not implement
+it - hw/arm/bcm2835_peripherals.c has
+
+    create_unimp(s, &s->armtmr, "bcm2835-sp804", ARMCTRL_TIMER0_1_OFFSET, 0x40);
+
+i.e. an unimplemented-device stub that accepts reads and writes and
+never raises an interrupt. Note the port's own timer.c already carried a
+commented-out "//#define TIMER0 (0x3F00B400)" line, so the address had
+been revisited before; the address was never the problem.
+
+Fix: move the tick to the BCM2835 System Timer (channel 3), which QEMU
+does implement and which is equally real hardware. This is explicitly
+NOT a QEMU-only workaround:
+ - it is the same source the sibling forks/arm-pi2 port uses for this
+   identical board (Zhiyi Huang's own source/timer.c,
+   timer3init()/timer3intr()) - which is exactly why arm-pi2 runs
+   preempt() successfully and this port did not;
+ - on real Pi hardware the ARM timer is clocked off the core clock and
+   so moves with frequency scaling, which is why Linux on the Pi uses
+   the System Timer too.
+The SP804 code is left in the tree and still correct, just no longer
+registered as an interrupt source - calling both would double-count
+ticks on a real Pi. See device/timer.c's own comment on timer3_init().
+
+Bug 15 (real, fixed 2026-09-09, uncovered by bug 14): the IRQ dispatcher read the whole BASIC pending word as "ARM timer fired"
+------------------------------------------------------------------------------------------------------------------------------
+Enabling the System Timer immediately produced a flood of "unhandled
+interrupt: 0". device/gic.c's pic_dispatch() did
+
+    if(vic_base[VIC_IRQPENDING_ARM]) { ... isrs[PIC_TIMER0] ... }
+
+On BCM2835/36 the BASIC pending register is not only the eight ARM-local
+sources: bit 8 means "one or more bits set in GPU pending register 1"
+and bit 9 the same for register 2. So any GPU-routed interrupt - the
+System Timer, or either UART - makes that word non-zero, and the
+unmasked test read it as "the ARM timer fired". It was harmless only
+while nothing else was ever pending. Fixed to test bit 0, the real "ARM
+Timer IRQ" bit. Latent bug, pre-existing, just never reachable before.
+
+Result: "preempt: kill... wait... preempt ok", and test-arm passes with
+preempt() enabled.

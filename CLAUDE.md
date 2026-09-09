@@ -88,7 +88,13 @@ Two sequential efforts, in order:
    2026-09-09: `arm-pi1`, `arm-pi1-bis`, `arm-pi2` and `arm-pi3` all run
    `preempt()` uncommented, `arm-pi2` because it already ticks off the
    BCM2835 System Timer rather than the SP804 QEMU stubs out. Only `arm`
-   and `mips` skip it - see `plan_build_and_test_2.md` item 1.) And (4) - unmasked by
+   and `mips` skipped it - and `arm`'s is now **fixed** too, 2026-09-09,
+   by the same "count the interrupts first" step: it had exactly ONE IRQ
+   across a whole run because the SP804 ARM timer it programmed is a
+   QEMU `create_unimp()` stub, so it was running with no preemption at
+   all. Moved to the System Timer, like `arm-pi2`; `preempt()` is
+   uncommented and `test-arm` is green. Only `mips` still skips it -
+   see `plan_build_and_test_2.md` item 1.) And (4) - unmasked by
    (3), which is the useful kind of regression - `scheduler()` flushed
    the process's **entire** address space (`dc cvau`/`ic ivau` per page,
    O(`p->sz`)) on *every* context switch while holding `p->lock`, which

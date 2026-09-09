@@ -5,6 +5,12 @@
 #include "memlayout.h"
 
 #define TIMER0 (0x3F00B400)
+
+// claude: the BCM2835 System Timer - a separate peripheral from the SP804
+// "ARM timer" at TIMER0 above. Free-running 1MHz counter plus four compare
+// registers; channels 1 and 3 are the ones free for the ARM side (0 and 2
+// are claimed by the GPU firmware on real hardware). See timer3_init().
+#define SYSTIMER (0x3F003000)
 /** @brief 0 : 16-bit counters - 1 : 23-bit counter */
 #define RPI_ARMTIMER_CTRL_23BIT         ( 1 << 1 )
 

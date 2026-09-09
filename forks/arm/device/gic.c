@@ -173,12 +173,37 @@ void pic_dispatch (struct trapframe *tf) {
     istimer = 0;
     
     //while( vic_base[VIC_IRQPENDING_GPU0] || vic_base[VIC_IRQPENDING_GPU1] || vic_base[VIC_IRQPENDING_ARM]) {
-      if(vic_base[VIC_IRQPENDING_ARM]) {
+      // claude: "& (1 << PIC_TIMER0)", not just "if (word != 0)".
+      //
+      // On BCM2835/36 the BASIC pending register is not only the eight
+      // ARM-local sources: bit 8 means "one or more bits set in GPU
+      // pending register 1" and bit 9 the same for register 2. So the
+      // moment ANY GPU-routed interrupt is pending - the System Timer
+      // below, or either UART - this word is non-zero, and the original
+      // unmasked test read that as "the ARM timer fired" and dispatched
+      // isrs[PIC_TIMER0]. That was harmless only while nothing else was
+      // ever pending; enabling the System Timer surfaced it immediately
+      // as a flood of "unhandled interrupt: 0" (default_isr, since
+      // PIC_TIMER0 is no longer registered). Bit 0 is the real "ARM
+      // Timer IRQ" bit.
+      if(vic_base[VIC_IRQPENDING_ARM] & (1 << PIC_TIMER0)) {
         //cprintf ("timer %s", "\n" );
         istimer = 1;  
         isrs[PIC_TIMER0](tf, PIC_TIMER0);  
       }
     
+      // claude: the System Timer's compare-3 match, GPU IRQ 3 - this is
+      // the tick that actually drives preemption on this port (the ARM
+      // timer checked just above is a QEMU unimplemented-device stub and
+      // never fires; see device/timer.c's own comment on timer3_init()).
+      // Setting istimer here is the whole point: it is what makes
+      // pic_dispatch's tail call yield(), so a CPU-bound user process
+      // gets taken off the core. Without it usertests' preempt() hangs.
+      if(vic_base[VIC_IRQPENDING_GPU0] & (1 << PIC_TIMER3)) {
+        istimer = 1;
+        isrs[PIC_TIMER3](tf, PIC_TIMER3);
+      }
+
       if(vic_base[VIC_IRQPENDING_GPU0] & (1 << PIC_UART0)) {
         //cprintf ("uart %s", "\n" );
         isrs[PIC_UART0](tf, PIC_UART0);
