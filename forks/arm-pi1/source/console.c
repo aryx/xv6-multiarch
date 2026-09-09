@@ -38,20 +38,22 @@ FBI fbinfo __attribute__ ((aligned (16), nocommon));
 extern u8 font[];
 static uint gpucolour=0xffff;
 
-// claude: true once initframebuf()'s mailbox response looks like a
-// real GPU framebuffer pointer - see consoleinit()'s own comment for
-// why this check exists (a real bug: fbinfoaddr, the mailbox call's
-// own status code, reports "success" even when fbinfo.fbp itself was
-// never actually filled in with a usable address - confirmed under
-// QEMU, where the old mailbox-channel-1 API this port uses isn't
-// implemented, so fbinfo.fbp stays whatever it was set to before the
-// call). gpuputc() checks this and skips drawing entirely when false,
-// rather than writing through a pointer that isn't backed by real
-// framebuffer memory - this is a genuine runtime validity check, not
-// a QEMU-specific gate: any environment where framebuffer allocation
-// silently fails this way (real hardware included, in principle) gets
-// the same graceful fallback to UART-only console output.
+// claude: true once initframebuf() has produced a framebuffer this
+// kernel can actually draw through; gpuputc() returns immediately when
+// it's false, so a failed allocation degrades to UART-only console
+// output instead of faulting through an unusable pointer.
 static uint fb_ready;
+
+// claude: the VIRTUAL address to draw through - not necessarily
+// fbinfo.fbp itself. Real VideoCore firmware answers the channel-1
+// request with a VC BUS address (the 0x40000000 cache alias), which
+// mmu.c already identity-maps via GPUMEMBASE/GPUMEMSIZE, so there
+// fb_base == fbinfo.fbp and nothing changes. QEMU's own bcm2835-fb
+// model instead answers with a plain ARM PHYSICAL address (0x1c100000
+// on -M raspi1ap: just above the 448MB it gives the ARM, inside the
+// GPU's own carve-out), which no mapping covers - hence the extra
+// mapping step in consoleinit() below.
+static uint fb_base;
 
 void setgpucolour(u16 c)
 {
@@ -116,7 +118,7 @@ void drawpixel(uint x, uint y)
     u16 *addr;
 
     if(x >= framewidth || y >= frameheight) return;
-    addr = (u16 *) fbinfo.fbp;
+    addr = (u16 *) fb_base;
 //    addr = (u16 *) ((FBI *)FrameBufferInfo)->fbp;
     addr += y*1024 + x;
     *addr = gpucolour;
@@ -161,7 +163,7 @@ gpuputc(uint c)
 	cursor_x = 0;
 	cursor_y += fontheight;
 	if(cursor_y >= frameheight) {
-		memmove((u8 *)fbinfo.fbp, (u8 *)fbinfo.fbp+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
+		memmove((u8 *)fb_base, (u8 *)fb_base+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
 		cursor_y = frameheight - fontheight;
 		setgpucolour(0);
 		while(cursor_x < framewidth) {
@@ -188,7 +190,7 @@ gpuputc(uint c)
 	    cursor_x = 0;
 	    cursor_y += fontheight;
 	    if(cursor_y >= frameheight) {
-		memmove((u8 *)fbinfo.fbp, (u8 *)fbinfo.fbp+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
+		memmove((u8 *)fb_base, (u8 *)fb_base+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
 		cursor_y = frameheight - fontheight;
 		setgpucolour(0);
 		while(cursor_x < framewidth) {
@@ -422,13 +424,41 @@ uint fbinfoaddr;
   fbinfoaddr = initframebuf(framewidth, frameheight, framecolors);
   if(fbinfoaddr != 0) NotOkLoop();
 
-  // claude: fbinfoaddr (the mailbox call's own status code) reports
-  // "success" even when fbinfo.fbp was never actually filled in with a
-  // usable pointer (see fb_ready's own comment above) - so also sanity
-  // check fbinfo.fbp itself against the real GPU memory range
-  // (GPUMEMBASE..GPUMEMBASE+GPUMEMSIZE) before trusting it. This is
-  // the check that actually protects gpuputc() below.
-  fb_ready = (fbinfo.fbp >= GPUMEMBASE && fbinfo.fbp < (uint)GPUMEMBASE+(uint)GPUMEMSIZE);
+  // claude: the channel-1 reply's fbp field comes back in one of two
+  // forms depending on who answered, so pick the drawing address to
+  // match rather than assuming either one (see fb_base's own comment):
+  //
+  //  - a VC BUS address (real VideoCore firmware: the 0x40000000 cache
+  //    alias). mmu.c already identity-maps that whole window, so use it
+  //    exactly as before - this branch leaves the real-hardware path
+  //    bit-for-bit unchanged.
+  //  - a plain ARM PHYSICAL address (QEMU's bcm2835-fb model answers
+  //    this way). Nothing maps it: it sits above the RAM window mmu.c
+  //    maps at KERNBASE, and outside the GPUMEMBASE identity window. So
+  //    map it here, at GPUMEMBASE+phys - the same virtual address real
+  //    firmware would have handed back for that physical page, and
+  //    deliberately inside the kernel half of the L1 table (VA >=
+  //    0x40000000), which switchuvm()'s user-half memmove never
+  //    overwrites.
+  if(fbinfo.fbp >= GPUMEMBASE && fbinfo.fbp < (uint)GPUMEMBASE+(uint)GPUMEMSIZE){
+    fb_base = fbinfo.fbp;
+    fb_ready = 1;
+  } else if(fbinfo.fbp != 0 && fbinfo.fbs != 0 &&
+            fbinfo.fbp < GPUMEMBASE && fbinfo.fbp+fbinfo.fbs <= GPUMEMSIZE){
+    pde_t *l1 = (pde_t *)P2V(K_PDX_BASE);
+    uint pa, va;
+
+    for(pa = fbinfo.fbp & ~(MBYTE-1); pa < fbinfo.fbp+fbinfo.fbs; pa += MBYTE){
+      va = GPUMEMBASE + pa;
+      l1[PDX(va)] = pa|DOMAIN0|PDX_AP(K_RW)|SECTION;
+    }
+    dsb_barrier();
+    flush_tlb();
+    fb_base = GPUMEMBASE + fbinfo.fbp;
+    fb_ready = 1;
+  } else {
+    fb_ready = 0;
+  }
 
   initlock(&cons.lock, "console");
   memset(&input, 0, sizeof(input));
