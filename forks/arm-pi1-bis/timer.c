@@ -51,7 +51,44 @@ uint v;
 	ticks = 0;
 }
 
-void 
+// claude: CSUD (csud/) is a polling driver, not interrupt-driven - the
+// Baking Pi tutorial code it comes from expects its own caller to poll
+// KeyboardUpdate() from a main loop. This kernel has no such loop, so
+// the periodic timer interrupt - already firing 100 times/sec for the
+// scheduler tick - is the natural place instead. usbkbdgetc() adapts
+// KeyboardGetChar()'s "0 means nothing typed" convention to
+// consoleintr()'s own "-1 means nothing available" one. Identical fix
+// to forks/arm-pi1's own timer.c (notes_arch_arm_pi1.txt bug 10):
+//
+//  - the "lastusbkey" debounce is load-bearing, not cosmetic: CSUD's
+//    own KeyboardGetChar()/KeyWasDown() repeat-suppression does not
+//    actually suppress a held key in practice (confirmed for arm-pi1
+//    via a raw HID report dump showing a clean single press-then-
+//    release underneath a flood of repeated characters) - never emit
+//    the same character on two consecutive polls in a row.
+//  - the '\n'->'\r' translation: keyboard.s's own KeysNormal/KeysShift
+//    tables map Enter to '\n', but this kernel's consoleintr() only
+//    treats '\r' as "submit line" and discards a raw '\n' outright.
+static uint lastusbkey;
+
+static int
+usbkbdgetc(void)
+{
+  char c = KeyboardGetChar();
+
+  if(c == 0){
+    lastusbkey = 0;
+    return -1;
+  }
+  if((uchar)c == lastusbkey)
+    return -1;
+  lastusbkey = (uchar)c;
+  if((uchar)c == '\n')
+    return '\r';
+  return (int)(uchar)c;
+}
+
+void
 timer3intr(void)
 {
 uint v;
@@ -60,6 +97,9 @@ uint v;
 
 	ticks++;
 	wakeup(&ticks);
+
+	KeyboardUpdate();
+	consoleintr(usbkbdgetc);
 
 	// reset the value of compare3
 	v=inw(TIMER_REGS_BASE+COUNTER_LO);

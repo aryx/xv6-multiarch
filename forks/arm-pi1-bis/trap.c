@@ -117,6 +117,9 @@ cprintf("More registers: r6: %x, r7: %x, r8: %x, r9: %x, r10: %x, r11: %x, r12: 
 	    if(ip->gpupending[0] & (1 << 29)) {
 		miniuartintr();
 	    }
+	    if(ip->gpupending[1] & (1 << 25)) {   // claude: PL011's real IRQ - see uart.c
+		miniuartintr();
+	    }
 	}
 
 }
@@ -152,6 +155,9 @@ trap(struct trapframe *tf)
 		timer3intr();
 	    }
 	    if(ip->gpupending[0] & (1 << IRQ_MINIUART)) {
+		miniuartintr();
+	    }
+	    if(ip->gpupending[1] & (1 << 25)) {   // claude: PL011's real IRQ - see uart.c
 		miniuartintr();
 	    }
 	}

@@ -38,6 +38,23 @@ FBI fbinfo __attribute__ ((aligned (16), nocommon));
 extern u8 font[];
 static uint gpucolour=0xffff;
 
+// claude: true once initframebuf() has produced a framebuffer this
+// kernel can actually draw through; gpuputc() returns immediately when
+// it's false, so a failed allocation degrades to UART-only console
+// output instead of faulting through an unusable pointer. See
+// forks/arm-pi1/source/console.c's own identical fix (notes_arch_arm_pi1.txt
+// bug 5/7) - this port shares the exact same bug, byte for byte.
+static uint fb_ready;
+
+// claude: the VIRTUAL address to draw through - not necessarily
+// fbinfo.fbp itself. Real VideoCore firmware answers the channel-1
+// request with a VC BUS address (the 0x40000000 cache alias), which
+// mmu.c already identity-maps via GPUMEMBASE/GPUMEMSIZE, so there
+// fb_base == fbinfo.fbp and nothing changes. QEMU's own bcm2835-fb
+// model instead answers with a plain ARM PHYSICAL address, which no
+// mapping covers - hence the extra mapping step in consoleinit() below.
+static uint fb_base;
+
 void setgpucolour(u16 c)
 {
     gpucolour = c;
@@ -76,9 +93,15 @@ consolewrite(struct inode *ip, char *buf, int n)
 //  cprintf("consolewrite is called: ip=%x buf=%x, n=%x", ip, buf, n);
   iunlock(ip);
   acquire(&cons.lock);
+  // claude: uartputc() before gpuputc() - gpuputc()/drawpixel() can
+  // fault (tvinit(), which installs the real exception vector table,
+  // isn't called until well after consoleinit()/the first console
+  // output - see main.c's own ordering), so put the character on the
+  // wire first, in case gpuputc() doesn't return. Same reasoning and
+  // fix as forks/arm-pi1's own console.c.
   for(i = 0; i < n; i++){
-    gpuputc(buf[i] & 0xff);
     uartputc(buf[i] & 0xff);
+    gpuputc(buf[i] & 0xff);
   }
   release(&cons.lock);
   ilock(ip);
@@ -92,7 +115,7 @@ void drawpixel(uint x, uint y)
     u16 *addr;
 
     if(x >= framewidth || y >= frameheight) return;
-    addr = (u16 *) fbinfo.fbp;
+    addr = (u16 *) fb_base;
 //    addr = (u16 *) ((FBI *)FrameBufferInfo)->fbp;
     addr += y*1024 + x;
     *addr = gpucolour;
@@ -131,11 +154,13 @@ uint tv;
 void
 gpuputc(uint c)
 {
+    if(!fb_ready) return;
+
     if(c=='\n'){
 	cursor_x = 0;
 	cursor_y += fontheight;
 	if(cursor_y >= frameheight) {
-		memmove((u8 *)fbinfo.fbp, (u8 *)fbinfo.fbp+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
+		memmove((u8 *)fb_base, (u8 *)fb_base+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
 		cursor_y = frameheight - fontheight;
 		setgpucolour(0);
 		while(cursor_x < framewidth) {
@@ -162,7 +187,7 @@ gpuputc(uint c)
 	    cursor_x = 0;
 	    cursor_y += fontheight;
 	    if(cursor_y >= frameheight) {
-		memmove((u8 *)fbinfo.fbp, (u8 *)fbinfo.fbp+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
+		memmove((u8 *)fb_base, (u8 *)fb_base+framewidth*fontheight*2, (frameheight - fontheight)*framewidth*2);
 		cursor_y = frameheight - fontheight;
 		setgpucolour(0);
 		while(cursor_x < framewidth) {
@@ -202,8 +227,8 @@ printint(int xx, int base, int sign)
     buf[i++] = '-';
 
   while(--i >= 0){
-    gpuputc(buf[i]);
     uartputc(buf[i]);
+    gpuputc(buf[i]);
   }
 }
 
@@ -227,8 +252,8 @@ cprintf(char *fmt, ...)
   argp = (uint *)(void*)(&fmt + 1);
   for(i = 0; (c = fmt[i] & 0xff) != 0; i++){
     if(c != '%'){
-        gpuputc(c);
-	uartputc(c);
+        uartputc(c);
+	gpuputc(c);
       continue;
     }
     c = fmt[++i] & 0xff;
@@ -246,20 +271,20 @@ cprintf(char *fmt, ...)
       if((s = (char*)*argp++) == 0)
         s = "(null)";
       for(; *s; s++){
-        gpuputc(*s);
-	uartputc(*s);
+        uartputc(*s);
+	gpuputc(*s);
       }
       break;
     case '%':
-	gpuputc('%');
 	uartputc('%');
+	gpuputc('%');
       break;
     default:
       // Print unknown % sequence to draw attention.
-	gpuputc('%');
 	uartputc('%');
-	gpuputc(c);
+	gpuputc('%');
 	uartputc(c);
+	gpuputc(c);
       break;
     }
   }
@@ -297,14 +322,14 @@ consputc(int c)
   }
 
   if(c == BACKSPACE){
-    gpuputc('\b'); gpuputc(' '); gpuputc('\b');
     uartputc('\b'); uartputc(' '); uartputc('\b');
+    gpuputc('\b'); gpuputc(' '); gpuputc('\b');
   } else if(c == C('D')) {
-    gpuputc('^'); gpuputc('D');
     uartputc('^'); uartputc('D');
+    gpuputc('^'); gpuputc('D');
   } else {
-    gpuputc(c);
     uartputc(c);
+    gpuputc(c);
   }
 }
 
@@ -395,6 +420,42 @@ uint fbinfoaddr;
 
   fbinfoaddr = initframebuf(framewidth, frameheight, framecolors);
   if(fbinfoaddr != 0) NotOkLoop();
+
+  // claude: the channel-1 reply's fbp field comes back in one of two
+  // forms depending on who answered, so pick the drawing address to
+  // match rather than assuming either one (see fb_base's own comment
+  // above) - identical fix to forks/arm-pi1's own console.c
+  // (notes_arch_arm_pi1.txt bug 7):
+  //
+  //  - a VC BUS address (real VideoCore firmware: the 0x40000000 cache
+  //    alias). mmu.c already identity-maps that whole window, so use it
+  //    exactly as before - this branch leaves the real-hardware path
+  //    bit-for-bit unchanged.
+  //  - a plain ARM PHYSICAL address (QEMU's bcm2835-fb model answers
+  //    this way). Nothing maps it: map it here, at GPUMEMBASE+phys -
+  //    the same virtual address real firmware would have handed back
+  //    for that physical page, and deliberately inside the kernel half
+  //    of the L1 table (VA >= 0x40000000), which switchuvm()'s
+  //    user-half memmove never overwrites.
+  if(fbinfo.fbp >= GPUMEMBASE && fbinfo.fbp < (uint)GPUMEMBASE+(uint)GPUMEMSIZE){
+    fb_base = fbinfo.fbp;
+    fb_ready = 1;
+  } else if(fbinfo.fbp != 0 && fbinfo.fbs != 0 &&
+            fbinfo.fbp < GPUMEMBASE && fbinfo.fbp+fbinfo.fbs <= GPUMEMSIZE){
+    pde_t *l1 = (pde_t *)P2V(K_PDX_BASE);
+    uint pa, va;
+
+    for(pa = fbinfo.fbp & ~(MBYTE-1); pa < fbinfo.fbp+fbinfo.fbs; pa += MBYTE){
+      va = GPUMEMBASE + pa;
+      l1[PDX(va)] = pa|DOMAIN0|PDX_AP(K_RW)|SECTION;
+    }
+    dsb_barrier();
+    flush_tlb();
+    fb_base = GPUMEMBASE + fbinfo.fbp;
+    fb_ready = 1;
+  } else {
+    fb_ready = 0;
+  }
 
   initlock(&cons.lock, "console");
   memset(&input, 0, sizeof(input));

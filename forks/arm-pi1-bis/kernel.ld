@@ -64,10 +64,14 @@ SECTIONS
 		*.c.o(*)
 	}
 
+	/* claude: marks the start of .bss so cmain() can zero it explicitly
+	 * - see main.c's own "bsszero()"/its call site comment. Identical
+	 * fix to forks/arm-pi1's own kernel.ld/kernel-qemu.ld. */
+	PROVIDE(bss_start = .);
 	.bss : {
 		*(.bss)
 	}
-  
+
 . = ALIGN(0x1000);
   PROVIDE (end = .);
 }

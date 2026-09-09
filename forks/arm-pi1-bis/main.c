@@ -16,6 +16,25 @@
 #include "mailbox.h"
 
 extern char end[]; // first address after kernel loaded from ELF file
+extern char bss_start[]; // first address of .bss - see kernel.ld
+
+// claude: this kernel never zeroes .bss anywhere - proven by console.c's
+// own pre-existing "panicked = 0; // must initialize in code since the
+// compiler does not" comment/workaround. A real, universal correctness
+// fix (real hardware's own pre-boot RAM contents are just as
+// unpredictable, only less consistently reproducible than under
+// emulation), not a QEMU-only workaround - identical fix and identical
+// root cause to forks/arm-pi1's own main.c (notes_arch_arm_pi1.txt,
+// USB keyboard bring-up: a zero-initialized global reading back as
+// nonzero garbage broke a "no device yet" check there).
+static void
+bsszero(void)
+{
+  char *p;
+
+  for(p = bss_start; p < end; p++)
+    *p = 0;
+}
 extern pde_t *kpgdir;
 extern FBI fbinfo;
 extern volatile uint *mailbuffer;
@@ -53,7 +72,8 @@ void enableirqminiuart(void);
 
 int cmain( uint r0)
 {
-  
+
+  bsszero();
   mmuinit1();
   machinit();
   uartinit();
@@ -83,6 +103,14 @@ int cmain( uint r0)
 //cprintf("it is ok after iinit\n");
   ideinit();
 //cprintf("it is ok after ideinit\n");
+  // claude: USB keyboard - see timer.c's own usbkbdgetc()/timer3intr()
+  // hookup. Not gated like the framebuffer's fb_ready: a failed/absent
+  // USB controller (or no keyboard plugged in, real hardware's own
+  // normal case) is not an error - the UART/serial console keeps
+  // working exactly as before either way. Identical fix to
+  // forks/arm-pi1's own main.c (notes_arch_arm_pi1.txt bug 8).
+  if(UsbInitialise() != 0)
+    cprintf("USB: not available (continuing on UART console only)\n");
   timer3init();
   kinit2(P2V(8*1024*1024), P2V(PHYSTOP));
 //cprintf("it is ok after kinit2\n");
