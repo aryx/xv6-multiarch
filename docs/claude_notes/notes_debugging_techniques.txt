@@ -735,21 +735,136 @@ port already solves the same class of problem more narrowly (skip the
 risky operation when its precondition isn't met) rather than compounding
 two open bugs at once chasing full architectural correctness.
 
-29. QEMU monitor's `screendump` is a real, cheap way to visually verify emulated-framebuffer state, including in a headless sandbox with a live but unused X11 DISPLAY
+29. Debugging GRAPHICS / framebuffer problems under QEMU: how to actually see, capture and diff the emulated screen
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-To confirm whether forks/arm-pi1's `fb_ready` guard was correctly
-suppressing framebuffer drawing (as opposed to drawing happening but
-being wrong/corrupted), launching QEMU WITHOUT `-nographic`/
-`-display none` (a real GTK window, made possible by this environment
-unexpectedly already exporting a live `DISPLAY=:1`) and issuing
-`screendump <file>.ppm` through the QEMU monitor produced a real image
-of the emulated framebuffer's current contents, viewable directly (a
-solid black image, consistent with the guard correctly skipping all
-drawing). This is a strictly stronger check than reading register/
-memory state alone for anything display-shaped - it answers "what would
-a user actually see" rather than "does the data structure look
-plausible" - and works even when the framebuffer memory itself can't be
-easily interpreted by hand (arbitrary pixel format/stride). Worth
-reaching for whenever a bug involves a QEMU-emulated display device and
-a graphical `$DISPLAY` happens to be available, instead of only ever
-running `-nographic`.
+Every port in this repo is normally driven with `-nographic`, which is
+exactly wrong for a display bug: it gives no screen at all, so "nothing
+appears" is indistinguishable from "the driver never ran". The full
+toolkit that actually worked on forks/arm-pi1's framebuffer console
+(notes_arch_arm_pi1.txt bugs 5 and 7):
+
+  a) Run WITH a display, but keep a usable console. Dropping
+     `-nographic` gets a real GTK window; the trap is that the serial
+     console then moves into that window (a "serial0" tab) and the
+     terminal goes quiet, so the shell looks broken. `-serial mon:stdio`
+     is the fix: it multiplexes BOTH the guest serial console and the
+     QEMU monitor onto the terminal (Ctrl-A C to switch), while the
+     window keeps showing the framebuffer. Plain `-monitor stdio` gives
+     you the monitor but NO interactive guest console - a genuinely
+     confusing state worth recognising immediately. In this repo, see
+     forks/arm-pi1/Makefile's own "qemu-graphics" target.
+
+  b) A headless machine may still have a usable X display. This
+     sandbox exports a live `DISPLAY=:1`, so a GTK window works even
+     with no visible desktop - always check `echo $DISPLAY` before
+     assuming graphics are impossible and settling for indirect
+     evidence.
+
+  c) Capture the screen programmatically with the monitor's
+     `screendump <file>.ppm`. This is the authoritative answer to "what
+     would a user actually see", and unlike reading framebuffer memory
+     by hand it needs no knowledge of pixel format, stride or base
+     address. For scripted use, put the monitor on a socket
+     (`-monitor unix:/tmp/mon.sock,server,nowait`) and drive it from a
+     few lines of Python rather than typing at it.
+
+  d) PARSE the PPM instead of eyeballing it. P6 PPM is trivial to read
+     (ASCII header: magic, width, height, maxval, then raw RGB), and
+     three cheap measurements answer almost every question:
+       - count of non-black pixels: 0 means nothing was drawn at all;
+       - number of distinct colours: 2 (background + one ink colour) is
+         the signature of a working text console, many colours suggests
+         garbage/uninitialised memory being displayed;
+       - a coarse ASCII-art downsample (one character per 8x16 cell,
+         "#" if any pixel in the cell is non-background) prints the
+         actual screen layout into the terminal, which is enough to
+         recognise rendered text and where it stopped.
+     On arm-pi1 this turned "is it working?" into "1024x768, 2 distinct
+     colours, 3293 non-black pixels forming glyph shapes in the
+     top-left" - conclusive, and reproducible in CI-style scripting.
+
+  e) DIFF two screendumps to test interactivity. Capture, send a
+     command over the serial console, capture again, compare the
+     non-black pixel counts and the ASCII downsample: 3293 -> 3938 with
+     two new rows of text proved that characters typed at the serial
+     port were also being rendered onto the framebuffer, which no
+     amount of staring at a single still frame would have shown.
+
+  f) Watch QEMU's own stderr - device-model warnings are real clues.
+     arm-pi1's boot emits "Blocked re-entrant IO on MemoryRegion:
+     bcm2835-fb at addr: 0x0" from QEMU's re-entrancy guard. Note also
+     the anti-lesson: that warning was suggestive but ultimately NOT
+     the cause of the bug (see item 30), so treat such messages as
+     leads to check, not as diagnoses.
+
+30. When a device "isn't implemented" in the emulator, probe what it ACTUALLY returns before believing it
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+forks/arm-pi1's framebuffer was written off across two sessions with a
+confident-sounding diagnosis - "QEMU doesn't implement the old
+mailbox-channel-1 API this port uses, so fbinfo.fbp is never filled
+in" - reached by careful comparison against a known-good reference
+(Plan 9's vcore.c) which ruled out, one at a time, the struct layout,
+the 16-byte alignment, the cache flush, and the VC bus-address
+constant. Every one of those comparisons was correct. The conclusion
+was still wrong.
+
+What settled it was ten minutes of direct measurement instead of
+inference: a temporary patch turning the hardcoded bus-address alias
+into a variable, looping over all four candidates, and cprintf-ing the
+raw reply fields after each call. QEMU answered every single one
+correctly and identically (fbp=0x1c100000, fbs=0x180000, pitch=0x800 -
+each value independently checkable against the requested 1024x768x16
+geometry). The device was fully implemented; it simply returned the
+framebuffer pointer as a plain ARM PHYSICAL address where real firmware
+returns a VC BUS address, and the kernel only had a mapping for the
+latter.
+
+Generalisable lessons:
+  - "Feature X is unimplemented in the emulator" is a hypothesis, and
+    usually a lazy one. It is also nearly free to falsify: print the
+    actual returned values from inside the guest.
+  - Ruling out every difference between your code and a working
+    reference does not validate your conclusion about a third party's
+    behaviour - it only narrows where YOUR bug is not. The reference
+    comparison here was sound and still pointed nowhere near the bug,
+    because the bug was in what came BACK, not in what was sent.
+  - Sweep a parameter rather than reasoning about which value is
+    "correct" when the sweep is cheap. Testing all four bus aliases at
+    once cost one boot and immediately proved the alias was irrelevant,
+    a question the previous session had spent real effort reasoning
+    about from documentation.
+  - Prefer printing raw values over inferring them from a downstream
+    symptom. The whole two-session detour existed because the only
+    evidence anyone had was "the screen is black".
+
+31. A returned address may be in a DIFFERENT address space than the one you can dereference - check the form, not just the value
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+The arm-pi1 framebuffer bug in its final form: firmware hands back a
+pointer, and the kernel dereferences it directly. That works only
+because the pointer happens to arrive in an address space the kernel
+has mapped. Real VideoCore firmware returns a VC bus address
+(0x40000000-aliased), which this port identity-maps on purpose; QEMU
+returns the raw ARM physical address, which nothing maps.
+
+When consuming an address produced by another agent (firmware, a GPU,
+a DMA engine, another CPU in a different mode), ask explicitly: whose
+address space is this in, and do I have a mapping for that form? The
+robust fix accepts every form it might arrive in and normalises:
+here, mask off the alias bits to recover the physical address, then
+map it at the virtual address the other form would have implied.
+
+Two supporting checks that were essential to getting the fix right,
+both generalisable:
+  - Before adding a mapping at runtime, find out which page-table
+    entries actually survive. This kernel's switchuvm() memmoves a
+    process's page over the first 4KB of the live L1 table on every
+    context switch, silently destroying any kernel mapping for
+    VA < 0x40000000 - so the new mapping had to go in the upper half.
+    Grep for whoever writes to the page-table root before assuming a
+    mapping you install will persist.
+  - Confirm which page-table root is actually LIVE. This tree contains
+    a plausible-looking kvmalloc()/setupkvm_new() pair that rebuilds
+    the table from a kmap[] array; it is dead code, never called, and
+    the live table is the one built in early boot at a fixed physical
+    address. Editing the wrong one would have produced a fix that
+    changed nothing, with no error to explain why.

@@ -6,10 +6,17 @@ commit), during the rpi1 bring-up itself. Phase 4 of
 docs/claude_notes/build-and-test-plan.md, ninth port attempted from that
 phase's list, third of the four ARM board ports.
 
-STATUS (updated 2026-09-08): FULLY WORKING - a second session (see
-"Session 2" below) found and fixed four more real bugs, reaching a
-genuinely interactive shell under QEMU and a full, unmodified
-"ALL TESTS PASSED" usertests run. Wired up as build-arm-pi1/run-arm-pi1/
+STATUS (updated 2026-09-09): FULLY WORKING, INCLUDING GRAPHICS - a
+second session (see "Session 2" below) found and fixed four real bugs,
+reaching a genuinely interactive shell under QEMU and a full,
+unmodified "ALL TESTS PASSED" usertests run; a third session fixed the
+framebuffer console too (see "Bug 7" at the end - the emulated screen
+now shows real rendered text, verified by screendump), and added a
+"make run-arm-pi1-qemu-graphics" target that boots with a real GTK
+window plus a serial console multiplexed onto the terminal. The one
+thing that still does not work is typing INTO that window: input comes
+from the UART only, since the shipped USB keyboard driver was never
+wired up (see "Still open" at the end). Wired up as build-arm-pi1/run-arm-pi1/
 test-arm-pi1/clean-arm-pi1/kill-arm-pi1, folded into build-all/test-all/
 clean-all/kill-all, plus a Dockerfile ARCH=arm-pi1 case and
 .github/workflows/docker.yml matrix entry (verified locally with
@@ -307,10 +314,13 @@ Chased via "-d in_asm"/"-d int" and the QEMU monitor's "xp"/"info
 roms": consoleinit() calls initframebuf(), which reports SUCCESS
 (fbinfoaddr==0, the only condition this fork's own code checks) even
 though fbinfo.fbp (the framebuffer pointer the GPU is supposed to fill
-in via the mailbox response) never actually gets a valid address under
-QEMU - confirmed the mailbox call itself completes (no hang), just
-returns a value outside real GPU memory (see "Open gap" below for the
-- still unresolved - question of exactly why). gpuputc()'s own
+in via the mailbox response) holds a value this kernel cannot draw
+through under QEMU - confirmed the mailbox call itself completes (no
+hang), just returns a value outside the mapped GPU window. (Session 3
+found out exactly why, and it is NOT the "channel 1 isn't implemented"
+guess recorded below: QEMU answers correctly, just with a physical
+rather than a bus address - see "Bug 7" at the end of this file, which
+also fixes it.) gpuputc()'s own
 drawpixel() then writes through that bad pointer during the very first
 "Hello World" print, at 0x10000ish, and the resulting Data Abort landed
 in code that turned out to still be QEMU's own unrelated bootloader ROM
@@ -400,32 +410,140 @@ Verification
        before touching .github/workflows/docker.yml, per this repo's
        own convention
 
-Open gap: framebuffer graphics still don't actually render under QEMU
----------------------------------------------------------------------------
-fb_ready (Bug 5) makes the CRASH go away by skipping gpuputc() - it
-does not make the framebuffer itself work. Investigated further this
-session, without finding the actual fix: compared this fork's FBI
-struct field-by-field against ~/principia/kernel/COMPILE/9/bcm/
-vcore.c's own working Fbinfo struct (IDENTICAL layout, same 10 fields,
-same order, same u32 sizes, just different names - ruled out); checked
-whether Principia's own working call flushes the cache before the
-mailbox write that xv6 doesn't (source/mailbox.c's own writemailbox()
-already calls flush_dcache_all() before every mailbox write - ruled
-out, at least at the "is the call present" level, not verified deeper);
-checked the VC bus address alias xv6's writemailbox() adds
-(0x40000000) against Principia's own board-specific table
-(~/principia/kernel/COMPILE/9/bcm/raspi1.c: ".busdram = 0x40000000" -
-an exact match for THIS specific board, ruling out a wrong bus alias).
-Confirmed via a real QEMU "screendump" (through the monitor, with a
-genuine GTK display attached via a live X11 :1 DISPLAY in this
-environment - not just "-display none") that the emulated framebuffer
-is currently pure black, consistent with fb_ready gating all drawing
-off. Next step for a future session: instrument (temporarily) exactly
-what value fbinfo.fbp actually comes back as under QEMU, and compare
-against what a genuinely working channel-1 mailbox round-trip should
-look like - possibly QEMU's bcm2835-fb device needs the framebuffer
-"enabled" via a SEPARATE call this fork's own initframebuf() never
-makes (the earlier hypothesis, that QEMU only implements the modern
-property-tag protocol and not channel 1 at all, is now considered
-LESS likely given Principia's own confirmed-working channel-1 usage
-under the same machine).
+Bug 7 (real, fixed 2026-09-09): framebuffer never rendered under QEMU - the returned fbp is a PHYSICAL address there, a BUS address on real hardware
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+fb_ready (Bug 5) made the CRASH go away by skipping gpuputc(), but left
+the framebuffer itself dead under QEMU. A later session found the real
+cause, and in doing so proved the Bug 5 write-up's own explanation
+WRONG in an instructive way.
+
+That earlier write-up asserted "the old mailbox-channel-1 API this port
+uses isn't implemented [under QEMU], so fbinfo.fbp stays whatever it
+was set to before the call". That is simply false. Probing it directly
+- a temporary patch making the VC alias a variable, looping over all
+four aliases (0x40000000/0xC0000000/0x00000000/0x80000000) and
+cprintf-ing the reply each time - showed QEMU answering the channel-1
+request perfectly, and identically for every alias:
+
+  EXPERIMENT alias=40000000 resp=0 fbp=1c100000 fbs=180000 pitch=800
+  EXPERIMENT alias=c0000000 resp=0 fbp=1c100000 fbs=180000 pitch=800
+  EXPERIMENT alias=0        resp=0 fbp=1c100000 fbs=180000 pitch=800
+  EXPERIMENT alias=80000000 resp=0 fbp=1c100000 fbs=180000 pitch=800
+
+Every field is correct for the requested 1024x768x16: fbs=0x180000 is
+exactly 1024*768*2, pitch=0x800 is exactly 1024*2, and resp=0 is the
+documented channel-1 success code. So the request side - struct layout,
+16-byte alignment, cache flush, bus-address arithmetic, all the things
+the previous session had carefully "ruled out" one by one - was never
+the problem, and neither was the alias (QEMU accepts any of them).
+
+The actual difference is the FORM of the returned pointer:
+
+  - Real VideoCore firmware returns a VC BUS address (the 0x40000000
+    cache alias for this board - matching ~/principia/kernel/COMPILE/9/
+    bcm/raspi1.c's own ".busdram = 0x40000000"). That is precisely why
+    this fork's mmu.c identity-maps GPUMEMBASE..GPUMEMBASE+GPUMEMSIZE
+    (0x40000000..0x80000000) and why the original author could then use
+    fbinfo.fbp directly as a CPU pointer with no conversion at all.
+  - QEMU's bcm2835-fb model returns a plain ARM PHYSICAL address
+    (0x1c100000 on -M raspi1ap: just above the 448MB it gives the ARM,
+    inside the GPU's own carve-out - consistent with the "ARM memory is
+    0 1c000000" line this kernel already prints at boot).
+
+Nothing in this kernel maps 0x1c100000: mmu.c maps physical
+0..RAMSIZE(0xC000000) at KERNBASE, identity-maps only the first 1MB,
+maps IO at DEVSPACE, and identity-maps the GPU window at 0x40000000+.
+So the QEMU-form pointer was unusable, and the fb_ready range check
+(which only accepted the bus-alias form) was right to refuse it.
+
+The fix, in consoleinit(), accepts both forms:
+
+  if(fbinfo.fbp >= GPUMEMBASE && fbinfo.fbp < GPUMEMBASE+GPUMEMSIZE){
+    fb_base = fbinfo.fbp;          /* real hw: unchanged, byte for byte */
+    fb_ready = 1;
+  } else if(... fbinfo.fbp < GPUMEMBASE && fbp+fbs <= GPUMEMSIZE){
+    /* QEMU: map it at the same VA real firmware would have returned */
+    for(pa = fbinfo.fbp & ~(MBYTE-1); pa < fbinfo.fbp+fbinfo.fbs; pa += MBYTE)
+      l1[PDX(GPUMEMBASE + pa)] = pa|DOMAIN0|PDX_AP(K_RW)|SECTION;
+    dsb_barrier(); flush_tlb();
+    fb_base = GPUMEMBASE + fbinfo.fbp;
+    fb_ready = 1;
+  }
+
+and drawpixel()/gpuputc()'s two scroll memmove()s now go through
+fb_base instead of fbinfo.fbp.
+
+Two details that matter and are easy to get wrong:
+
+  - WHY map at GPUMEMBASE+phys rather than identity-mapping phys.
+    switchuvm() in vm.c does "memmove(kpgdir, p->pgdir, PGSIZE)" - it
+    copies a process's user page over the FIRST 4KB of the live 16KB L1
+    table on every context switch, i.e. it rewrites every L1 entry for
+    VA < 0x40000000. An identity mapping of 0x1c100000 lives at L1 index
+    0x1c1 = 449, inside that clobbered range, so it would survive
+    exactly until the first user process ran. GPUMEMBASE+phys =
+    0x5c100000 is at index 1473, in the kernel half, which switchuvm()
+    never touches. (The window this fork already identity-maps for the
+    GPU is safe for the same reason.)
+  - The live L1 table is the one entry.S/mmu.c built at K_PDX_BASE
+    (0x4000), reachable as P2V(K_PDX_BASE) - main.c does
+    "kpgdir = p2v(K_PDX_BASE)". vm.c's kvmalloc()/setupkvm_new() pair,
+    which would rebuild the table from kmap[] (and would NOT include
+    the GPU window), is dead code - never called from anywhere.
+
+Real hardware is untouched by this fix: firmware there returns the
+bus-address form, which takes the first branch and behaves exactly as
+it did before. The second branch can only run where the first one
+does not - and where it does run, it strictly replaces "refuse to
+draw" with "draw correctly".
+
+Verification (2026-09-09): booted under "-M raspi1ap" with a real GTK
+display and captured the emulated screen via the QEMU monitor's
+"screendump" - 3938 non-black pixels forming actual readable glyphs,
+versus a uniformly black frame before the fix. Characters typed at the
+serial console echo onto the framebuffer as well (consputc() drives
+both uartputc() and gpuputc()), confirmed by diffing two screendumps
+before/after sending a command. "make test-arm-pi1" still reaches ALL
+TESTS PASSED, and the real-hardware "make all"/kernel.img still builds.
+
+Still open: keyboard input INTO the graphics window
+---------------------------------------------------------
+The framebuffer is now a real output device under QEMU, but the QEMU
+window is still output-only: this kernel's only input path is the UART
+(consoleintr(uartgetc) driven by the PL011/Mini-UART IRQ). Typing has
+to happen on the serial console - the terminal when using
+"-serial mon:stdio", or the serial0 tab inside the QEMU window itself -
+and then echoes onto the framebuffer.
+
+Making the window itself accept keystrokes means driving a USB
+keyboard, and this fork ships one: source/keyboard.s (Alex Chadwick's
+input01 sample) plus libcsud.a, with UsbInitialise()/KeyboardUpdate()/
+KeyboardGetChar() already declared in include/defs.h. Nothing calls any
+of them - the USB path was never wired up by the original author.
+
+Two real obstacles before that becomes a small job:
+
+  - libcsud.a is a PREBUILT static library with no source in this tree
+    ("ar t" shows designware20.c.o, hub.c.o, hid.c.o, keyboard.c.o,
+    roothub.c.o, broadcom2835.c.o, ...), so its dwc2 driver cannot be
+    adjusted the way the rest of this port can.
+  - QEMU's dwc2 model needs real driver-side accommodation. The
+    reference point is ~/principia/kernel/COMPILE/9/bcm/usbdwc.c, which
+    got a Plan 9 dwc2 driver working under this same emulation, and
+    only after: detecting emulation at runtime (its own emulating(),
+    keying on gsnpsid == 0x4f54294a, QEMU's dwc2 rev 2.94a, versus real
+    hardware's own id), skipping split transactions entirely under
+    emulation (QEMU routes low/full-speed transfers directly and its
+    split state machine otherwise eats a ~1s timeout per transfer),
+    working around a sticky-Hcintr interrupt storm, tolerating lost
+    completion wakeups with bounded waits, and handling QEMU not
+    decrementing hctsiz.Pktcnt. That is a substantial amount of
+    emulation-specific knowledge to have to reproduce against a
+    library whose source isn't here.
+
+So the honest options for a future session are: find and vendor real
+CSUD source (then port the usbdwc.c-style QEMU workarounds into its
+designware20.c), or write a minimal dwc2 + HID path directly against
+usbdwc.c as the model, or simply accept serial-console input as the
+input path and treat the framebuffer as an output device. Nothing about
+the current state is broken - this is a missing feature, not a bug.
