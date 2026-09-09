@@ -182,29 +182,28 @@ RUN ./configure
 # aarch64 host emulating both riscv64 and i386) and run its own usertests
 # suite end to end - see forks/riscv/test-xv6.py and forks/x86/test-xv6.py.
 #
-# claude: ARCH=all deliberately does NOT call the top-level Makefile's own
-# build-all - that umbrella target covers every arch wired into
-# ./configure (which by design runs ahead of this file - see build.md's
-# Phase 4 recipe step 2 vs step 6), and used to include arm64/loongarch
-# before this Dockerfile's own ARCH=all apt-get case installed a
-# toolchain/qemu for them; the apt-get "all" case above has since grown
-# to cover both, so this explicit list is no longer strictly required for
-# that reason - it's kept anyway as this Dockerfile's own source of truth
-# for what ARCH=all covers, to be kept in lockstep with the apt-get "all"
-# case above by inspection rather than by trusting the two lists agree.
+# claude: ARCH=all just calls the top-level Makefile's own build-all/
+# test-all umbrella targets now - they cover the exact same twelve arches
+# as this Dockerfile's own ARCH=all apt-get case above (only the order
+# differs), so spelling the list out a second time here was pure
+# duplication (this used to be a real, documented divergence back when
+# build-all didn't yet cover arm64/loongarch - not anymore). The apt-get
+# "all" case above remains the actual source of truth for which arches
+# get a toolchain/qemu installed; ./configure and build-all/test-all
+# themselves cover every arch wired into the top-level Makefile
+# regardless of ARCH.
 #
-# The test step below DOES call the top-level "test-all", but that name
-# means the fast, boot-only "quick-test-<arch>" check across every arch
-# now (~1 min total - see CLAUDE.md's "Testing conventions"), not full
-# usertests - full coverage for ARCH=all here would cost the ~25 min a
-# real "stress-test-all" run takes, on every build of this one-image-
+# "test-all" means the fast, boot-only "quick-test-<arch>" check across
+# every arch (~1 min total - see CLAUDE.md's "Testing conventions"), not
+# full usertests - full coverage for ARCH=all here would cost the ~25 min
+# a real "stress-test-all" run takes, on every build of this one-image-
 # does-everything convenience path. Single-ARCH builds are unaffected:
 # the "else" branch below still calls "test-$ARCH" directly, which keeps
 # its original full-usertests meaning - this is the exact path
 # .github/workflows/docker.yml's own matrix uses (one real arch per job,
 # never ARCH=all), so CI's actual coverage is untouched by this change.
 RUN if [ "$ARCH" = all ]; then \
-      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm-pi1-bis build-arm-pi2 build-arm64 build-mips build-loongarch; \
+      make build-all; \
     else \
       make "build-$ARCH"; \
     fi
