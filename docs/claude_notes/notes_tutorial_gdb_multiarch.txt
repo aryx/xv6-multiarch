@@ -339,6 +339,99 @@ Reading kernel.asm/kernel.sym vs. loading `file`: when to use which
   where firing up a whole gdb session is more setup than the question
   deserves.
 
+Case study 6: a machine that WON'T let you use `-smp 1` - debug via gdb "threads" instead
+-----------------------------------------------------------------------------------------------
+Case study 4's own advice ("`smp 1` over the port's own default CPU
+count while debugging") doesn't always work: QEMU's `raspi2b` machine
+(forks/arm-pi2, 2026-09-09 session) refuses anything else -
+
+  $ qemu-system-arm -M raspi2b -nographic -kernel kernel7-qemu.bin -smp 1
+  qemu-system-arm: Invalid SMP CPUs 1. The min CPUs supported by
+  machine 'raspi2b' is 4
+
+When you're stuck with all 4 cores live, QEMU's gdbstub exposes each
+vCPU as its own gdb **thread** (thread 1 = CPU0, thread 2 = CPU1, ...) -
+use that instead of trying to filter cores out:
+
+  gdb-multiarch -q build/kernel-qemu.elf \
+    -ex "set pagination off" -ex "set confirm off" \
+    -ex "target remote :1234" \
+    -ex "break *0x8001138c" \
+    -ex "continue" \
+    -ex "info threads" \
+    -ex "thread apply all print/x \$pc"
+
+  Id   Target Id                    Frame
+  * 1    Thread 1.1 (CPU#0 [running]) gpuinit () at source/console.c:454
+    2    Thread 1.2 (CPU#1 [running]) 0x0000031c in ?? ()
+    3    Thread 1.3 (CPU#2 [running]) 0x0000031c in ?? ()
+    4    Thread 1.4 (CPU#3 [running]) 0x0000031c in ?? ()
+
+This one command answered "is this an SMP race, or just CPU0 alone?" in
+one shot: CPUs 1-3 were all parked at the identical address (a benign
+QEMU-synthesized secondary-core spin stub, not kernel code at all - see
+the next gotcha below), while only CPU0 was inside real kernel code -
+ruling out an SMP race as the cause without ever needing `-smp 1`. Add
+`-ex "thread 1"` before reading registers/backtraces in a later
+`continue` if you only care about the primary core from here on -
+otherwise gdb's active thread can silently be a parked secondary core
+when you print `$pc`/`bt`, producing a confusing, wrong-CPU answer.
+
+Case study 7: localizing a crash inside a long call chain - a breakpoint sweep, not single-stepping
+------------------------------------------------------------------------------------------------------------
+When a crash happens somewhere after a dozen-plus function calls deep
+into `cmain()` (forks/arm-pi2, same session) and the only symptom is "no
+console output, then a fault", single-stepping from the very top is
+slow and easy to lose track in. Faster: grep `nm`'s output for the
+*sequence* of functions the source code is expected to call, set a
+breakpoint at every one of their addresses, then `continue` through them
+in order - whichever breakpoint is the LAST one to actually hit before
+the crash is exactly where to look next:
+
+  $ nm build/kernel-qemu.elf | grep -E " (T|t) (mmuinit0|machinit|uartinit|consoleinit)$"
+  80013890 T mmuinit0
+  8001349c T machinit
+  8001623c T uartinit
+  80011438 T consoleinit
+
+  gdb-multiarch -q build/kernel-qemu.elf \
+    -ex "set pagination off" -ex "set confirm off" \
+    -ex "target remote :1234" \
+    -ex "break *0x80013890" -ex "break *0x8001349c" \
+    -ex "break *0x8001623c" -ex "break *0x80011438" \
+    -ex "continue" -ex "thread 1" -ex "print \$pc" \
+    -ex "continue" -ex "thread 1" -ex "print \$pc" \
+    -ex "continue" -ex "thread 1" -ex "print \$pc" \
+    -ex "continue" -ex "thread 1" -ex "print \$pc"
+
+Each hit confirms one more function was entered successfully; the crash
+lives somewhere between the last breakpoint that fired and the first
+one that never did. **Re-fetch addresses from `nm` after every rebuild**
+- a single added/removed function anywhere in the file shifts every
+later symbol's address, and reusing stale addresses from a previous
+build silently sets breakpoints on the wrong (or now-meaningless)
+instructions, producing a confusing "wrong function hit" report instead
+of a clean error.
+
+A companion, even more direct technique for the actual fault instruction
+once you know roughly where it is: `break *0xffff0004` (or whichever
+address the exception vector - ARM high vectors, RISC-V's `mtvec`, etc. -
+actually lands at) catches the crash itself, and `info registers` there
+shows `lr` (or the ISA-equivalent return-address register) pointing
+just past the real faulting instruction - `x/8i $lr-16` (or similar)
+then shows the actual code that faulted, which `objdump -d
+--start-address=... --stop-address=...` can cross-reference against
+full disassembly to identify.
+
+A real gotcha this technique caught: a breakpoint address that resolves
+to a function whose location APPEARS reasonable but is actually a symbol
+GDB's own "skip the prologue" heuristic landed one instruction set off
+from where you'd expect (e.g. resolving into `arm.h`'s inlined `outw()`
+body rather than the calling function's own first real statement) -
+don't assume the printed `at file:line` in a "Breakpoint N, func () at
+file:line" hit line is exactly the function's very first statement;
+read it, don't just skim past it.
+
 Environment gotchas specific to this session (worth checking first, next time)
 --------------------------------------------------------------------------------------
 - **A leftover QEMU process holds the disk image file lock.** Forgetting
@@ -358,4 +451,40 @@ Environment gotchas specific to this session (worth checking first, next time)
   gdb session, which is harder to reason about than it needs to be while
   you're still localizing a bug. Switch back to the port's normal `smp`
   count once you're validating an actual fix, not just narrowing down
-  where to look.
+  where to look. If the machine model refuses `-smp 1` outright, see
+  case study 6 above (gdb "threads", one per vCPU) instead.
+- **A gdbstub session that "never hits the next breakpoint" may just be
+  slow, not stuck** (forks/arm-pi2, 2026-09-09 session). A breakpoint
+  sweep (case study 7) that sat through a real, legitimate busy-wait
+  loop (a mailbox poll, a `delay()` call) can time out on gdb's own
+  round-trip overhead long before the loop would actually finish in real
+  execution - producing a false "stuck here forever" reading that sent
+  one session's diagnosis briefly in the wrong direction. Cross-check
+  any "it never got further" conclusion against a plain, non-gdb trace
+  of the SAME binary before trusting it:
+
+    qemu-system-arm ... -d in_asm,int -D trace.log &   # no gdbstub at all
+    grep -n "^0x8001\|Taking exception" trace.log | tail -40
+
+  `-d in_asm` only logs each **translated block once** (QEMU/TCG's own
+  block cache), so a real busy-loop shows up as silence in a `grep`-
+  filtered view, not megabytes of repeated lines - a big gap between two
+  block-address lines in the filtered output usually just means "spent a
+  while looping here", not "crashed silently here". Combine with `,int`
+  to also see exactly which translated block preceded each "Taking
+  exception" line, without gdb in the loop at all.
+- **`readelf -s build/kernel.elf | grep <funcname>` is the fast way to
+  confirm an ARM ISA-mode bug before chasing it further.** An ODD symbol
+  address (e.g. `800142e5` for a function whose disassembly starts at
+  `800142e4`) means that symbol is a Thumb interworking target - the low
+  bit is the ELF's own "this is Thumb" flag, not part of the real
+  address. If hand-written assembly calls into that symbol with a plain
+  `bl` (which does NOT change `CPSR.T`) instead of `blx` (which does),
+  the CPU keeps decoding Thumb-2 instruction bytes as if they were
+  32-bit ARM ones - looking like "mostly works, then randomly crashes
+  later" rather than an immediate, obvious failure, since some
+  misdecoded bit patterns still happen to execute as *something* without
+  faulting for a while. Check every C function your hand-written `.S`
+  file branches into this way, not just the crash site - see
+  notes_arch_arm_pi2.txt's own "Bug 3" for the full story (four bugs
+  deep, but this specific check took one `readelf` command to confirm).
