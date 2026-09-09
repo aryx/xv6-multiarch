@@ -47,18 +47,45 @@ gicdinit()
   *RegD(D_CTLR) = 0;
 }
 
+// claude: global, once, by CPU0 only - SPIs (INTID >= 32) live in
+// distributor registers that really are shared, and this one is
+// explicitly targeted at CPU0 by gic_setup_spi().
 void
 gicv2init()
 {
-  gic_setup_ppi(TIMER0_IRQ);
   gic_setup_spi(UART0_IRQ);
 }
 
+// claude: per-CPU, by every hart - and gic_setup_ppi(TIMER0_IRQ) MUST be
+// here rather than in gicv2init() above, where it used to be.
+//
+// TIMER0_IRQ is 27, the ARM generic virtual timer's PPI. For INTIDs 0-31
+// the GICv2 distributor registers gic_setup_ppi() touches - ISENABLER0,
+// ICPENDR0, IPRIORITYR0-7 - are BANKED per CPU interface: each core sees
+// its own private copy. So CPU0 running gic_setup_ppi() enabled the timer
+// PPI for CPU0 and nobody else, and cores 1-3 came up with their virtual
+// timer masked at the GIC, permanently.
+//
+// The visible consequence was a hang, not a lost tick: with no timer
+// interrupt, a core running a user process that spins in a tight loop
+// never re-enters the kernel, so trap.c's "which_dev == 2 -> yield()"
+// never fires and the scheduler never gets that core back. usertests'
+// preempt() deadlocks on exactly this - it forks three spinning
+// children, kills them, then wait()s. kill() only sets p->killed; the
+// victim exits when it NEXT traps into the kernel, which for a spinning
+// process is only ever a timer interrupt. On cores 1-3 that never
+// arrives, so the children never die and the three wait(0) calls block
+// forever.
+//
+// Not a QEMU artifact: PPI register banking is architectural GICv2, and
+// a real Pi 4's GIC-400 behaves identically.
 void
 gicv2inithart()
 {
   giccinit();
   gicdinit();
+
+  gic_setup_ppi(TIMER0_IRQ);
 
   *RegC(C_CTLR) |= 0x1;
   *RegD(D_CTLR) |= 0x1;

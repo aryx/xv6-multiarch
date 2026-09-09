@@ -11,14 +11,16 @@ BUILD:
      from a real-firmware one (EL2), so the same kernel8.img is correct
      on both. See that file's comment on _entry.)
   - run on qemu
-    1. upstream QEMU 9.1+ has a Pi 4 board of its own: `make qemu
-       QEMUMACHINE=raspi4b` (this repo's `make run-arm64-pi4` from the
-       top level does that for you)
-    2. or, for the qemu fork this port was developed against, clone and
-       build qemu-patch-raspberry4
+    1. `make qemu`, with a mainline qemu >= 9.1 on PATH - 9.1 is the
+       first release with a Raspberry Pi 4 board at all (`-M raspi4b`,
+       the default here now). Boots to a shell and passes usertests;
+       verified on 11.1.50. This repo's top-level `make run-arm64-pi4` /
+       `make test-arm64-pi4` do it with the qemu ./configure found.
+    2. or, for the qemu fork this port was originally developed against,
+       clone and build qemu-patch-raspberry4
        (https://github.com/k-mrm/qemu-patch-raspberry4), then
-       `make qemu QEMUPREFIX=<path>/qemu-patch-raspberry4/build/`
-       (its board is the default `raspi4b1g`)
+       `make qemu QEMUPREFIX=<path>/qemu-patch-raspberry4/build/
+       QEMUMACHINE=raspi4b1g QEMUMEM=1G`
 
 Serial Communication:
   xv6-rpi4 use uart0

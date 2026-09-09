@@ -300,31 +300,63 @@ detect_versioned_gcc() {
 # arg1 = display name, arg2 = variable name to set, arg3 = qemu-system-*
 # binary name to look for, arg4 = min major version (or "" to skip the
 # version check entirely - not every fork's Makefile enforces one),
-# arg5 = min minor version (required if arg4 is given).
+# arg5 = min minor version (required if arg4 is given), arg6.. = OPTIONAL
+# extra candidate binaries (typically absolute paths to a local source
+# build) to try, in order, if arg3 is missing or too old.
 # Sets $arg2 to the found binary's path, or NONE; returns 1 on any failure.
+#
+# claude: the extra-candidates tail exists for forks/arm64-pi4, whose
+# floor (qemu >= 9.1, the first release with a "-M raspi4b" board) is
+# newer than this Ubuntu packages - the working binary there is a local
+# source build that is deliberately NOT on PATH, since putting a
+# hand-built qemu ahead of the distro one for every other arch is
+# exactly the PATH hazard notes_arch_riscv64.txt warns about. Callers
+# that pass no extra candidates behave exactly as before.
 detect_qemu_system() {
     name=$1; varname=$2; qbin=$3; minmajor=${4:-}; minminor=${5:-}
+    if [ $# -ge 5 ]; then shift 5; else shift $#; fi
     eval "val=\${$varname}"
+    # An explicit override (--qemu-<arch>=/environment) is taken as-is and
+    # still version-checked below; otherwise walk the candidate list.
     if [ -z "$val" ]; then
-        val=`command -v "$qbin" 2>/dev/null || true`
+        too_old=
+        for cand in "$qbin" "$@"; do
+            found=`command -v "$cand" 2>/dev/null || true`
+            [ -n "$found" ] || continue
+            if [ -z "$minmajor" ]; then
+                val=$found
+                break
+            fi
+            if qemu_version_ok "$found" "$minmajor" "$minminor"; then
+                val=$found
+                break
+            fi
+            too_old="$found is version $QEMU_VERSION"
+        done
+        if [ -z "$val" ]; then
+            if [ -n "$too_old" ]; then
+                echo "configure: warning: $too_old, need >= $minmajor.$minminor" >&2
+            fi
+            eval "$varname=NONE"
+            return 1
+        fi
+        if [ -n "$minmajor" ]; then
+            echo "configure: found $val, version $QEMU_VERSION ($name)"
+        else
+            echo "configure: found $val ($name)"
+        fi
+        eval "$varname=\$val"
+        return 0
     fi
-    if [ -z "$val" ] || ! command -v "$val" >/dev/null 2>&1; then
+    if ! command -v "$val" >/dev/null 2>&1; then
         eval "$varname=NONE"
         return 1
     fi
     if [ -n "$minmajor" ]; then
-        version_line=`"$val" --version | head -n 1`
-        # "QEMU emulator version 8.2.2 (Debian ...)" -> "8.2.2" -> 8, 2
-        qversion=${version_line#*version }
-        qversion=${qversion%% *}
-        qmajor=${qversion%%.*}
-        qminor_rest=${qversion#*.}
-        qminor=${qminor_rest%%.*}
-        if [ "$qmajor" -gt "$minmajor" ] 2>/dev/null || \
-           { [ "$qmajor" -eq "$minmajor" ] && [ "$qminor" -ge "$minminor" ]; } 2>/dev/null; then
-            echo "configure: found $val, version $qversion ($name)"
+        if qemu_version_ok "$val" "$minmajor" "$minminor"; then
+            echo "configure: found $val, version $QEMU_VERSION ($name)"
         else
-            echo "configure: warning: $val is version $qversion, need >= $minmajor.$minminor" >&2
+            echo "configure: warning: $val is version $QEMU_VERSION, need >= $minmajor.$minminor" >&2
             eval "$varname=NONE"
             return 1
         fi
@@ -333,6 +365,28 @@ detect_qemu_system() {
     fi
     eval "$varname=\$val"
     return 0
+}
+
+###############################################################################
+# qemu_version_ok: is $1's version >= $2.$3? Also sets QEMU_VERSION to the
+# parsed version string, so callers can report it either way.
+###############################################################################
+# Pure shell arithmetic, not sed -E/bc - see detect_qemu_system's own note
+# and notes_arch_riscv64.txt's "PATH hazard" section for why.
+QEMU_VERSION=
+qemu_version_ok() {
+    # "QEMU emulator version 8.2.2 (Debian ...)" -> "8.2.2" -> 8, 2
+    version_line=`"$1" --version | head -n 1`
+    QEMU_VERSION=${version_line#*version }
+    QEMU_VERSION=${QEMU_VERSION%% *}
+    qmajor=${QEMU_VERSION%%.*}
+    qminor_rest=${QEMU_VERSION#*.}
+    qminor=${qminor_rest%%.*}
+    if [ "$qmajor" -gt "$2" ] 2>/dev/null || \
+       { [ "$qmajor" -eq "$2" ] && [ "$qminor" -ge "$3" ]; } 2>/dev/null; then
+        return 0
+    fi
+    return 1
 }
 
 ###############################################################################
@@ -755,22 +809,37 @@ fi
 # forks/arm-pi3 (32-bit despite its own README) this one really is a
 # 64-bit kernel, hence the "arm64" prefix.
 #
-# The asymmetry worth knowing here: the TOOLCHAIN is fine on this host,
-# the EMULATOR is not. forks/arm64-pi4 builds cleanly today (two narrow
-# -Wno- flags, see notes_arch_arm64_pi4.txt), but qemu only grew a
-# Raspberry Pi 4 board at all in 9.1 ("-M raspi4b"); this host is on
-# 8.2.2, whose newest raspi board is raspi3b. So the version floor below
-# is not a nice-to-have - below 9.1 there is simply nothing to boot on.
-# That is why the top-level Makefile splits this arch's checks in two:
-# "build-arm64-pi4" needs only TOOLPREFIX_ARM64_PI4 and works now,
-# "run-arm64-pi4" additionally needs QEMU_ARM64_PI4 and does not.
+# The toolchain is ordinary. The EMULATOR is the whole difficulty: qemu
+# only grew a Raspberry Pi 4 board at all in 9.1 ("-M raspi4b"), and this
+# Ubuntu still packages 8.2.2, whose newest raspi board is raspi3b. So
+# unlike every other arch here, the qemu this port needs is a LOCAL
+# SOURCE BUILD, and the candidate list below reflects that: PATH first
+# (for a host whose distro is new enough), then the usual places a
+# hand-built qemu tree lands on this machine. Deliberately not the other
+# way round, and deliberately not by putting that build on PATH - a
+# hand-built qemu shadowing the distro one for all twelve other archs is
+# exactly the PATH hazard notes_arch_riscv64.txt warns about.
+#
+# To build one:
+#   git clone https://gitlab.com/qemu-project/qemu ~/work/TOOLCHAINS/qemu
+#   mkdir ~/work/TOOLCHAINS/qemu/build && cd $_
+#   ../configure --target-list=aarch64-softmmu --disable-docs && ninja
+# then re-run ./configure here. Anything >= 9.1 will do; verified against
+# 11.1.50 (v11.1.0-1268-g1df256f596), where forks/arm64-pi4 boots to a
+# shell and passes its own usertests - see notes_arch_arm64_pi4.txt.
+#
+# Because that qemu is a local build rather than a package, arm64-pi4 is
+# deliberately left out of the test-all/stress-test-all umbrellas and out
+# of the Dockerfile/CI matrix entirely (see the top-level Makefile's own
+# arm64-pi4 section): neither the pinned Docker image nor GitHub Actions
+# can reasonably be expected to have it.
 #
 # (Upstream developed the port against k-mrm's own qemu fork,
-# qemu-patch-raspberry4, whose board is spelled "raspi4b1g" - still the
-# default in forks/arm64-pi4/Makefile. It is not detected here: it is a
-# hand-built tree at an arbitrary path, not something on PATH. Point
-# this at it by hand with --qemu-arm64-pi4=<path>/qemu-system-aarch64
-# plus QEMUMACHINE=raspi4b1g if you have one.)
+# qemu-patch-raspberry4, whose board is spelled "raspi4b1g". Mainline
+# calls it "raspi4b" and models the 2GB board revision, which is what
+# forks/arm64-pi4/Makefile now defaults to. Point --qemu-arm64-pi4= at
+# the patched build and pass QEMUMACHINE=raspi4b1g QEMUMEM=1G if you
+# have one instead.)
 
 if ! detect_toolprefix arm64-pi4 TOOLPREFIX_ARM64_PI4 elf64-big \
         aarch64-linux-gnu- aarch64-unknown-elf- aarch64-none-elf- \
@@ -781,14 +850,19 @@ if ! detect_toolprefix arm64-pi4 TOOLPREFIX_ARM64_PI4 elf64-big \
     note_other_pkgmgr
 fi
 
-if ! detect_qemu_system arm64-pi4 QEMU_ARM64_PI4 qemu-system-aarch64 9 1; then
-    echo "configure: warning: no qemu-system-aarch64 >= 9.1 on PATH" >&2
+if ! detect_qemu_system arm64-pi4 QEMU_ARM64_PI4 qemu-system-aarch64 9 1 \
+        "$HOME/work/TOOLCHAINS/qemu/build/qemu-system-aarch64" \
+        "$HOME/src/qemu/build/qemu-system-aarch64" \
+        "$HOME/qemu/build/qemu-system-aarch64"; then
+    echo "configure: warning: no qemu-system-aarch64 >= 9.1 found" >&2
     echo "  9.1 is the first release with a Raspberry Pi 4 board (-M raspi4b)" >&2
-    echo "  at all - older ones stop at raspi3b, so there is no machine for" >&2
+    echo "  at all - older ones stop at raspi3b, so there is nothing for" >&2
     echo "  forks/arm64-pi4's kernel to boot on. 'make build-arm64-pi4' still" >&2
-    echo "  works without it; 'make run-arm64-pi4' does not." >&2
-    echo "  on Debian/Ubuntu that means a distro new enough to package it:" >&2
-    echo "    sudo apt install qemu-system-arm" >&2
+    echo "  works without it; run-/test-arm64-pi4 do not. Either install a" >&2
+    echo "  distro package new enough, or build one from source (see this" >&2
+    echo "  script's own arm64-pi4 section for the exact commands) and" >&2
+    echo "  re-run ./configure, or point it there by hand:" >&2
+    echo "    ./configure --qemu-arm64-pi4=/path/to/qemu-system-aarch64" >&2
     note_other_pkgmgr
 fi
 
@@ -909,5 +983,6 @@ echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi2's o
 echo "  or: make build-arm-pi3 && make run-arm-pi3 (boots to userinit under QEMU, all 4"
 echo "      cores; a secondary-core page-table race crashes it before reaching a shell -"
 echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi3's own Makefile)"
-echo "  or: make build-arm64-pi4 (builds; no run-arm64-pi4 on this host - needs a"
-echo "      qemu-system-aarch64 >= 9.1 for its -M raspi4b board)"
+echo "  or: make build-arm64-pi4        && make run-arm64-pi4 (needs a"
+echo "      qemu-system-aarch64 >= 9.1 for its -M raspi4b board - a local source"
+echo "      build on this host, so arm64-pi4 is left out of test-all and of CI)"

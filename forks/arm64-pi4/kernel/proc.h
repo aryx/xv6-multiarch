@@ -92,6 +92,10 @@ struct proc {
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
   int ctxid;
+  // claude: set when the kernel has written this process's user image
+  // (fork's uvmcopy, userinit's initcode) and it has not yet been
+  // I-cache-synced; cleared by scheduler() once it has. See scheduler().
+  int cachesync;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process

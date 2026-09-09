@@ -48,19 +48,27 @@ TOOLPREFIX := $(shell if aarch64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "***" 1>&2; exit 1; fi)
 endif
 
-# claude: "?=", not "=", on all four - the top-level Makefile of this repo
-# passes QEMU (and QEMUMACHINE/QEMUMEM) in from ./configure's detection
-# rather than assuming a hand-built qemu lives in the upstream author's own
-# ~/project. The defaults below are unchanged from upstream: the
-# qemu-patch-raspberry4 fork (https://github.com/k-mrm/qemu-patch-raspberry4)
-# this port was originally developed against, whose board is called
-# "raspi4b1g". Upstream QEMU gained a Pi 4 board of its own in 9.1, under
-# the name "raspi4b" - select it with "make qemu QEMUMACHINE=raspi4b", which
-# is what this repo's own "make run-arm64-pi4" does.
-QEMUPREFIX ?= ~/project/qemu-patch-raspberry4/build/
+# claude: "?=", not "=", on all four, and retargeted at MAINLINE qemu.
+#
+# Upstream hardcoded QEMUPREFIX to a qemu-patch-raspberry4 build
+# (https://github.com/k-mrm/qemu-patch-raspberry4) in the author's own
+# ~/project, and its board name "raspi4b1g" with "-m 1G". Mainline qemu
+# has had a Raspberry Pi 4 board since 9.1 under the name "raspi4b", and
+# models the 2GB board revision (0xb03115, hw/arm/raspi4b.c) - a raspi
+# machine rejects a -m that does not match its revision, so the two go
+# together. Verified booting to a shell and passing usertests on mainline
+# 11.1.50; see docs/claude_notes/notes_arch_arm64_pi4.txt.
+#
+# So the defaults now describe the configuration that actually works with
+# a stock qemu, and the patched fork is the thing you opt into:
+#   make qemu QEMUPREFIX=<path>/qemu-patch-raspberry4/build/ \
+#             QEMUMACHINE=raspi4b1g QEMUMEM=1G
+# This repo's top-level "make run-arm64-pi4"/"make test-arm64-pi4" pass
+# QEMU explicitly, from whatever ./configure detected.
+QEMUPREFIX ?=
 QEMU ?= $(QEMUPREFIX)qemu-system-aarch64
-QEMUMACHINE ?= raspi4b1g
-QEMUMEM ?= 1G
+QEMUMACHINE ?= raspi4b
+QEMUMEM ?= 2G
 
 CC = $(TOOLPREFIX)gcc
 AS = $(TOOLPREFIX)gas

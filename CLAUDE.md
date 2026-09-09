@@ -48,24 +48,52 @@ Two sequential efforts, in order:
    every `-all` umbrella, plus a Dockerfile case and a CI matrix entry.
    See `notes_arch_arm_pi3.txt`'s own Bug 14/Bug 15, and
    `notes_debugging_techniques.txt` item 38 for the methodology lesson
-   (read the boot ORDER before analysing the crash). `arm64-pi4` is now wired up
-   **build-only** - the only arch here that is - and builds clean
-   (`make build-arm64-pi4` produces both `kernel/kernel` and the
-   real-hardware `kernel8.img`): two narrow `-Wno-` flags for
-   modern-GCC false positives, plus a real fix replacing its
-   `-DRPI4_QEMU` compile-time switch with a runtime `CurrentEL` check,
-   so one `kernel8.img` is now correct on both a real Pi 4 (entered at
-   EL2 by the firmware's armstub) and under QEMU (entered at EL3), per
-   the "prefer runtime detection over `#ifdef`" rule below. It has
-   never been booted: QEMU only gained a Pi 4 board (`-M raspi4b`) in
-   9.1 and this host is still on 8.2.2 as of 2026-09-09, so
-   `run-arm64-pi4` exists but refuses with that explanation, and there
-   is deliberately no `test-arm64-pi4`/`test-xv6.py` and no CI entry
-   yet. See `notes_arch_arm64_pi4.txt`'s own "Open gap" for the two
-   unverified guesses (machine name, `-m` size) to settle first the day
-   a newer QEMU lands. See "Adding a new arch" below for the recipe,
-   and `docs/claude_notes/notes_arch_*.txt` for what's been verified
-   about each arch so far.
+   (read the boot ORDER before analysing the crash). `arm64-pi4` is **done**
+   too, as of 2026-09-09: a real interactive shell under QEMU on all 4
+   cores and a full, unmodified `usertests` run reporting **"ALL TESTS
+   PASSED"** (245s, nothing skipped - including `preempt()`, which
+   `arm`, `mips` and `arm-pi2` each skipped rather than root-caused).
+   Four real bugs found and fixed, plus two modern-GCC false
+   positives: (1) its `-DRPI4_QEMU` compile-time switch
+   replaced by a runtime `CurrentEL` check, so one `kernel8.img` is now
+   correct both on a real Pi 4 (entered at EL2 by the firmware's
+   armstub) and under QEMU (entered at EL3), per the "prefer runtime
+   detection over `#ifdef`" rule below - upstream's README used to tell
+   you to hand-edit the Makefile before building for the board;
+   (2) `TCR_TBI0`, which enabled Top Byte Ignore for user addresses and
+   so aliased 2^8 user pointers onto every page (`0xff00000000000000`
+   landed on user VA 0 instead of faulting) and undermined the kernel's
+   own `va >= MAXVA` checks - caught by `usertests`' `MAXVAplus`;
+   (3) the virtual-timer PPI enabled on CPU0 only, because GICv2 banks
+   `ISENABLER0`/`ICPENDR0`/`IPRIORITYR` per CPU interface for INTIDs
+   0-31 - cores 1-3 ran with no timer, so a spinning user process was
+   never preempted and `kill()`ed spinners never died (measured: 108/0/
+   0/0 IRQs per CPU before, 382/351/351/350 after). Worth knowing that
+   the same `preempt()` hang was independently hit and skipped, never
+   root-caused, in `arm`, `mips` and `arm-pi2`. And (4) - unmasked by
+   (3), which is the useful kind of regression - `scheduler()` flushed
+   the process's **entire** address space (`dc cvau`/`ic ivau` per page,
+   O(`p->sz`)) on *every* context switch while holding `p->lock`, which
+   only survived as long as secondary cores almost never rescheduled;
+   `usertests`' `countfree()` grows a child to ~100MB and the system
+   stopped making progress entirely (gdb: CPU0 in `entry.S`'s `cdc`
+   loop, CPU1-3 all in `acquire()`, all from `scheduler()`). The sync is
+   genuinely needed on real hardware, so it is now done once per image
+   change via a `p->cachesync` flag set by `fork()`/`userinit()`
+   (`exec()` already had its own inline sync), not once per timeslice.
+
+   The catch is the emulator, not the port: QEMU only gained a
+   Raspberry Pi 4 board (`-M raspi4b`, 2GB revision `0xb03115`) in 9.1
+   and this Ubuntu packages 8.2.2, so the working binary is a **local
+   source build** (11.1.50 here; `./configure` looks for a >= 9.1
+   `qemu-system-aarch64` on PATH and then in a few well-known local
+   build locations, deliberately without putting it on PATH). Because
+   of that, `arm64-pi4` has the full
+   `build`/`run`/`test`/`quick-test`/`clean`/`kill` set but is
+   **deliberately absent from every `-all` umbrella and from the
+   Dockerfile and CI matrix** - Docker and GitHub Actions take their
+   QEMU from a distro package and cannot be expected to have this one.
+   See `notes_arch_arm64_pi4.txt`.
 
    Beyond Phase 4's own "build and boot" bar: `arm-pi1` was taken all
    the way to a genuinely interactive shell under QEMU, with a real

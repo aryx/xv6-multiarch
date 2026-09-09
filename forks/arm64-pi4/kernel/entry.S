@@ -232,10 +232,32 @@ entryothers:  // secondary CPU starts here
         isb
 
         // setup tcr
+        // claude: TCR_TBI0 was here and is deliberately gone - it enabled
+        // Top Byte Ignore for TTBR0, i.e. the MMU ignores bits [63:56] of
+        // every USER virtual address. That silently aliases 2^8 distinct
+        // user pointers onto each mapped page: a write to 0xff00000000000000
+        // lands on user VA 0 (the program's own text, mapped PTE_U = AP(01),
+        // writable from EL0) instead of faulting. usertests' MAXVAplus
+        // catches it exactly there - it walks a = MAXVA, a <<= 1 expecting
+        // the kernel to kill each child, and the first value with bit 55
+        // clear (0xff00000000000000, so TTBR0 rather than TTBR1) writes
+        // successfully: "MAXVAplus: oops wrote 0". It also breaks the
+        // kernel's own "va >= MAXVA" argument checks in vm.c's walk(),
+        // which test the raw 64-bit value the MMU is being told to ignore
+        // the top byte of. Not a QEMU artifact: TBI is architectural and a
+        // real Cortex-A72 behaves identically. forks/arm64, this port's own
+        // upstream parent, never set it.
+        //
+        // TCR_AS stays: this port really does use ASIDs, and puts them at
+        // bits 63:48 of TTBR0 (vm.c's "ttbr0 = V2P(p->pagetable) |
+        // (asid << 48)"), which is the 16-bit ASID field TCR_AS selects.
+        // With AS=0 that field is only 8 bits wide and bits 63:56 are RES0,
+        // so dropping it too would corrupt TTBR0 as soon as asid_gen passed
+        // 255.
         ldr x0, =(TCR_T0SZ(25)|TCR_T1SZ(25)|TCR_TG0(0)|TCR_TG1(2)|TCR_IPS(0)| \
                   TCR_IRGN0(1)|TCR_ORGN0(1)|TCR_SH0(3)| \
                   TCR_IRGN1(1)|TCR_ORGN1(1)|TCR_SH1(3)| \
-                  TCR_AS|TCR_TBI0)
+                  TCR_AS)
         msr tcr_el1, x0
 
         // setup mair

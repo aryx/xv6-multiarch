@@ -195,6 +195,9 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  // claude: uvminit() just copied initcode[] into a fresh page; sync it
+  // before the very first user instruction runs. See scheduler().
+  p->cachesync = 1;
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -265,6 +268,10 @@ fork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
+  // claude: uvmcopy() above memmove'd the parent's pages - text
+  // included - into fresh physical pages, so the child's image needs an
+  // I-cache sync before it first executes. See scheduler().
+  np->cachesync = 1;
   np->state = RUNNABLE;
   release(&np->lock);
 
@@ -411,8 +418,40 @@ scheduler(void)
 
         switchuvm(p);
 
-        for(uint64 i = 0; i < p->sz; i += PGSIZE)
-          cpu_sync_cache((void *)i, PGSIZE);
+        // claude: this used to run unconditionally, on every single
+        // context switch - an O(p->sz) walk issuing "dc cvau"/"ic ivau"
+        // for every page of the process's address space, with p->lock
+        // held throughout. For a process that has sbrk'd its way up to
+        // ~100MB (usertests' countfree() does exactly that) it is
+        // millions of cache ops per timeslice under TCG, and the other
+        // three cores sit spinning in acquire() for the whole of it.
+        // The system stops making forward progress: gdb showed CPU0
+        // inside entry.S's "cdc" loop from here and CPU1-3 all parked
+        // in acquire() from scheduler().
+        //
+        // It was survivable only for as long as secondary cores had no
+        // timer interrupt and so almost never rescheduled - i.e. it was
+        // hidden by the GIC bug fixed in gicv2.c, and surfaced the
+        // moment that was fixed.
+        //
+        // The sync itself is still needed on real hardware: this is the
+        // "the kernel wrote memory that is about to be executed" I-cache
+        // maintenance, and a Pi 4's caches are real, unlike the QEMU
+        // "virt" machine forks/arm64 targets (whose scheduler has no
+        // such loop at all). But it only has to happen when the image
+        // actually changed, not once per timeslice. exec() already does
+        // its own inline sync over the image it just loaded; the two
+        // remaining producers are fork()'s uvmcopy() and userinit()'s
+        // initcode, both of which now set p->cachesync and get flushed
+        // here, once, before the process first runs. Deliberately NOT
+        // set on sbrk growth: those pages come from kalloc() zeroed and
+        // are never executed, and flagging them would reintroduce the
+        // exact quadratic behaviour (countfree() sbrk's ~25000 times).
+        if(p->cachesync){
+          for(uint64 i = 0; i < p->sz; i += PGSIZE)
+            cpu_sync_cache((void *)i, PGSIZE);
+          p->cachesync = 0;
+        }
 
         swtch(&c->context, &p->context);
 
