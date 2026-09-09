@@ -78,6 +78,43 @@
 # upstream-repo name. See docs/provenance.md for the upstream-repo ->
 # current-forks-path mapping table.
 
+# claude: "default" (below) is the first real TARGET RULE in this file
+# (everything above it is comments/blank lines - variable assignments
+# don't count), so it's already Make's own implicit default goal; the
+# explicit ".DEFAULT_GOAL := default" just makes that robust against a
+# future edit reordering things, rather than relying on position alone.
+# Before this, a bare "make" silently ran "check-riscv64-toolchain"
+# (the first rule in the OLD file layout) with no output at all - not
+# useful, and not what anyone typing plain "make" actually wanted.
+.DEFAULT_GOAL := default
+
+default:
+	@echo "xv6-multiarch - build and test every wired-up port"
+	@echo ""
+	@echo "  ./configure       detect each arch's toolchain + qemu-system-* (run this first)"
+	@echo "  make all              build every wired-up arch"
+	@echo "  make test-all         quick: boot headless + assert a shell prompt, every arch (~1 min)"
+	@echo "  make stress-test-all  slow: boot headless + assert ALL TESTS PASSED (full usertests),"
+	@echo "                        every arch - real signal, but ~25 min on this host"
+	@echo "  make clean-all        remove every arch's build output"
+	@echo "  make kill-all         clean up any orphaned qemu-system-* left running"
+	@echo ""
+	@echo "  make build-<arch>        build one arch (riscv64, i386, amd64, amd64-jserv, riscv32,"
+	@echo "                           arm64, mips, loongarch, arm, arm-pi1, arm-pi1-bis)"
+	@echo "  make run-<arch>          build + boot that arch interactively (-nographic; Ctrl-A X to quit)"
+	@echo "  make quick-test-<arch>   build + boot headless + assert a shell prompt, that arch"
+	@echo "  make test-<arch>         build + boot headless + assert ALL TESTS PASSED, that arch"
+	@echo ""
+	@echo "  make run-<arch>-qemu-graphics   real GTK window + keyboard instead of -nographic"
+	@echo "                                  (i386, amd64, amd64-jserv, arm-pi1, arm-pi1-bis)"
+	@echo "  make test-all-graphics          regression test for those five (needs \$$DISPLAY) - see scripts/README.md"
+	@echo ""
+	@echo "  make build-docker [ARCH=<arch>]   same, inside the pinned Dockerfile (default: all)"
+	@if [ ! -f Makefile.config ]; then \
+		echo ""; \
+		echo "No Makefile.config yet - run ./configure first."; \
+	fi
+
 -include Makefile.config
 
 TOOLPREFIX_RISCV64 ?=
@@ -119,20 +156,21 @@ QMP_SOCK ?=
 comma := ,
 QMP_QEMUEXTRA := $(if $(QMP_SOCK),-qmp unix:$(QMP_SOCK)$(comma)server$(comma)nowait)
 
-.PHONY: build-riscv64 run-riscv64 test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
-        build-i386 run-i386 run-i386-qemu-graphics test-i386 clean-i386 kill-i386 check-i386-toolchain \
-        build-amd64-jserv run-amd64-jserv run-amd64-jserv-qemu-graphics test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
-        build-amd64 run-amd64 run-amd64-qemu-graphics test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
-        build-riscv32 run-riscv32 test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
-        build-arm64 run-arm64 test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
-        build-mips run-mips test-mips clean-mips kill-mips check-mips-toolchain \
-        build-loongarch run-loongarch test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
-        build-arm-pi1-bis run-arm-pi1-bis run-arm-pi1-bis-qemu-graphics test-arm-pi1-bis clean-arm-pi1-bis kill-arm-pi1-bis check-arm-pi1-bis-toolchain \
-        build-arm run-arm test-arm clean-arm kill-arm check-arm-toolchain \
-        build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
+.PHONY: build-riscv64 run-riscv64 test-riscv64 quick-test-riscv64 clean-riscv64 kill-riscv64 check-riscv64-toolchain \
+        build-i386 run-i386 run-i386-qemu-graphics test-i386 quick-test-i386 clean-i386 kill-i386 check-i386-toolchain \
+        build-amd64-jserv run-amd64-jserv run-amd64-jserv-qemu-graphics test-amd64-jserv quick-test-amd64-jserv clean-amd64-jserv kill-amd64-jserv check-amd64-jserv-toolchain \
+        build-amd64 run-amd64 run-amd64-qemu-graphics test-amd64 quick-test-amd64 clean-amd64 kill-amd64 check-amd64-toolchain \
+        build-riscv32 run-riscv32 test-riscv32 quick-test-riscv32 clean-riscv32 kill-riscv32 check-riscv32-toolchain \
+        build-arm64 run-arm64 test-arm64 quick-test-arm64 clean-arm64 kill-arm64 check-arm64-toolchain \
+        build-mips run-mips test-mips quick-test-mips clean-mips kill-mips check-mips-toolchain \
+        build-loongarch run-loongarch test-loongarch quick-test-loongarch clean-loongarch kill-loongarch check-loongarch-toolchain \
+        build-arm-pi1-bis run-arm-pi1-bis run-arm-pi1-bis-qemu-graphics test-arm-pi1-bis quick-test-arm-pi1-bis clean-arm-pi1-bis kill-arm-pi1-bis check-arm-pi1-bis-toolchain \
+        build-arm run-arm test-arm quick-test-arm clean-arm kill-arm check-arm-toolchain \
+        build-arm-pi1 run-arm-pi1 run-arm-pi1-qemu-graphics test-arm-pi1 quick-test-arm-pi1 clean-arm-pi1 kill-arm-pi1 check-arm-pi1-toolchain \
         build-arm-pi2 run-arm-pi2 check-arm-pi2-toolchain \
         build-arm-pi3 run-arm-pi3 check-arm-pi3-toolchain \
-        build-all test-all clean-all kill-all build-docker
+        build-all test-all stress-test-all clean-all kill-all test-all-graphics build-docker \
+        default all clean
 
 ###############################################################################
 # riscv64 (forks/riscv64, RV64GC - MIT's current xv6-riscv)
@@ -167,6 +205,11 @@ run-riscv64: check-riscv64-toolchain
 # default.
 test-riscv64: check-riscv64-toolchain build-riscv64
 	cd forks/riscv64 && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py usertests
+
+# claude: fast smoke check (boots to a shell, no usertests) - see
+# "make test-all"'s own header comment on the quick/stress split.
+quick-test-riscv64: check-riscv64-toolchain build-riscv64
+	cd forks/riscv64 && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py boot
 
 clean-riscv64:
 	$(MAKE) -C forks/riscv64 clean
@@ -212,6 +255,9 @@ run-i386-qemu-graphics: check-i386-toolchain
 # Makefile's own "QEMU = ..." auto-detect has no ifndef guard either).
 test-i386: check-i386-toolchain build-i386
 	cd forks/i386 && TOOLPREFIX=$(TOOLPREFIX_I386) ./test-xv6.py
+
+quick-test-i386: check-i386-toolchain build-i386
+	cd forks/i386 && TOOLPREFIX=$(TOOLPREFIX_I386) ./test-xv6.py boot
 
 clean-i386:
 	$(MAKE) -C forks/i386 clean
@@ -278,6 +324,9 @@ run-amd64-jserv-qemu-graphics: check-amd64-jserv-toolchain
 test-amd64-jserv: check-amd64-jserv-toolchain build-amd64-jserv
 	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 ./test-xv6.py
 
+quick-test-amd64-jserv: check-amd64-jserv-toolchain build-amd64-jserv
+	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 ./test-xv6.py boot
+
 clean-amd64-jserv:
 	$(MAKE) -C forks/amd64-jserv clean
 
@@ -316,6 +365,9 @@ run-amd64-qemu-graphics: check-amd64-toolchain
 test-amd64: check-amd64-toolchain build-amd64
 	cd forks/amd64 && TOOLPREFIX=$(TOOLPREFIX_AMD64) ./test-xv6.py
 
+quick-test-amd64: check-amd64-toolchain build-amd64
+	cd forks/amd64 && TOOLPREFIX=$(TOOLPREFIX_AMD64) ./test-xv6.py boot
+
 clean-amd64:
 	$(MAKE) -C forks/amd64 clean
 
@@ -346,6 +398,9 @@ run-riscv32: check-riscv32-toolchain
 # own "QEMU = qemu-system-riscv32 -monitor ..." has no ifndef guard either).
 test-riscv32: check-riscv32-toolchain build-riscv32
 	cd forks/riscv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py
+
+quick-test-riscv32: check-riscv32-toolchain build-riscv32
+	cd forks/riscv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py boot
 
 clean-riscv32:
 	$(MAKE) -C forks/riscv32 clean
@@ -380,6 +435,9 @@ run-arm64: check-arm64-toolchain
 # guard either).
 test-arm64: check-arm64-toolchain build-arm64
 	cd forks/arm64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
+
+quick-test-arm64: check-arm64-toolchain build-arm64
+	cd forks/arm64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py boot
 
 clean-arm64:
 	$(MAKE) -C forks/arm64 clean
@@ -418,6 +476,9 @@ run-mips: check-mips-toolchain
 
 test-mips: check-mips-toolchain build-mips
 	cd forks/mips && TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) ./test-xv6.py
+
+quick-test-mips: check-mips-toolchain build-mips
+	cd forks/mips && TOOLPREFIX=$(TOOLPREFIX_MIPS) QEMU=$(QEMU_MIPS) ./test-xv6.py boot
 
 clean-mips:
 	$(MAKE) -C forks/mips clean
@@ -459,6 +520,9 @@ run-loongarch: check-loongarch-toolchain
 # overwritten by the file's default.
 test-loongarch: check-loongarch-toolchain
 	cd forks/loongarch && TOOLPREFIX=$(TOOLPREFIX_LOONGARCH) CC=$(CC_LOONGARCH) QEMU=$(QEMU_LOONGARCH) ./test-xv6.py
+
+quick-test-loongarch: check-loongarch-toolchain
+	cd forks/loongarch && TOOLPREFIX=$(TOOLPREFIX_LOONGARCH) CC=$(CC_LOONGARCH) QEMU=$(QEMU_LOONGARCH) ./test-xv6.py boot
 
 clean-loongarch:
 	$(MAKE) -C forks/loongarch clean
@@ -516,6 +580,9 @@ run-arm-pi1-bis-qemu-graphics: check-arm-pi1-bis-toolchain
 test-arm-pi1-bis: check-arm-pi1-bis-toolchain
 	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) ./test-xv6.py
 
+quick-test-arm-pi1-bis: check-arm-pi1-bis-toolchain
+	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) ./test-xv6.py boot
+
 clean-arm-pi1-bis:
 	$(MAKE) -C forks/arm-pi1-bis clean
 
@@ -556,6 +623,9 @@ run-arm: check-arm-toolchain
 
 test-arm: check-arm-toolchain
 	cd forks/arm && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py
+
+quick-test-arm: check-arm-toolchain
+	cd forks/arm && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py boot
 
 clean-arm:
 	$(MAKE) -C forks/arm clean
@@ -614,6 +684,9 @@ run-arm-pi1-qemu-graphics: check-arm-pi1-toolchain
 
 test-arm-pi1: check-arm-pi1-toolchain
 	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py
+
+quick-test-arm-pi1: check-arm-pi1-toolchain
+	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py boot
 
 clean-arm-pi1:
 	$(MAKE) -C forks/arm-pi1 clean
@@ -694,11 +767,43 @@ run-arm-pi3: check-arm-pi3-toolchain
 
 build-all: build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm64 build-loongarch build-arm build-arm-pi1 build-arm-pi1-bis build-mips
 
-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-arm-pi1-bis test-mips
+# claude: "test-all" is the quick/boot-only umbrella (~1 min combined,
+# each arch just booting to a shell - see each fork's own test-xv6.py
+# "boot" mode) so it stays cheap enough to run on every change. The full
+# usertests suite per arch is real signal but genuinely slow end to end
+# (a verified run of the old test-all - now stress-test-all - took
+# 24m34s on this host, dominated by TCG-emulated archs like mips/
+# loongarch/arm running usertests' full syscall-heavy suite) - run
+# "make stress-test-all" for that, or "make stress-test-<arch>" /
+# "make test-<arch>" for one arch's own full run (that single-arch name
+# keeps its pre-existing meaning: full usertests, unchanged, since
+# .github/workflows/docker.yml's Dockerfile calls it by that exact name
+# and CLAUDE.md's "Testing conventions" documents it that way).
+test-all: quick-test-riscv64 quick-test-i386 quick-test-amd64-jserv quick-test-amd64 quick-test-riscv32 quick-test-arm64 quick-test-loongarch quick-test-arm quick-test-arm-pi1 quick-test-arm-pi1-bis quick-test-mips
+
+stress-test-all: test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm64 test-loongarch test-arm test-arm-pi1 test-arm-pi1-bis test-mips
 
 clean-all: clean-riscv64 clean-i386 clean-amd64-jserv clean-amd64 clean-riscv32 clean-arm64 clean-loongarch clean-arm clean-arm-pi1 clean-arm-pi1-bis clean-mips
 
 kill-all: kill-riscv64 kill-i386 kill-amd64-jserv kill-amd64 kill-riscv32 kill-arm64 kill-loongarch kill-arm kill-arm-pi1 kill-arm-pi1-bis kill-mips
+
+# claude: opens a real GTK window per arch (see scripts/README.md) - needs
+# $DISPLAY, so it's separate from test-all rather than folded into it.
+test-all-graphics:
+	python3 scripts/test_qemu_graphics.py
+
+# claude: bare "all"/"clean" aliases for build-all/clean-all - the
+# conventional Make entry-point names, requested alongside "default"
+# below since a bare "make" previously ran "check-riscv64-toolchain"
+# (Make's own "first rule in the file wins" default-goal rule) with no
+# output at all. "test"/"kill" deliberately do NOT get bare aliases -
+# every "test-<arch>" throughout this Makefile already omits the plain
+# "test" form (there's no ambiguity to resolve the way "all"/"clean"
+# had with "build-all"/"clean-all"), so only add one where a real,
+# already-existing target name split motivated it.
+all: build-all
+
+clean: clean-all
 
 # Builds and runs the build-<arch>/test-<arch> pipeline inside the
 # reproducible image the Dockerfile pins - see that file's own header

@@ -16,17 +16,18 @@ else in this repo tests automatically. See
 screendump techniques this borrows from.
 
 ```sh
-python3 scripts/test_qemu_graphics.py               # all 5 ports
+make test-all-graphics                               # all 5 ports, via the top-level Makefile
+python3 scripts/test_qemu_graphics.py               # same thing, direct
 python3 scripts/test_qemu_graphics.py i386 arm-pi1   # a subset
 python3 scripts/test_qemu_graphics.py --list
 python3 scripts/test_qemu_graphics.py --keep-artifacts   # keep screendumps in /tmp for inspection
 ```
 
 Requires a real `$DISPLAY` (a GTK window actually opens - same
-requirement as `make run-<arch>-qemu-graphics` itself). Not wired into
-`make test-all`/CI - nothing headless can assert against a real window;
-run it by hand after touching a graphics/console/keyboard code path in
-one of these five ports.
+requirement as `make run-<arch>-qemu-graphics` itself). Deliberately
+separate from `make test-all`/CI - nothing headless can assert against a
+real window; run `make test-all-graphics` by hand after touching a
+graphics/console/keyboard code path in one of these five ports.
 
 `qemu_graphics.py` is a library, not a script - a QMP client
 (`send_key`/`type_text`/`screendump`) and P6 PPM helpers

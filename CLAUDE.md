@@ -69,10 +69,16 @@ re-litigate by accident otherwise.
 make build-riscv64    # build one arch
 make run-riscv64      # build + boot interactively (-nographic; see below
                       # for how to exit)
+make quick-test-riscv64   # build + boot headless + assert a shell prompt
+                          # (fast smoke check, no usertests)
 make test-riscv64     # build + boot headless + run that port's own
                       # usertests suite, assert "ALL TESTS PASSED"
-make build-all / test-all / clean-all / kill-all   # same, across every
-                      # wired-up arch
+make build-all / test-all / stress-test-all / clean-all / kill-all
+                      # same, across every wired-up arch - "test-all" is
+                      # the quick_test-<arch> form (~1 min total);
+                      # "stress-test-all" is the full test-<arch> form
+                      # (~25 min on this host - real signal, but too slow
+                      # for every iteration)
 make build-docker [ARCH=riscv64]   # same, inside the pinned Dockerfile -
                       # ARCH defaults to "all"
 ```
@@ -223,7 +229,22 @@ PASSED" is produced differently in different ports - a direct `printf` in
 some, an `exec("echo", ...)` trick in others). A benign trap/fault message
 appearing mid-suite (a test deliberately provoking one to verify the
 kernel handles it) is not a regression - check the relevant
-`notes_arch_*.txt` before assuming otherwise.
+`notes_arch_*.txt` before assuming otherwise. `test-<arch>`'s own meaning
+is unchanged by the quick/stress split below - a single arch's `test-<arch>`
+still means the full run, matching what `.github/workflows/docker.yml`'s
+Dockerfile calls directly and what CI depends on.
+
+**Quick vs. stress, at the `-all` umbrella level only** (2026-09-09): a
+full `stress-test-all` run (every arch's own `test-<arch>`, full
+usertests) took 24m34s on this host - too slow to run on every change, so
+`test-all` was repointed at each arch's own `quick-test-<arch>` instead (a
+fast boot-to-shell-prompt smoke check, ~1 min total; see each fork's own
+`test-xv6.py`'s `test_boot()`/`"boot"` CLI mode). `stress-test-all` keeps
+the old, full-coverage `test-all` behavior under its own name. Reach for
+`test-all`/`quick-test-<arch>` while iterating; run `stress-test-all` (or
+a single arch's own `test-<arch>`) before trusting a change is actually
+correct - the quick check only proves the kernel boots, not that syscalls
+behave.
 
 ## Other docs in the tree
 

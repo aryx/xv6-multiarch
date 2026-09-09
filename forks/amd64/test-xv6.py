@@ -99,5 +99,23 @@ def test_usertests():
         q.kill()
 
 
+# claude: fast smoke check for "make quick-test-<arch>"/"make test-all" -
+# just asserts the kernel boots to an interactive shell, skipping the
+# (much slower, often TCG-emulation-bound) usertests run below. See
+# "make stress-test-<arch>"/"make stress-test-all" for the full check.
+def test_boot():
+    q = QEMU()
+    try:
+        if not q.wait_for(r"init: starting sh", r"^\$", timeout=60):
+            print("ERROR: xv6 did not boot to a shell within 60s")
+            sys.exit(1)
+        print("boot: reached shell prompt")
+    finally:
+        q.kill()
+
+
 if __name__ == "__main__":
-    test_usertests()
+    if len(sys.argv) > 1 and sys.argv[1] == "boot":
+        test_boot()
+    else:
+        test_usertests()

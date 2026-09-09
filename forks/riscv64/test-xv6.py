@@ -7,6 +7,7 @@
 # ./test-xv6.py -q usertests (runs the quick tests of usertests)
 # ./test-xv6.py crash  (runs the crash tests)
 # ./test-xv6.py log (runs the log crash test)
+# ./test-xv6.py boot (fast: just boots to a shell prompt, no usertests)
 
 import argparse, os, inspect, re, signal, subprocess, sys, time
 from subprocess import run
@@ -193,6 +194,15 @@ def test_crash():
     test_log()
     test_forphan()
     test_dorphan()
+
+# claude: fast smoke check for "make quick-test-riscv64"/"make test-all" -
+# just asserts the kernel boots to an interactive shell, skipping the
+# (much slower) usertests run. "make stress-test-riscv64" still gets the
+# full check via test_usertests() below.
+def test_boot():
+    q = QEMU(True)
+    q.monitor(r'^\$', timeout=60)
+    q.stop()
 
 def test_usertests(test=""):
     timeout = 600
