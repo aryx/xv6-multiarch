@@ -81,9 +81,21 @@ void tvinit(void)
 	ptr = kalloc();
 	memset(ptr, 0, PGSIZE);
 	set_mode_sp(ptr+4096, 0xD7);/*  abort mode, fiq and irq are disabled */
-	ptr = kalloc();
-	memset(ptr, 0, PGSIZE);
-	set_mode_sp(ptr+4096, 0xD6);/* secure monitor mode, fiq and irq are disabled */
+	// claude: no monitor-mode set_mode_sp() call here (there used to be
+	// one, 0xD6) - Monitor is a Secure-world-only CPU mode (ARMv7
+	// Security Extensions), and this kernel runs Non-Secure (SCR.NS=1,
+	// confirmed via gdb - the standard state both QEMU's raspi2b model
+	// and real modern Pi firmware hand the ARM core off in). Writing
+	// CPSR's mode field to Monitor from Non-Secure state is CONSTRAINED
+	// UNPREDICTABLE per the ARM architecture reference; empirically,
+	// under QEMU this actually redirected execution to address 0
+	// ("unexpected trap 2 ... ifar 0" - a Prefetch Abort fetching from
+	// address 0) the first time any real exception got routed through
+	// the newly-installed vector table this same function just set up
+	// a few lines above. Nothing else in this kernel enters or uses
+	// Monitor mode (grep confirms this was the only reference) - not a
+	// real-hardware capability being removed, just dead, actively
+	// harmful setup for a mode this kernel never uses.
 	ptr = kalloc();
 	memset(ptr, 0, PGSIZE);
 	set_mode_sp(ptr+4096, 0xDF);/* system mode, fiq and irq are disabled */
@@ -115,6 +127,9 @@ cprintf("More registers: r6: %x, r7: %x, r8: %x, r9: %x, r10: %x, r11: %x, r12: 
 		timer3intr();
 	    }
 	    if(ip->gpupending[0] & (1 << 29)) {
+		miniuartintr();
+	    }
+	    if(ip->gpupending[1] & (1 << 25)) { // UART0/PL011 (IRQ 57) - see uart.c's own enableirqminiuart()
 		miniuartintr();
 	    }
 	}
@@ -152,6 +167,9 @@ trap(struct trapframe *tf)
 		timer3intr();
 	    }
 	    if(ip->gpupending[0] & (1 << IRQ_MINIUART)) {
+		miniuartintr();
+	    }
+	    if(ip->gpupending[1] & (1 << 25)) { // UART0/PL011 (IRQ 57)
 		miniuartintr();
 	    }
 	}

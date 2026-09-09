@@ -31,8 +31,9 @@ ifeq ($(hw), fvp)
 	# ARM<->Thumb interworking, so the C side must stay ARM too. See
 	# the rpi2 block's own longer comment below for the full story
 	# (found via QEMU/gdb; this fvp block's own bug is untested but
-	# shares the identical root cause).
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -ggdb -Wall -marm -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
+	# shares the identical root cause). -fno-pic -fno-pie added for the
+	# same reason, also documented at length in the rpi2 block below.
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
 	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
@@ -46,8 +47,11 @@ else ifeq ($(hw), rpi1)
 	MMIO_SIZE = 0x01000000
 	PERIPHBASE= 0xDF000000
 	#CFLAGS   = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
-	# claude: -marm added, same reason as the fvp block above.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -marm -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
+	# claude: -marm added, same reason as the fvp block above. Also
+	# restored "-fno-pic" from the commented-out alternate CFLAGS line
+	# right above (plus "-fno-pie", same reason) - see the rpi2 block's
+	# own long comment below for why an active kernel build needs both.
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -82,7 +86,39 @@ else ifeq ($(hw), rpi2)
 	# asm-to-C call site with "blx") is a straightforward, safe fix for
 	# both targets, matching how forks/arm-pi1's own toolchain already
 	# defaults to (or is pinned to) ARM mode.
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -marm -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I include
+	#
+	# claude: -fno-pic -fno-pie added too - a separate bug from the
+	# Thumb one above, found while chasing a later "popcli" kernel
+	# panic (see notes_arch_arm_pi2.txt's own "Bug/gap 7", now Bug 8).
+	# This toolchain defaults to PIC/PIE codegen for ordinary C code:
+	# every global-variable access (not just this fork's own "cpus[]")
+	# compiled as a double-indirect load through a GOT-style table -
+	# "ldr r6, [pc, #N]; add r6, pc, r6; ldr r3, [pc, #M]; ldr r6, [r6,
+	# r3]" (confirmed via "objdump -d" on acquire()'s own compiled
+	# code) - instead of a direct absolute-address load. GOT-indirect
+	# addressing assumes a dynamic loader populates that table at
+	# startup; this bare-metal kernel has no loader and never
+	# populates any GOT, so every such access silently reads/writes
+	# through whatever garbage happens to occupy that memory instead
+	# of the real variable - here, "curr_cpu->ncli" (spinlock.c's own
+	# pushcli/popcli nesting counter) always read back 0 no matter how
+	# many times pushcli() had incremented it, since pushcli() and
+	# popcli() were two independently-broken GOT lookups that just
+	# happened to each resolve to SOME zeroed memory rather than the
+	# real, same cpus[0].ncli field - popcli()'s own underflow check
+	# ("if(--curr_cpu->ncli < 0) panic("popcli")") then fired on the
+	# very first release() call. "-fno-pic -fno-pie" restores direct
+	# "movw/movt" absolute addressing (confirmed via the same objdump
+	# comparison) - notably, forks/arm-pi2's own commented-out
+	# alternate CFLAGS line in the rpi1 block above already had
+	# "-fno-pic" in it, evidence the original author hit this same
+	# class of bug at some point; it just wasn't in the ACTIVE CFLAGS
+	# line any of the three hw= blocks actually build with. A real
+	# ISA/ABI-correctness bug affecting every global variable in the
+	# kernel, not a QEMU quirk - real hardware would behave identically
+	# (or worse: whatever happened to be in that unpopulated GOT-shaped
+	# memory on real silicon is not guaranteed to even be zero).
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I include
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2
 else

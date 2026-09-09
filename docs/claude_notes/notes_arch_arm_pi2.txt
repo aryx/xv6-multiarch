@@ -2,21 +2,24 @@ notes_arch_arm_pi2.txt
 ======================
 
 STATUS UPDATE (2026-09-09, session 2): the "genuinely unresolved crash"
-this file originally ended on turned out to be FOUR separate, real,
-fully-diagnosed bugs, not one - all four found and fixed via gdb (QEMU's
-own gdbstub, "-s -S", one vCPU per gdb "thread") rather than trace-log
-guessing, since a "jump to an address with no corresponding symbol at
-all" is exactly the kind of thing trace logs can't explain but a live
-debugger can. The port now builds, boots, prints real console output
-("Hello World from xv6"), and runs deep into cmain() before hitting a
-NEW, cleanly-diagnosed panic (see "Bug/gap 7" below) - real, substantial
-progress, but still not a booting shell, so build-arm-pi2/run-arm-pi2
-stay build-only/interactive-only in the top-level Makefile for now (no
-test-arm-pi2/clean-arm-pi2/kill-arm-pi2 yet), same caveat the original
-2026-09-07 text below already stated. See "Bugs 3-6" and "Bug/gap 7"
-below for the session 2 findings; the original 2026-09-07 text
-(preserved below, now superseded) still accurately describes Bug 1/2's
-own history.
+this file originally ended on turned out to be SEVEN separate, real,
+fully-diagnosed bugs, not one - all seven found and fixed via gdb
+(QEMU's own gdbstub, "-s -S", one vCPU per gdb "thread") rather than
+trace-log guessing, since "jump to an address with no corresponding
+symbol at all" is exactly the kind of thing trace logs can't explain
+but a live debugger can. **The port now boots all the way to a real,
+interactive `$` shell prompt and runs a genuine `usertests` invocation
+deep into the suite** (many real sub-tests passing: open/small-file/
+big-files/many-creates/unlink/validate/...) - the furthest this port has
+ever been verified working under QEMU. One new, NOT yet diagnosed issue
+remains: `usertests`' own `mem()` sub-test (a malloc/free stress loop)
+hangs rather than completing - see "Bug/gap 10" below. Given that,
+build-arm-pi2/run-arm-pi2 stay the only wired-up Makefile targets for
+now (no test-arm-pi2/clean-arm-pi2/kill-arm-pi2 yet) - the port needs a
+clean full "ALL TESTS PASSED" run before a real pass/fail signal can be
+built around it. See "Bugs 3-9" and "Bug/gap 10" below for the session 2
+findings; the original 2026-09-07 text (preserved below, now
+superseded) still accurately describes Bug 1/2's own history.
 
 --- Original 2026-09-07 text follows (superseded by session 2 above for
 --- the "one genuinely unresolved crash" characterization specifically -
@@ -304,8 +307,8 @@ Verified after Bug 6: "Hello World from xv6" (consoleinit()'s own first
 cprintf, main.c) now genuinely appears on the QEMU serial console - the
 first-ever visible console output from this port under QEMU.
 
-Bug/gap 7 (open, NOT fixed): a real kernel panic ("popcli") on the first cprintf() call that actually uses cons.lock
----------------------------------------------------------------------------------------------------------------------------
+Bug 7 (real, fixed): a real kernel panic ("popcli") - this toolchain defaults to PIC/PIE codegen, and this bare-metal kernel has no loader to populate a GOT
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Immediately after "Hello World from xv6" prints, the boot enters a
 tight repeating "cpu0: panic: " loop (the message text itself never
 prints - see below for why). A gdb breakpoint at panic() itself
@@ -346,18 +349,141 @@ about 4 real seconds. The gdbstub round-trip overhead, not a real hang,
 was responsible for the false "stuck" reading - see this file's own
 "Methodology" note above.
 
+Root cause (found in a later pass, once the "first cprintf() call" theory
+above didn't hold up - "Hello World" itself panicked too, just after
+printing its own text correctly): a direct gdb trace of every popcli()
+call ("break *popcli_addr", print curr_cpu->ncli each hit) showed
+ncli==0 on EVERY SINGLE call, including the very first one - despite
+this SAME cprintf()'s own acquire()/pushcli() call having had to run
+first. Disassembling acquire() (objdump -d) showed why: accessing the
+global "cpus[]" array compiled to a DOUBLE-INDIRECT load - "ldr r6,
+[pc,#N]; add r6,pc,r6; ldr r3,[pc,#M]; ldr r6,[r6,r3]" - a GOT-style
+indirection, not a direct address. This arm-linux-gnueabihf- toolchain
+defaults to PIC/PIE code generation; GOT-indirect global-variable access
+assumes a DYNAMIC LOADER populates the GOT at startup, which never
+happens in a bare-metal kernel with no loader - every such access
+(not just "cpus[]" - EVERY global in the kernel) was silently reading/
+writing through whatever garbage happened to occupy that unpopulated
+memory instead of the real variable. pushcli() and popcli() were each
+independently resolving "cpus[0].ncli" through this broken indirection
+to two DIFFERENT (both effectively garbage-but-zero) locations, so
+popcli()'s own underflow check fired on literally the first release().
+
+Fix: added "-fno-pic -fno-pie" to all three hw= blocks' CFLAGS -
+confirmed via the same objdump comparison that this switches global
+access to direct "movw/movt" absolute-address loads (link-time
+relocations), no indirection at all. Notably, this fork's OWN commented-
+out alternate CFLAGS line in the rpi1 block (see the top of this file's
+"Real hardware safety" section from the original 2026-09-07 text) already
+had "-fno-pic" in it - real evidence the original author hit this same
+bug at some point; it simply wasn't in the ACTIVE CFLAGS line any of the
+three hw= blocks actually build with. A real ISA/ABI-correctness bug
+affecting every global variable in the kernel, not a QEMU quirk.
+
+Verified: with this fix alone (nothing else changed), the exact same
+"Hello World from xv6" boot now continues straight through EVERY
+subsequent cprintf() ("ARM memory is...", "Max/Min core clock rate...",
+"The core clock rate is set to...", "The board model/revision...") with
+no panic at all - conclusively confirming this was the true root cause
+of Bug/gap 7, not something in the character-printing loop as first
+hypothesized above.
+
+Bug 8 (real, fixed): tvinit() tried to set up a stack for Monitor mode, a Secure-world-only mode this Non-Secure kernel can never enter
+------------------------------------------------------------------------------------------------------------------------------------------------
+With Bug 7 fixed, boot proceeded past every early cprintf() and into
+tvinit() itself, then hit a NEW crash: "unexpected trap 2 from cpu 0
+addr 0 ... ifar 0" (T_PABT, a Prefetch Abort - an instruction FETCH
+from address 0) followed by "cpu0: panic: trap". A gdb breakpoint sweep
+localized this to tvinit() (source/trap.c), specifically after its own
+vector-table memmove() and dsb_barrier()/flush_idcache() calls, during
+its sequence of six set_mode_sp() calls (one per exception mode: FIQ,
+IRQ, UND, ABT, **Monitor (mode value 0xD6)**, SYS). Monitor is a
+Secure-world-only ARMv7 Security-Extensions CPU mode; this kernel runs
+Non-Secure (SCR.NS=1, confirmed via gdb - the standard state both
+QEMU's raspi2b model and real modern Pi firmware hand the ARM core off
+in). Writing CPSR's mode field to Monitor from Non-Secure state is
+CONSTRAINED UNPREDICTABLE per the ARM architecture reference; under
+QEMU this manifested as exactly the observed "jump to address 0, take a
+Prefetch Abort" - the FIRST real exception correctly routed through the
+vector table tvinit() had *just* finished installing a few lines above.
+
+Fix: removed that one set_mode_sp(ptr+4096, 0xD6) call (and its now-
+pointless kalloc()+memset() stack page) from tvinit(). Grepped the whole
+tree first to confirm nothing else references Monitor mode, SMC, or
+SPSR_mon anywhere - this stack was never used by anything, dead setup
+with no functional purpose, not a real-hardware capability being
+removed (real hardware's own boot handoff is standardly Non-Secure too,
+so this call could never have worked there either).
+
+Bug 9 (real, fixed): typed keystrokes never reached the shell - PL011's RX side was never added, only its TX side (Bug 6)
+-----------------------------------------------------------------------------------------------------------------------------------
+With Bugs 7-8 fixed, the kernel booted all the way to "init: starting
+sh" and a real "$" prompt - but typed characters produced no visible
+echo or response at all. Bug 6 (this file, above) had only added
+pl011putc()/pl011init() for OUTPUT; uartgetc() (the input side,
+interrupt-driven via miniuartintr()->consoleintr(uartgetc)) still only
+checked the mini-UART's own AUX_MU_LSR_REG/AUX_MU_IO_REG - exactly the
+peripheral QEMU's raspi2b "-nographic" console does NOT deliver
+keystrokes to (same underlying finding as Bug 6, just the other data
+direction).
+
+Fix, mirroring Bug 6's own pattern exactly: added pl011getc() (checks
+UART0_FR's RXFE bit, reads UART0_DR) tried FIRST in uartgetc(), falling
+through to the untouched mini-UART check; UART0_IMSC's RXIM bit unmasked
+in pl011init() (needed for PL011's own interrupt to ever fire, on top of
+the top-level GIC/VC gpuenable bit); enableirqminiuart() also sets
+"ip->gpuenable[1] |= (1 << 25)" (IRQ 57, UART0's slot in the BCM283x
+GPU-interrupt space); trap.c's two IRQ-dispatch loops (handle_irq() and
+trap()'s own T_IRQ case) both also check "ip->gpupending[1] & (1 << 25)"
+and call miniuartintr() (which now also clears UART0_ICR's own RX
+latch) - the exact same four-piece pattern as forks/arm-pi1's own PL011
+keyboard fix. Real hardware unaffected - PL011 is a real, always-present
+peripheral there too, and every mini-UART code path is untouched.
+
+Verified: "echo HELLO_FROM_SHELL" (sent with "\r" - this fork's console,
+like forks/arm-pi1's own, treats raw "\n" as a no-op and only "\r" as
+Enter - see console.c's own "if(c==0xa) break;" in consoleintr()) echoed
+back correctly and executed. **This port now reaches a genuinely
+interactive shell under QEMU for the first time.**
+
+Bug/gap 10 (open, NOT fixed): usertests' own mem() sub-test hangs rather than completing
+---------------------------------------------------------------------------------------------
+With Bugs 7-9 fixed, "usertests" was run interactively (via a small
+Python pexpect-style driver, same shape as scripts/qemu_console.py) and
+made real, substantial progress through many real sub-tests - "validate
+ok" (the repeated "trap 4 ... --kill proc" lines immediately before it
+are usertests' OWN deliberate invalid-memory-access probes, expected
+per CLAUDE.md's own "Testing conventions" note, not a regression),
+"open test ok", "small file test ok", "big files ok", "many creates,
+followed by unlink; ok" - then printed "mem test" and never progressed
+further (no crash, no panic, no fault message - genuinely stuck) across
+a full 2-minute wait. usertests.c's own mem() forks a child that
+malloc()s 10001-byte chunks in a loop UNTIL malloc() returns 0 (a
+deliberate heap-exhaustion stress test), then frees them all, then does
+one more alloc/free pair. Not investigated further this session - a
+reasonable starting hypothesis for next time: check growproc()/sbrk()'s
+own behavior near the top of this fork's available memory (pm_size was
+reported as 0x3c000000, ~960MB, so the loop should run a very large but
+finite number of iterations before malloc() genuinely fails and
+returns 0 - if growproc() has an edge-case bug that makes it succeed
+forever, or hang instead of failing, when the process's heap approaches
+some boundary, that would produce exactly this symptom).
+
 Verification so far (session 2)
 ---------------------------------
   make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- clean
   make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf-
     -> builds kernel7.bin (real hardware target) cleanly with every
-       session-2 fix applied (-marm, VFP/NEON enable, bsszero, PL011) -
-       NOT tested on real hardware this session (no physical access)
+       session-2 fix applied (-marm, -fno-pic -fno-pie, VFP/NEON enable,
+       bsszero, PL011 TX+RX, no Monitor-mode setup) - NOT tested on real
+       hardware this session (no physical access)
   make hw=rpi2 TOOLCHAIN=arm-linux-gnueabihf- QEMU=qemu-system-arm kernel7-qemu.bin
   qemu-system-arm -M raspi2b -nographic -kernel kernel7-qemu.bin
-    -> prints "Hello World from xv6" (first-ever visible console output
-       for this port under QEMU), then hits the open Bug/gap 7 panic
-       loop documented above
+    -> boots all the way to "init: starting sh" and a real "$" prompt;
+       typed commands (sent with "\r") execute correctly; "usertests"
+       run interactively makes real progress through many real sub-tests
+       before hanging at "mem test" (Bug/gap 10, above) - the furthest
+       this port has ever been verified working under QEMU
 
 Still NOT folded into test-arm-pi2/clean-arm-pi2/kill-arm-pi2 or any
 "-all" umbrella target - not booting to a shell yet, so there is still

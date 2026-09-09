@@ -55,6 +55,8 @@
 #define UART0_FBRD		(MMIO_VA+0x201028)
 #define UART0_LCRH		(MMIO_VA+0x20102C)
 #define UART0_CR		(MMIO_VA+0x201030)
+#define UART0_IMSC		(MMIO_VA+0x201038)
+#define UART0_ICR		(MMIO_VA+0x201044)
 
 static void
 pl011putc(uint c)
@@ -70,6 +72,7 @@ pl011init(void)
 	outw(UART0_IBRD, 26);       // 115200 baud @ 48MHz UART clock
 	outw(UART0_FBRD, 3);
 	outw(UART0_LCRH, (3 << 5)); // 8n1, FIFOs enabled
+	outw(UART0_IMSC, (1 << 4)); // unmask RXIM (RX interrupt)
 	outw(UART0_CR, (1 << 0) | (1 << 8) | (1 << 9)); // UARTEN | TXE | RXE
 }
 
@@ -126,26 +129,42 @@ uartputc(uint c)
 	outw(AUX_MU_IO_REG, c);
 }
 
+// claude: PL011 first, same reason as pl011putc() in uartputc() above -
+// QEMU's raspi2b delivers typed keystrokes to PL011, not the
+// mini-UART, so uartgetc() needs to check both. Real hardware keeps
+// working identically - if PL011 has nothing pending, this falls
+// through to the original mini-UART check unchanged.
+static int
+pl011getc(void)
+{
+	if (inw(UART0_FR) & (1 << 4)) return -1; // RX FIFO empty
+	return inw(UART0_DR) & 0xff;
+}
+
 static int
 uartgetc(void)
 {
+	int c = pl011getc();
+	if(c != -1) return c;
 	if(inw(AUX_MU_LSR_REG)&0x1) return inw(AUX_MU_IO_REG);
 	else return -1;
 }
 
-void 
+void
 enableirqminiuart(void)
 {
         intctrlregs *ip;
 
         ip = (intctrlregs *)INT_REGS_BASE;
         ip->gpuenable[0] |= (1 << 29);   // enable the miniuart through Aux
+        ip->gpuenable[1] |= (1 << 25);   // enable UART0/PL011 (IRQ 57)
 }
 
 
 void
 miniuartintr(void)
 {
+  outw(UART0_ICR, 1 << 4); // clear PL011's own RX interrupt latch too
   consoleintr(uartgetc);
 }
 
