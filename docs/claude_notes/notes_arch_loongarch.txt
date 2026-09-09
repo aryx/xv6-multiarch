@@ -183,3 +183,42 @@ build-all/test-all/clean-all/kill-all - unlike riscv32/arm64 (boot to a
 shell but their own test-<arch> doesn't pass yet) and mips (boots
 silently, no test-mips at all - see their own notes files), this port
 earns the FULL set immediately since test-loongarch genuinely passes.
+
+Docker/CI wiring (added 2026-09-09)
+-----------------------------------
+Added a `loongarch)` case to the Dockerfile's own apt-get switch, a
+matching `loongarch` entry to .github/workflows/docker.yml's own matrix,
+and folded build-loongarch/test-loongarch into the Dockerfile's ARCH=all
+target lists - the last step of build-and-test-plan.md's Phase 4 recipe
+for this port. Verified locally with the exact
+`docker build --build-arg ARCH=loongarch .` first, per
+notes_debugging_techniques.txt item 6, and that caught TWO real
+dependency gaps that this host's own bring-up above never once
+surfaced - because both packages already happened to be installed here:
+
+  - `xxd`. Its own package since noble (split out of vim-common), not in
+    ubuntu:24.04's base image and not pulled in by build-essential. This
+    port is the only one in the repo that needs it, and needs it at BUILD
+    time: forks/loongarch/Makefile's own "xxd -i fs.img >
+    kernel/ramdisk.h" rule is how the whole filesystem image gets
+    compiled into the kernel binary (see the "structural oddity" note
+    above). Missing it fails the build outright.
+
+  - `ipxe-qemu` (for efi-virtio.rom). Same package and same failure text
+    as arm64's own case ("qemu-system-loongarch64: failed to find
+    romfile efi-virtio.rom"), but for a distinctly less obvious reason:
+    arm64's Makefile at least explicitly passes "-device
+    virtio-blk-device", so needing a virtio ROM is unsurprising there.
+    This port passes NO virtio device at all - it has no disk, the
+    filesystem is compiled in - yet "-M virt" wires up a virtio-net
+    device unconditionally as part of the LoongArch board model, and
+    QEMU refuses to start without that ROM even though this kernel never
+    touches the network. The generalizable lesson: a "romfile" failure
+    is a property of the QEMU MACHINE MODEL, not of the devices this
+    repo's own command line asks for - don't reason about it from the
+    -device flags.
+
+With both added, `docker build --build-arg ARCH=loongarch .` builds and
+runs test-loongarch to "ALL TESTS PASSED" end to end (~81s for the
+build+boot+usertests layer on this host), so this port now has a real CI
+job like the other nine wired-up arches.

@@ -8,17 +8,16 @@
 # claude: modeled on ~/c--/Dockerfile and ~/goken/Dockerfile's own shape
 # (apt-get update, install the cross toolchains, COPY the source, run
 # ./configure, build, then test) - see those files' own header comments
-# for the general reasoning this one reuses. Simpler here: only eight
+# for the general reasoning this one reuses. Simpler here: only ten
 # arches are wired up so far (riscv64, i386, amd64-jserv, amd64, riscv32, arm,
-# arm-pi1, arm64, mips - build-and-test-plan.md's Phases 1, 2, and Phase 4),
-# not all thirteen forks/ - extend the ARCH case below (both the apt-get and
-# the build/test one) as more arches get their own ./configure
-# detection, matching build.md's own Phase 4 order. loongarch/the other
-# two ARM board ports are already wired into ./configure/the
-# top-level Makefile but not added here yet - simply haven't had this
-# step done yet, nothing blocking it technically (loongarch's own
-# toolchain turned out to be a native arm64 apt package, no binfmt_misc
-# emulation needed, see notes_arch_loongarch.txt).
+# arm-pi1, arm64, mips, loongarch - build-and-test-plan.md's Phases 1, 2, and
+# Phase 4), not all thirteen forks/ - extend the ARCH case below (both the
+# apt-get and the build/test one) as more arches get their own ./configure
+# detection, matching build.md's own Phase 4 order. The remaining ARM
+# board ports (arm-pi1-bis, arm-pi2, arm-pi3) are already wired into
+# ./configure/the top-level Makefile but not added here yet - they don't
+# reach a passing test-<arch> on this host either, so there is nothing
+# for a CI job to assert yet (see their own notes_arch_*.txt).
 #
 # ubuntu:24.04 to match the dev machine the notes_arch_*.txt files record
 # toolchain/qemu versions against - not pinned for any of c--'s own
@@ -122,13 +121,42 @@ RUN case "$ARCH" in \
       mips)    apt-get install -y --no-install-recommends \
                  gcc-mipsel-linux-gnu libc6-dev-mipsel-cross \
                  qemu-system-mips ipxe-qemu seabios ;; \
+      # claude: gcc-14-loongarch64-linux-gnu, NOT a plain
+      # "gcc-loongarch64-linux-gnu" - Ubuntu ships no unversioned
+      # metapackage for this target, and the package it does ship
+      # installs only "loongarch64-linux-gnu-gcc-14" with no unversioned
+      # gcc symlink either (see notes_arch_loongarch.txt bug 1, and
+      # ./configure's own detect_versioned_gcc, which is what makes the
+      # build work anyway). qemu-system-loongarch64 comes from
+      # qemu-system-misc, same package as riscv64/riscv32's.
+      # xxd (its own package since noble, split out of vim-common; not
+      # in the base image and NOT pulled in by build-essential) is a
+      # hard build dependency unique to this port: forks/loongarch/
+      # Makefile runs "xxd -i fs.img > kernel/ramdisk.h" to embed the
+      # whole filesystem image into the kernel binary as a C array (see
+      # notes_arch_loongarch.txt's own "structural oddity" note) -
+      # without it the build fails at that rule. ipxe-qemu for
+      # efi-virtio.rom, exactly the same gap as arm64's above but for a
+      # subtler reason: forks/loongarch's own qemu invocation passes NO
+      # virtio device at all (it has no disk - the filesystem is
+      # compiled into the kernel), yet "-M virt" wires up a virtio-net
+      # device unconditionally as part of the board model, and QEMU
+      # refuses to start without that ROM even though this kernel never
+      # touches the network. Caught only by running the real
+      # "docker build --build-arg ARCH=loongarch" locally - the host
+      # this port was brought up on had ipxe-qemu already installed, so
+      # test-loongarch had never once needed to name this dependency.
+      loongarch) apt-get install -y --no-install-recommends \
+                 gcc-14-loongarch64-linux-gnu qemu-system-misc xxd \
+                 ipxe-qemu ;; \
       all)     apt-get install -y --no-install-recommends \
                  gcc-riscv64-unknown-elf qemu-system-misc bc \
                  gcc-i686-linux-gnu libc6-dev-i386-cross \
                  gcc-x86-64-linux-gnu qemu-system-x86 \
                  gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu \
                  qemu-system-arm ipxe-qemu \
-                 gcc-mipsel-linux-gnu libc6-dev-mipsel-cross qemu-system-mips ;; \
+                 gcc-mipsel-linux-gnu libc6-dev-mipsel-cross qemu-system-mips \
+                 gcc-14-loongarch64-linux-gnu xxd ;; \
       *) echo "Dockerfile: unknown ARCH=$ARCH" >&2; exit 1 ;; \
     esac
 
@@ -165,12 +193,12 @@ RUN ./configure
 # Dockerfile's own source of truth for what ARCH=all covers - keep it in
 # lockstep with the apt-get "all" case above, not with build-all/test-all.
 RUN if [ "$ARCH" = all ]; then \
-      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm64 build-mips; \
+      make build-riscv64 build-i386 build-amd64-jserv build-amd64 build-riscv32 build-arm build-arm-pi1 build-arm64 build-mips build-loongarch; \
     else \
       make "build-$ARCH"; \
     fi
 RUN if [ "$ARCH" = all ]; then \
-      make test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm test-arm-pi1 test-arm64 test-mips; \
+      make test-riscv64 test-i386 test-amd64-jserv test-amd64 test-riscv32 test-arm test-arm-pi1 test-arm64 test-mips test-loongarch; \
     else \
       make "test-$ARCH"; \
     fi
