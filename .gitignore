@@ -30,3 +30,7 @@ vectors.S
 bootblock
 entryother
 kernelmemfs
+
+# claude: scripts/qemu_graphics.py gets imported by
+# scripts/test_qemu_graphics.py, which leaves a __pycache__ behind.
+__pycache__/

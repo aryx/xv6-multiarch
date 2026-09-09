@@ -1,49 +1,46 @@
 # scripts/
 
-Archived record of how this repository was assembled, kept so the work is
-traceable rather than folklore. **Nothing here is maintained or meant to be
-run today** — the repo has moved on considerably since (build system, CI,
-per-port fixes), and these scripts would rebuild it from scratch at its old
-path, discarding all of that.
+## qemu_graphics.py / test_qemu_graphics.py
 
-They read the twelve upstream clones from `~/work/xv6/` and each does
-`rm -rf` on its output directory. Do not repoint one at `~/xv6`.
-
-The reasoning behind every fork point and technique below is in
-`docs/provenance.md`; this file only says which script is which.
-
-## The one that built this repo
-
-| file | what it did |
-|---|---|
-| `build-multiarch.sh` | Produced the current history: 13 ports, 2,050 commits, 2026-09-05. Grafts the seven fresh-`git init` ports onto their fork points using `git commit-tree` plumbing, adds one `arch/<name>/` staging commit per port, then unions all thirteen tips into an octopus merge built with `read-tree`/`commit-tree`. |
-
-## Superseded attempts, kept for the lessons
-
-Each failed in a way that shaped the final approach, and each lesson is
-written up in `docs/provenance.md` under "Four pitfalls".
-
-| file | why it was abandoned |
-|---|---|
-| `superseded/try1-subdirectory-filter.sh` | Used `git filter-repo --to-subdirectory-filter` over each port's whole history. That rewrites every commit, so the shared MIT lineage was duplicated once per arch — 9,932 commits instead of 1,795, with every old commit message appearing nine times in `git log`. |
-| `superseded/try2-filter-repo-grafts.sh` | Right idea (one staging commit per port), but still used `filter-repo` to bake the grafts. `filter-repo` **strips GPG signatures**, which changes those commits' hashes and cascades through every descendant — silently duplicating ~335 riscv commits into `rv32` and ~173 into `d1`. Hence the switch to `git commit-tree`. |
-| `superseded/try3-nine-arches.sh` | Correct approach, but predates the discovery of `x86_64`, `mips`, `aarch64` and `loongarch`. Superseded by `build-multiarch.sh` rather than wrong. |
-
-## Analysis helpers
-
-These are still useful — they produced the duplication figures that shape
-`docs/claude_notes/factorization-plan.md`, and re-running them will show
-progress once that phase starts. Both read `git ls-tree` output on stdin:
+Maintained, meant to be run today. A regression test for every port
+with a "run-`<arch>`-qemu-graphics" Makefile target (i386, amd64,
+amd64-jserv, arm-pi1, arm-pi1-bis) - boots each one with a real GTK
+window (no `-nographic`), types a shell command through a QMP-injected
+keyboard, and asserts real visible output appeared on the emulated
+screen. This is a different signal from what each port's own
+`test-<arch>.py`/`test-xv6.py` already checks (that usertests passes
+over the plain serial console) - it exercises the actual graphical
+framebuffer/VGA console and keyboard input path instead, which nothing
+else in this repo tests automatically. See
+`docs/claude_notes/notes_tutorial_qemu.txt` for the underlying QMP/
+screendump techniques this borrows from.
 
 ```sh
-git ls-tree -r HEAD --format='%(objectname) %(path)' | python3 scripts/analyze-duplication.py
-git ls-tree -r HEAD --format='%(objectname) %(path)' | python3 scripts/analyze-variants.py
+python3 scripts/test_qemu_graphics.py               # all 5 ports
+python3 scripts/test_qemu_graphics.py i386 arm-pi1   # a subset
+python3 scripts/test_qemu_graphics.py --list
+python3 scripts/test_qemu_graphics.py --keep-artifacts   # keep screendumps in /tmp for inspection
 ```
 
-| file | output |
-|---|---|
-| `analyze-duplication.py` | Per filename: how many ports have it, and how many distinct contents exist. Gave "930 copies, 659 distinct contents". |
-| `analyze-variants.py` | For candidate files, the largest set of ports sharing byte-identical content. This is what revealed the two families — seven ports share one `echo.c`, four share another. |
+Requires a real `$DISPLAY` (a GTK window actually opens - same
+requirement as `make run-<arch>-qemu-graphics` itself). Not wired into
+`make test-all`/CI - nothing headless can assert against a real window;
+run it by hand after touching a graphics/console/keyboard code path in
+one of these five ports.
 
-Note both still assume the old `arch/<name>/` path prefix and will need
-`arch` changed to `forks` to run against the current tree.
+`qemu_graphics.py` is a library, not a script - a QMP client
+(`send_key`/`type_text`/`screendump`) and P6 PPM helpers
+(`load_ppm`/`non_black_count`/`distinct_colors`/`ascii_art`), reusable
+for other one-off QEMU-graphics scripting beyond this test runner.
+
+Every `run-<arch>-qemu-graphics` target (this repo's top-level
+Makefile, and forks/arm-pi1's/forks/arm-pi1-bis's own Makefiles)
+accepts an optional `QMP_SOCK=<path>` to add a QMP socket to the QEMU
+command line - unset by default, so plain interactive use
+(`make run-i386-qemu-graphics`, no extra variables) is unaffected.
+
+## repo-history/
+
+Archived record of how this repository itself was assembled - not
+related to the qemu-graphics tooling above. See
+`repo-history/README.md`.
