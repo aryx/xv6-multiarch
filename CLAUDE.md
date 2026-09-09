@@ -163,10 +163,12 @@ ARM Raspberry Pi ports, then `d1` build-only):
    trees together, they will not stay as-is, so don't hold back changes
    trying to preserve them unchanged.
 4. If the port has no test harness of its own, write a minimal
-   `forks/<name>/test-xv6.py` modeled on `forks/riscv64/test-xv6.py`'s
-   `QEMU` class (see `forks/i386/test-xv6.py` for the pared-down shape:
-   usertests-only, no crash/log/orphan tiers, since older forks don't
-   have those test programs at all).
+   `forks/<name>/test-xv6.py` importing `QEMU`/`main` from
+   `scripts/qemu_console.py` (see `forks/amd64/test-xv6.py` for a short
+   worked example) - usertests-only, no crash/log/orphan tiers, since
+   only `forks/riscv64` has those test programs at all (its own
+   `test-xv6.py` is the one exception not built on `qemu_console.py`,
+   for that reason).
 5. Add a `docs/claude_notes/notes_arch_<name>.txt` recording what was
    actually found - toolchain gaps, GCC false positives fixed, real bugs
    found and why the chosen fix was safe, anything benign in the boot

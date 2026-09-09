@@ -40,6 +40,25 @@ accepts an optional `QMP_SOCK=<path>` to add a QMP socket to the QEMU
 command line - unset by default, so plain interactive use
 (`make run-i386-qemu-graphics`, no extra variables) is unaffected.
 
+## qemu_console.py
+
+The plain-serial-console counterpart to `qemu_graphics.py` above - a
+shared library, not a script. Ten of the eleven `forks/<name>/
+test-xv6.py` files (every wired-up port except `riscv64`, which has its
+own richer crash/log/orphan-recovery harness) import `QEMU`/`main` from
+here instead of each carrying its own copy of the same
+Popen/wait_for/kill machinery. Each fork's own `test-xv6.py` stays the
+place that encodes what's actually specific to that port - its own
+`reset_cmds`/`qemu_argv` (which `make` targets to run, whether it needs
+explicit `MAKEVARS` on the command line, `\n` vs `\r` as Enter) - see
+any of them (`forks/amd64/test-xv6.py` is a short one) for the pattern.
+Factored out 2026-09-09 after the "boot" CLI mode (see `make
+quick-test-<arch>` in the top-level Makefile) had to be patched into all
+ten files at once, by hand - not something this repo's own
+factorization-plan.md is blocked on: these are this repo's own test
+scripts, not upstream kernel/user code, so there's no git-blame history
+to preserve across the merge.
+
 ## repo-history/
 
 Archived record of how this repository itself was assembled - not
