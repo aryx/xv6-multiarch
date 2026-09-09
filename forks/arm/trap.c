@@ -7,11 +7,53 @@
 
 #include "memlayout.h" // raspi
 
+// claude: the check xv6 x86 makes at the bottom of its own trap() and this
+// port never made anywhere:
+//
+//     if(proc && proc->killed && (tf->cs&3) == DPL_USER)
+//       exit();
+//
+// kill() sets p->killed and wakes the target if it is SLEEPING (see
+// proc.c), but SETTING the flag is only half of it - something has to act
+// on it when the process is about to go back to user space, or a killed
+// process simply keeps running. Nothing here did: "killed" appeared in
+// this file only as an assignment, never as a test.
+//
+// The visible consequence was that kill() did not kill. usertests'
+// sbrktest() ends by killing ten children that sit in "for(;;)
+// sleep(1000);" and wait()ing for each. sys_sleep() does check
+// proc->killed and returns -1 - so the child woke, returned -1, and the
+// for(;;) called sleep() again, spinning forever instead of exiting.
+// wait() therefore blocked forever, usertests never finished, and the
+// harness sat until its 600s timeout - which is what turned CI's
+// "build (arm)" job from 77s into a ten-minute failure once sbrktest()
+// stopped being skipped. The children also never released their memory,
+// so the following exec test ran into "allocuvm out of memory" and died,
+// and init printed the "zombie!" lines as it reaped the orphans.
+//
+// "(r->spsr & MODE_MASK) == USR_MODE" is this architecture's spelling of
+// x86's "(tf->cs & 3) == DPL_USER": the SPSR saved on exception entry
+// holds the pre-exception processor mode. It matters that we exit ONLY
+// when heading back to user space - calling exit() while the trap
+// interrupted kernel code would tear down a process midway through a
+// kernel path, holding whatever locks it held. Same test dabort_handler
+// below already uses, for the same reason.
+static void exit_if_killed (struct trapframe *r)
+{
+    if (proc && proc->killed && (r->spsr & MODE_MASK) == USR_MODE) {
+        exit();
+    }
+}
+
 // trap routine
 void swi_handler (struct trapframe *r)
 {
     proc->tf = r;
     syscall ();
+
+    // claude: a process killed while blocked in a syscall (sleep(), read(),
+    // wait()) resumes here, with the syscall having returned an error.
+    exit_if_killed (r);
 }
 
 // trap routine
@@ -25,6 +67,12 @@ void irq_handler (struct trapframe *r)
     }
 
     pic_dispatch (r);
+
+    // claude: and a process killed while merely running in user space is
+    // noticed on the next interrupt - the timer tick guarantees one
+    // arrives. pic_dispatch() may yield() on that tick, so this also
+    // covers being killed while descheduled.
+    exit_if_killed (r);
 }
 
 // trap routine
