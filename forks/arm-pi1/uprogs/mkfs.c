@@ -11,7 +11,11 @@
 #include "stat.h"
 #include "param.h"
 
-#define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
+/* claude: renamed from "static_assert" - C11 <assert.h> now defines that
+   name itself, so this unconditional #define is a redefinition and
+   -Werror rejects it. Same fix already applied in the sibling
+   forks/arm-pi2/uprogs/mkfs.c and forks/arm-pi3/uprogs/mkfs.c. */
+#define _static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 
 int nblocks = 985;
 int nlog = LOGSIZE;
@@ -67,7 +71,7 @@ main(int argc, char *argv[])
   struct dinode din;
 
 
-  static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
+  _static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
 
   if(argc < 2){
     fprintf(stderr, "Usage: mkfs fs.img files...\n");

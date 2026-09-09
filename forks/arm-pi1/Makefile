@@ -158,6 +158,38 @@ $(BUILD)%.o: $(SOURCE)%.s | $(BUILD)
 $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 	$(CC) -c $(CFLAGS) $<  -o $@
 
+# claude: source/fs.img is GENERATED, not checked in - it is the output of
+# uprogs/'s own build (mkfs plus every UPROGS binary). It used to be a
+# committed 512KB binary blob, which is exactly how uprogs/ came to be
+# unbuildable without anyone noticing: bringing it up for this change needed
+# two real fixes (a C11 static_assert redefinition in mkfs.c, and CFLAGS that
+# only constrained the assembler rather than gcc's codegen). A checked-in
+# image hides that kind of bit-rot indefinitely, and can silently drift from
+# the uprogs/*.c it is supposed to represent. Same treatment, and the same
+# rule shape, as the sibling forks/arm-pi2/Makefile.
+#
+# The phony target is "uprogs-fs-img", NOT "source/fs.img": a phony
+# prerequisite of a REAL file makes that file's recipe run unconditionally
+# (GNU make treats it as always newer), which would re-assemble entry.s and
+# re-link the kernel on every single build. This way the recursive make still
+# runs every time and does its own up-to-date checking, while source/fs.img's
+# timestamp only moves when the image content actually changed.
+#
+# uprogs/Makefile names its toolchain variable TOOLPREFIX and expects a
+# trailing dash; this Makefile's own ARMGNU carries none (it is used as
+# "$(ARMGNU)-gcc"), hence the "-" here.
+.PHONY: uprogs-fs-img
+uprogs-fs-img:
+	$(MAKE) -C uprogs TOOLPREFIX=$(ARMGNU)- fs.img
+
+source/fs.img: uprogs-fs-img
+	cmp -s uprogs/fs.img $@ || cp uprogs/fs.img $@
+
+# entry.s is the only source file that embeds the image (its own
+# .incbin "fs.img", resolved via the "-I $(SOURCE)" on the assembler line
+# above), so only ITS object needs the dependency.
+$(BUILD)entry.o: source/fs.img
+
 # claude: QEMU-only targets, added alongside the existing real-hardware
 # ones above rather than replacing anything - "all"/"$(TARGET)" (which
 # real Raspberry Pi 1 firmware boots from an SD card) are completely

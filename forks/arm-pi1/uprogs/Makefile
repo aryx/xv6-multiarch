@@ -12,7 +12,18 @@ AS = $(TOOLPREFIX)as
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s
+# claude: real -mcpu/-marm instead of "-Wa," flags, and -MP alongside -MD.
+# "-Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s" only constrains what the
+# ASSEMBLER stage accepts - it does not set gcc's own codegen target, which
+# then defaults to this toolchain's armv7-a+fp and can emit Thumb-interworking
+# calls a real arm1176jzf-s cannot execute. This is the identical bug the
+# kernel's own Makefile documents at its CFLAGS line and fixes the same way;
+# uprogs/ was simply never built here, so it kept the broken form.
+# claude: -Wno-infinite-recursion is a confirmed GCC 12+ false positive on
+# sh.c's runcmd(), which recurses but always terminates via exec()/exit() in
+# its base case - see notes_debugging_techniques.txt item 1, and the same
+# flag in forks/arm-pi2/uprogs/Makefile.
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm
 
 initcode: initcode.S
 	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
