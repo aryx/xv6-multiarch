@@ -371,6 +371,9 @@ void
 consoleintr(int (*getc)(void))
 {
 	int c;
+	/* claude: remembers whether the previous character was a CR, so the
+	 * LF of a CRLF pair can be swallowed - see the default: case below. */
+	static int lastcr = 0;
 
 	acquire(&input.lock);
 	while((c = getc()) > 0){
@@ -392,9 +395,32 @@ consoleintr(int (*getc)(void))
 			}
 			break;
 		default:
+			/* claude: Enter arrives as CR (0x0d) from a real terminal
+			 * on the serial console, as LF (0x0a) from a pipe or a
+			 * script, and as CRLF from some sources. The original code
+			 * here discarded CR outright and honoured only LF, so the
+			 * Return key did nothing at all in an interactive
+			 * "make run-arm-pi3" session - while a scripted
+			 * "usertests\n" still worked, which is exactly why this
+			 * survived the automated tests. The sibling forks
+			 * arm-pi1/arm-pi2 carry the mirror image of the same bug
+			 * (they drop LF and honour only CR).
+			 *
+			 * Accept either, and swallow the LF of a CRLF pair so one
+			 * keypress never turns into two newlines. lastcr is only
+			 * read/written here, with input.lock held for the whole of
+			 * consoleintr(). Nothing real-hardware-specific either way:
+			 * a USB keyboard's Enter comes through as CR too. */
+			if(c == 0xd || c == 0xa){
+				if(c == 0xa && lastcr){
+					lastcr = 0;
+					break;
+				}
+				lastcr = (c == 0xd);
+				c = '\n';
+			} else
+				lastcr = 0;
 			if(c != 0 && input.e-input.r < INPUT_BUF){
-				if(c == 0xd) break;
-				c = (c == 0xa) ? '\n' : c;
 				input.buf[input.e++ % INPUT_BUF] = c;
 				consputc(c);
 				if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){

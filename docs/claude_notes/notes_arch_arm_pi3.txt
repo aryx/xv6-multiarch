@@ -552,6 +552,44 @@ spinning inside mp_wait_stage(MP_CPU0_READY). bsszero() only touches
 those cores are waiting on. Recorded here because a future change that
 moves mp_stage into .bss would silently reintroduce a hang.
 
+Bug 16 (real, fixed): the Return key did nothing interactively - consoleintr() discarded CR and honoured only LF
+--------------------------------------------------------------------------------------------------------------------------
+Reported by the user immediately after Bug 14/15 landed: "make
+run-arm-pi3" gave a shell prompt, but typing "ls" and pressing RETURN
+produced nothing at all.
+
+source/console.c's own consoleintr() had:
+
+    if(c == 0xd) break;              /* CR dropped on the floor */
+    c = (c == 0xa) ? '\n' : c;       /* only LF counts as Enter */
+
+A real terminal attached to QEMU's -nographic serial console sends CR
+(0x0d) for Return, never LF - so every Return was silently discarded.
+The sibling forks/arm-pi1 and forks/arm-pi2 carry the exact mirror image
+of this bug in the same function ("if(c == 0xa) break; c = (c == 0xd) ?
+'\n' : c;"), which is presumably where this fork's inverted version came
+from - someone flipped it rather than making it accept both.
+
+Worth recording WHY the automated tests never caught it, because the
+lesson generalises: test-xv6.py drives the console through a pipe and
+sent "usertests\n". A pipe is not a terminal, and '\n' was exactly the
+one ending this code did honour - so the scripted path passed 20/20
+while the human path was completely broken. A harness that feeds input
+through a pipe silently tests a different input encoding than the one a
+user types.
+
+Fix: accept CR, LF and CRLF alike, translating any of them to '\n', with
+a "lastcr" static that swallows the LF of a CRLF pair so one keypress
+never becomes two newlines (lastcr is only touched with input.lock held,
+for the whole of consoleintr()). Verified all three endings produce
+exactly one command and one prompt. Nothing real-hardware-specific was
+removed: a USB keyboard's Enter arrives as CR too, and that path is now
+honoured where before only a pipe's LF was.
+
+forks/arm-pi3/test-xv6.py now sends "usertests\r" rather than
+"usertests\n" - both work after this fix, but "\r" is the ending a real
+Return key produces, so it keeps the human-facing path under test.
+
 CLOSED (was: "Open gap") - the session-1/2 investigation, kept as a record of what the evidence looked like before Bug 14
 ------------------------------------------------------------------------------------------------------------------------------
 NOTE (session 3, 2026-09-09): everything below is superseded by Bug 14

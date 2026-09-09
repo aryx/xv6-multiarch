@@ -40,7 +40,10 @@ Two sequential efforts, in order:
    zeroing, printed through an uninitialized console lock, and called
    `kalloc()` while `kmem.use_lock` was still 0. Replaced with real
    release-flag spins; `.bss` zeroing (the same gap all three sibling Pi
-   ports had) was fixed alongside. Now fully wired up -
+   ports had) was fixed alongside, and a fourth (the Return key did
+   nothing interactively - `consoleintr()` discarded CR and honoured only
+   LF, invisible to the pipe-driven test harness) after the user tried
+   the interactive target by hand. Now fully wired up -
    `build`/`run`/`test`/`quick-test`/`clean`/`kill-arm-pi3`, folded into
    every `-all` umbrella, plus a Dockerfile case and a CI matrix entry.
    See `notes_arch_arm_pi3.txt`'s own Bug 14/Bug 15, and

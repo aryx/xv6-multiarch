@@ -1063,3 +1063,34 @@ here, a firmware stub's own release SEV), and is architecturally allowed
 to return spuriously regardless. Any WFE must sit inside a loop that
 re-tests a real memory flag; grep an unfamiliar ARM port's entry code
 for `wfe` with no surrounding loop as a matter of course.
+
+39. A pipe-driven test harness tests a different input encoding than a human types - line endings especially
+------------------------------------------------------------------------------------------------------------
+forks/arm-pi3 passed 20/20 scripted boots and a full usertests run, then
+the user tried `make run-arm-pi3` by hand and the Return key did nothing
+at all (notes_arch_arm_pi3.txt's own Bug 16). consoleintr() honoured only
+LF (0x0a) and discarded CR (0x0d) outright; the harness drives QEMU's
+console through a pipe and sent "usertests\n", which was exactly the one
+ending that worked.
+
+The general point: scripts/qemu_console.py talks to the guest over a
+pipe, not a terminal. A real terminal's Return key sends CR; a pipe sends
+whatever the script writes. Any guest-side line-ending, echo, or raw-mode
+assumption is therefore untested by the harness by construction - as is
+anything else where "a pipe" and "a tty" differ.
+
+Two practical habits:
+  - when a port's test-xv6.py picks a line ending, prefer the one a real
+    terminal produces ("\r") over the one that merely happens to work, so
+    the human-facing path is the tested path. The sibling arm-pi1/
+    arm-pi1-bis/arm-pi2 harnesses all send "\r" for exactly this reason -
+    arm-pi3 was the odd one out, and that is where the bug hid.
+  - after any bring-up milestone declared on scripted evidence alone,
+    actually run the interactive target once by hand before calling it
+    done. "usertests passes" and "a human can use the shell" are
+    different claims.
+
+Related: consoleintr()-style input handling is worth grepping across
+sibling forks when one is fixed - arm-pi1 and arm-pi2 hold the exact
+mirror image of arm-pi3's bug (they drop LF and honour only CR), which
+is almost certainly where the inverted version came from.
