@@ -336,7 +336,22 @@ Result HcdChannelInterruptToError(struct UsbDevice *device, struct ChannelInterr
 		LOG("HCD: NAK error in transfer.\n");
 		return ErrorDevice;
 	}
-	if (!interrupts.Acknowledgement) {
+	/* claude: "&& !HcdEmulating()" - confirmed directly against QEMU
+	 * 8.2.2's own hw/usb/hcd-dwc2.c source (fetched and grepped for
+	 * every write to HCINTMSK_ACK: there are none, anywhere in the
+	 * file). On a successful transfer QEMU's model only ever raises
+	 * HCINTMSK_XFERCOMPL + HCINTMSK_CHHLTD - real Broadcom hardware
+	 * additionally raises the ACK bit this check is named for, but
+	 * QEMU's model has no such bit at all, ever, for ANY transfer, so
+	 * this check can never pass under emulation regardless of whether
+	 * the transfer actually succeeded (Host->Channel[channel].Interrupt
+	 * .Halt still correctly reflects real completion either way - the
+	 * SETUP/DATA/STATUS stage loops above already wait on that, not on
+	 * Ack, to know when to even check these bits). Same class of gap as
+	 * ~/principia/kernel/COMPILE/9/bcm/usbdwc.c's own documented QEMU
+	 * dwc2 workarounds (0-length Pktcnt not decremented, no split state
+	 * machine) - a real model limitation, not a spec-compliance one. */
+	if (!interrupts.Acknowledgement && !HcdEmulating()) {
 		LOG("HCD: Transfer was not acknowledged.\n");
 		result = ErrorTimeout;
 	}
@@ -515,7 +530,28 @@ retry:
 		if (packets == Host->Channel[channel].TransferSize.PacketCount) break;
 	} while (Host->Channel[channel].TransferSize.PacketCount > 0);
 
-	if (packets == Host->Channel[channel].TransferSize.PacketCount) {
+	/* claude: "&& !(HcdEmulating() && bufferLength == 0)" - confirmed
+	 * directly against QEMU 8.2.2's own hw/usb/hcd-dwc2.c
+	 * (dwc2_handle_packet()): for a successful transfer it computes
+	 * "tpcnt = actual/mps" (+1 only on a short IN packet) and does
+	 * "pcnt -= min(tpcnt, pcnt)" - for a genuinely 0-length transfer
+	 * (the STATUS stage of every control transfer, "actual == 0"),
+	 * tpcnt is always 0, so pcnt (== 1, the "at least one packet" value
+	 * HcdPrepareChannel above always sets for a 0-byte request) is
+	 * written back UNCHANGED, even though the transfer itself DID
+	 * complete (QEMU separately sets "done = true" via its own
+	 * "actual == 0" check, which is why HcdChannelSendWaitOne above
+	 * already returned OK with no error at all). This loop's own
+	 * "packets == PacketCount means no progress, therefore stuck"
+	 * heuristic is exactly right for a genuine multi-packet transfer
+	 * that stalls, but a 0-length request never had more than the one
+	 * packet to send in the first place - real hardware apparently
+	 * does decrement Pktcnt to 0 even here (this port worked on real
+	 * Pi hardware), so this is a real QEMU dwc2 model gap, the same
+	 * class as Principia's own usbdwc.c "0-length transfer Pktcnt not
+	 * decremented" writeup for the identical controller. */
+	if (packets == Host->Channel[channel].TransferSize.PacketCount &&
+	    !(HcdEmulating() && bufferLength == 0)) {
 		device->Error = ConnectionError;
 		LOGF("HCD: Transfer to %s got stuck.\n", UsbGetDescription(device));
 		return ErrorDevice;

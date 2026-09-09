@@ -477,6 +477,23 @@ Result HubAttach(struct UsbDevice *device, u32 interfaceNumber) {
 	case Individual:
 		LOG_DEBUG("HUB: Hub power: Individual.\n");
 		break;
+	/* claude: value 2 (binary 10) is a real, spec-defined value - USB
+	 * 2.0 sec 11.23.2.1 (wHubCharacteristics, bits 0-1, "Logical Power
+	 * Switching Mode") lists 0=Ganged, 1=Individual, and both 2 and 3
+	 * as "Reserved", but Linux's own hub driver (drivers/usb/core/
+	 * hub.c) and this port's own real hardware experience elsewhere
+	 * both treat any non-Ganged/Individual value the same as "no power
+	 * switching at all - every port is always powered", not as an
+	 * incompatible/unsupported hub. HubPowerOn()'s own per-port
+	 * FeaturePower calls are harmless either way (a no-op on a hub that
+	 * has no power switches). Confirmed here against a real hub (QEMU's
+	 * own emulated one, which reports exactly this value), not
+	 * hypothesized - not a QEMU-only relaxation, a genuine completeness
+	 * gap in this switch statement for any hub reporting it, real or
+	 * emulated. */
+	case 2:
+		LOG_DEBUG("HUB: Hub power: No switching (always on).\n");
+		break;
 	default:
 		LOGF("HUB: Unknown hub power type %d on %s. Driver incompatible.\n", hubDescriptor->Attributes.PowerSwitchingMode, UsbGetDescription(device));
 		HubDeallocate(device);

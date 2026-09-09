@@ -61,11 +61,53 @@ uint v;
 // nothing available" one (see uart.c's own uartgetc() for the same
 // shape), so keyboard input is fed into the exact same input-buffer
 // path as UART input, indistinguishably from the shell's point of view.
+//
+// claude: the extra "lastusbkey" debounce below is load-bearing, not
+// cosmetic. Confirmed directly (temporarily logging the raw 8-byte USB
+// HID report csud/'s own HidReadDevice() reads every poll -
+// notes_arch_arm_pi1.txt has the full writeup): the UNDERLYING report
+// genuinely transitions cleanly, exactly once, from "no keys down" to
+// "'l' down" and back - the USB layer is not the problem. But
+// KeyboardGetChar()'s own repeat-suppression (csud/source/device/hid/
+// keyboard.c's KeyWasDown()/KeyboardOldDown, keyed by matching the raw
+// USB usage VALUE against a small fixed-size history) does not
+// actually suppress it in practice here - a single held key still
+// produces a long run of identical characters. Rather than debug
+// CSUD's own hand-written state machine further, this keeps the same
+// safety property directly: never emit the SAME character on two
+// consecutive polls in a row. A key genuinely typed twice in a row
+// (needs a release cycle first, i.e. KeyboardGetChar() returning 0 -
+// "no key" - at least once between the two presses) is unaffected;
+// only a literal same-character-every-single-10ms-tick run is
+// collapsed to one.
+static uint lastusbkey;
+
 static int
 usbkbdgetc(void)
 {
   char c = KeyboardGetChar();
-  return c ? (int)(uchar)c : -1;
+
+  if(c == 0){
+    lastusbkey = 0;
+    return -1;
+  }
+  if((uchar)c == lastusbkey)
+    return -1;
+  lastusbkey = (uchar)c;
+  // claude: source/keyboard.s's own KeysNormal/KeysShift tables map
+  // the Enter key to '\n' (0x0a) - a reasonable, standard choice for a
+  // USB keyboard driver in isolation, but this kernel's own
+  // consoleintr() (source/console.c) explicitly DISCARDS a raw '\n'
+  // and only treats '\r' (0x0d) as "submit line" (a real
+  // serial-terminal convention documented in notes_arch_arm_pi1.txt -
+  // the UART path never sends '\n' for Enter either). Translated here,
+  // at the USB-specific glue layer, rather than changing keyboard.s's
+  // own table (which would be a wrong fix for any OTHER hypothetical
+  // caller expecting standard ASCII) or consoleintr() itself (shared
+  // with the UART path, which is correct as-is).
+  if((uchar)c == '\n')
+    return '\r';
+  return (int)(uchar)c;
 }
 
 void
