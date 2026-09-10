@@ -6,7 +6,7 @@
 // Including xv6/stat.h causes a name clash (with struct stat)
 #define T_DIR  1   // Directory
 #define T_FILE 2   // File
-#define T_DEV  3   // Device
+#define T_DEVICE  3   // Device
 
 #define MAXFILESIZE (MAXFILE * BSIZE)
 #define BUFSIZE 1024

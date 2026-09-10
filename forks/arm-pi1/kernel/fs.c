@@ -441,7 +441,7 @@ readi(struct inode *ip, char *dst, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 
-  if(ip->type == T_DEV){
+  if(ip->type == T_DEVICE){
     if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read)
       return -1;
 //cprintf("inside readi\n");
@@ -470,7 +470,7 @@ writei(struct inode *ip, char *src, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 //cprintf("inside writei: type=%x major=%x, func addr: %x\n", ip->type, ip->major, devsw[ip->major].write);
-  if(ip->type == T_DEV){
+  if(ip->type == T_DEVICE){
     if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].write)
       return -1;
 //cprintf("before calling consolewrite: major=%x, func addr: %x\n", ip->major, devsw[ip->major].write);

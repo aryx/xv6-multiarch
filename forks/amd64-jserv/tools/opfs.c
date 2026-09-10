@@ -94,7 +94,7 @@ int do_diskinfo(img_t img, int argc, char *argv[]) {
             case T_FILE:
                 n_files++;
                 break;
-            case T_DEV:
+            case T_DEVICE:
                 n_devs++;
                 break;
             }
@@ -326,7 +326,7 @@ int do_cp(img_t img, int argc, char *argv[]) {
         else if (dip->type == T_FILE) {
             itruncate(img, dip, 0);
         }
-        else if (dip->type == T_DEV) {
+        else if (dip->type == T_DEVICE) {
             error("cp: %s: device file\n", dpath);
             return EXIT_FAILURE;
         }
@@ -429,7 +429,7 @@ int do_mv(img_t img, int argc, char *argv[]) {
             daddent(img, ip, dname, sip);
             iunlink(img, root_inode, spath);
         }
-        else { // dip->type == T_DEV
+        else { // dip->type == T_DEVICE
             error("mv: %s: device\n", dpath);
             return EXIT_FAILURE;
         }

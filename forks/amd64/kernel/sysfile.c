@@ -360,7 +360,7 @@ sys_mknod(void)
   if((argstr(0, &path)) < 0 ||
      argint(1, &major) < 0 ||
      argint(2, &minor) < 0 ||
-     (ip = create(path, T_DEV, major, minor)) == 0){
+     (ip = create(path, T_DEVICE, major, minor)) == 0){
     end_op();
     return -1;
   }

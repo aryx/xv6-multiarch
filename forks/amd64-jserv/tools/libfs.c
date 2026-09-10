@@ -152,7 +152,7 @@ char *typename(int type)
         return "directory";
     case T_FILE:
         return "file";
-    case T_DEV:
+    case T_DEVICE:
         return "device";
     default:
         return "unknown";
@@ -304,7 +304,7 @@ uint bmap(img_t img, inode_t ip, uint n)
 // reads n byte of data from the file specified by ip
 int iread(img_t img, inode_t ip, uchar *buf, uint n, uint off)
 {
-    if (ip->type == T_DEV)
+    if (ip->type == T_DEVICE)
         return -1;
     if (off > ip->size || off + n < off)
         return -1;
@@ -328,7 +328,7 @@ int iread(img_t img, inode_t ip, uchar *buf, uint n, uint off)
 // writes n byte of data to the file specified by ip
 int iwrite(img_t img, inode_t ip, uchar *buf, uint n, uint off)
 {
-    if (ip->type == T_DEV)
+    if (ip->type == T_DEVICE)
         return -1;
     if (off > ip->size || off + n < off || off + n > MAXFILESIZE)
         return -1;
@@ -352,7 +352,7 @@ int iwrite(img_t img, inode_t ip, uchar *buf, uint n, uint off)
 // truncate the file specified by ip to size
 int itruncate(img_t img, inode_t ip, uint size)
 {
-    if (ip->type == T_DEV)
+    if (ip->type == T_DEVICE)
         return -1;
     if (size > MAXFILESIZE)
         return -1;
@@ -630,7 +630,7 @@ int iunlink(img_t img, inode_t rp, char *path)
                 rp->nlink--;
             ip->nlink--;
             if (ip->nlink == 0) {
-                if (ip->type != T_DEV)
+                if (ip->type != T_DEVICE)
                     itruncate(img, ip, 0);
                 ifree(img, geti(img, ip));
             }

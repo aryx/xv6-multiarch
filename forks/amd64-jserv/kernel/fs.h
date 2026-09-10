@@ -72,8 +72,8 @@ struct superblock {
 // On-disk inode structure
 struct dinode {
   short type;           // File type
-  short major;          // Major device number (T_DEV only)
-  short minor;          // Minor device number (T_DEV only)
+  short major;          // Major device number (T_DEVICE only)
+  short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
   short ownerid;        // The ID of the user who owns the file.
   short groupid;        // The ID of the group who owns the file.

@@ -403,7 +403,7 @@ int sys_mknod(void)
 
     if((len=argstr(0, &path)) < 0 ||
             argint(1, &major) < 0 || argint(2, &minor) < 0 ||
-            (ip = create(path, T_DEV, major, minor)) == 0){
+            (ip = create(path, T_DEVICE, major, minor)) == 0){
 
         commit_trans();
         return -1;
