@@ -745,6 +745,33 @@ clusters are, and Tier 0 still exploits them.
 Ordered by risk, and starting *after* Phase 0 above. One file per commit; each
 commit builds and boots every arch it touches.
 
+### Started (2026-09-10)
+
+Two merges landed, both following the same rule: take the most complete
+version, not the most common one, and keep a fork's own copy only when it
+has a real, stated reason to differ.
+
+- **`kernel/init/user/init.c`** (`81d5802`) — thirteen of fourteen collapsed
+  into one, based on `forks/riscv64`'s 54-line version (better error
+  handling and orphan-reaping than the nine-fork 37-line majority). Only
+  `amd64-jserv` kept its own, because it `mknod()`s a second device no other
+  port has. Not yet wired into any fork's build — a content merge staged for
+  the eventual `arch/<name>/` cutover, not a build change.
+- **`tools/mkfs.c`** (`5d8aab0`) — four of fourteen (`arm64`, `arm64-pi4`,
+  `loongarch`, `riscv32`) collapsed into one, based on `arm64`'s version
+  (already byte-identical to `arm64-pi4`/`loongarch`; `riscv32` was missing
+  a `die()` helper cleanup the other three had). Unlike `init.c`, this one
+  **is** wired into those four forks' Makefiles (`../../tools/mkfs.c`
+  replaces each fork's own `$O/mkfs.c`) and verified with a full rebuild,
+  each fork's own full `test-<arch>`, `make test-all`, and
+  `docker build --build-arg ARCH=riscv32`/`arm64`. The other ten forks keep
+  their own copy because `mkfs.c`'s divergence is a real on-disk format
+  difference (magic number present or not, block-start fields stored on
+  disk or recomputed, `riscv64`'s own deliberate one-block log-size bump) —
+  see the file's own header comment for the fork-by-fork reasons. Forcing
+  all fourteen into one `#ifdef`-laden file was considered and rejected for
+  the reason this plan's own "two hard rules" section gives.
+
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
 `umalloc.c` — 7 arches, one content. Within the riscv family: `ls.c`,
