@@ -479,6 +479,44 @@ same on `arm-pi1-bis`, `arm-pi2` and `arm-pi3`.**
   reason rather than a real one. `git clean -fdxq` alone removes build
   output without touching tracked modifications.
 
+### The Pi ports' duplicated header sets are smaller than they look (2026-09-10)
+
+Prompted by an obvious question about the `arm-pi1` move — why is `proc.h`
+in `user/`? — all four Raspberry Pi ports turn out to carry **seven dead
+kernel headers** in their userland set, identical in all four:
+
+```
+buf.h  defs.h  elf.h  file.h  mmu.h  proc.h  spinlock.h
+```
+
+Not included by any userland source — not the programs, not the test
+programs, not `ulib`, not `mkfs.c` — directly or transitively. (In these
+forks no userland header includes another, so direct use *is* transitive
+use.) Removed in one commit across all four; each still builds and reports
+ALL TESTS PASSED. Deliberately a separate commit from any Phase 0 move,
+which stay pure renames.
+
+**This materially shrinks Tier 2.** `arm-pi1` looked like it had seven
+headers genuinely diverging between its two sets — `arm.h`, `defs.h`,
+`memlayout.h`, `mmu.h`, `proc.h`, `traps.h`, `types.h` — but `defs.h`,
+`mmu.h` and `proc.h` were all dead. What actually has to be reconciled is
+**four** headers that are both really used by userland and really different
+from the kernel's copy:
+
+```
+arm.h  memlayout.h  traps.h  types.h
+```
+
+The rest of each userland set is either identical to the kernel's copy or
+gone. Worth re-running the same reachability check on any fork before
+assuming its duplication is real:
+
+```python
+# roots = every #include "..." in user/, tests/, ulib/, tools/
+# then close over the headers found in the userland dir itself
+# anything in user/*.h not reached is dead
+```
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
