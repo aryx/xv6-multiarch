@@ -128,7 +128,18 @@ main(int argc, char *argv[])
   iappend(rootino, &de, sizeof(de));
 
   for(i = 2; i < argc; i++){
-    assert(index(argv[i], '/') == 0);
+    // claude: this used argv[i] for BOTH the host path to open and the name
+    // written into the image, which only worked while every program sat in
+    // the fork root - the assert below enforced exactly that. Phase 0
+    // (docs/claude_notes/plan_factorization.md) builds them in user/ and
+    // tests/, so the two are no longer the same string: open() still needs
+    // the full path, while the directory entry needs the basename. Split
+    // them. The assert now checks the basename and so always holds, but is
+    // kept because it still documents the invariant DIRSIZ relies on.
+    char *shortname = strrchr(argv[i], '/');
+    shortname = shortname ? shortname + 1 : argv[i];
+
+    assert(index(shortname, '/') == 0);
 
     if((fd = open(argv[i], 0)) < 0){
       perror(argv[i]);
@@ -139,14 +150,14 @@ main(int argc, char *argv[])
     // The binaries are named _rm, _cat, etc. to keep the
     // build operating system from trying to execute them
     // in place of system binaries like rm and cat.
-    if(argv[i][0] == '_')
-      ++argv[i];
+    if(shortname[0] == '_')
+      ++shortname;
 
     inum = ialloc(T_FILE);
 
     bzero(&de, sizeof(de));
     de.inum = xshort(inum);
-    strncpy(de.name, argv[i], DIRSIZ);
+    strncpy(de.name, shortname, DIRSIZ);
     iappend(rootino, &de, sizeof(de));
 
     while((cc = read(fd, buf, sizeof(buf))) > 0)
