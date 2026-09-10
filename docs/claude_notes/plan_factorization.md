@@ -751,6 +751,25 @@ Two merges landed, both following the same rule: take the most complete
 version, not the most common one, and keep a fork's own copy only when it
 has a real, stated reason to differ.
 
+**Gotcha 11, found by a real CI break (2026-09-11): deleting the last
+tracked file in a directory deletes the directory too, from git's point of
+view.** `5d8aab0` deleted `forks/{riscv32,arm64,arm64-pi4,loongarch}/tools/
+mkfs.c` (moved to the shared `../../tools/mkfs.c`) without noticing it was
+the only tracked file each of those `tools/` directories had. Git does not
+track empty directories, so a fresh checkout (CI, `docker build`) never
+recreates `tools/`, and `gcc -o tools/mkfs ...` fails with "cannot open
+output file tools/mkfs: No such file or directory". Every local build
+stayed green throughout, because the directory physically survived on disk
+from before the deletion - only a truly clean tree (verified here with
+`git archive HEAD | tar -x` into a scratch directory, not just `make
+clean`) exposes it. Same bug class `forks/i386`'s own `user/%.o` rules
+already document from an earlier undocumented session (hit there when
+`user/`'s own tracked source files all moved to `utilities/`). Fixed with
+`@mkdir -p $O` before the recipe, `9c4c528`. **Before deleting the last
+file in a per-fork directory (not just moving a source file elsewhere),
+check `git ls-tree -r HEAD -- <dir>` for what else is tracked there, and
+verify any build rule writing into it guards with `mkdir -p`.**
+
 - **`kernel/init/user/init.c`** (`81d5802`) — thirteen of fourteen collapsed
   into one, based on `forks/riscv64`'s 54-line version (better error
   handling and orphan-reaping than the nine-fork 37-line majority). Only
