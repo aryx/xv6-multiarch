@@ -33,9 +33,9 @@ OBJS = \
 	kernel/trap.o\
 	kernel/vm.o \
 	\
-	kernel/device/timer.o \
-	kernel/device/uart.o \
-	kernel/device/gic.o
+	kernel/timer.o \
+	kernel/uart.o \
+	kernel/gic.o
 
 #device/picirq.o \
 	

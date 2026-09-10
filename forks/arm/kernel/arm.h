@@ -1,7 +1,9 @@
 #ifndef ARM_INCLUDE
 #define ARM_INCLUDE
 
-#include "device/versatile_pb.h"
+/* claude: was "device/versatile_pb.h" - kernel/ is flat in every fork
+ * since Phase 0, so the subdirectory is gone. */
+#include "versatile_pb.h"
 
 // trap frame: in ARM, there are seven modes. Among the 16 regular registers,
 // r13 (sp), r14(lr), r15(pc) are banked in all modes.

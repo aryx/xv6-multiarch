@@ -69,9 +69,9 @@ LINK_INIT = $(call quiet-command,$(LD) $(LDFLAGS) \
 OBJCOPY_INIT = $(call quiet-command,$(OBJCOPY) \
 	-S -O binary --prefix-symbols="_binary_$@" $@.out $@, "  OBJCOPY  $(TARGET_DIR)$@")
 
-# claude: kernel objects land in build/kernel/ (and build/kernel/device/)
-# now that lib/ folded into kernel/ and device/ became kernel/device/.
-build-directory = $(shell mkdir -p build build/kernel build/kernel/device)
+# claude: kernel objects all land in build/kernel/ now that lib/ and
+# device/ have been folded into a flat kernel/ (Phase 0).
+build-directory = $(shell mkdir -p build build/kernel)
 
 build/%.o: %.c
 	$(call build-directory)
