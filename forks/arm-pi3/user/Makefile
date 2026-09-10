@@ -22,7 +22,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # class as forks/arm/makefile.inc's own -mfloat-abi comment.
 # -MP joins -MD so a vanished header is a rebuild, not a hard error;
 # -Wno-infinite-recursion is the GCC 12+ false positive on sh.c's runcmd().
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote .
 
 all: mkfs initcode fs.img
 
@@ -32,6 +32,21 @@ initcode: initcode.S
 	$(OBJCOPY) -S -O binary initcode.out initcode
 	$(OBJDUMP) -S initcode.o > initcode.asm
 
+
+# claude: ASFLAGS was never set here - it did not need to be while usys.S
+# sat next to the traps.h it includes. make's built-in .S rule uses
+# $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS) (gotcha 9).
+ASFLAGS = -iquote .
+
+# claude: the test programs and the user library live in their own
+# directories since Phase 0, but their objects and linked binaries still
+# land HERE - so UPROGS below, the ./mkfs invocation and ULIB are all
+# unchanged, and mkfs still sees bare names with no '/' in them. "-iquote ."
+# above is what makes it work: a quoted #include resolves from the
+# INCLUDER's directory, which for a source compiled out of ../tests or
+# ../ulib is not where this fork's userland headers live.
+vpath %.c ../tests ../ulib
+vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o
 	
@@ -46,8 +61,12 @@ _forktest: forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
-mkfs: mkfs.c ../include/fs.h
-	gcc -o mkfs mkfs.c
+# claude: mkfs.c moved to ../tools/ but still includes this directory's own
+# "types.h"/"fs.h"/"stat.h"/"param.h" - the USERLAND header set, which it
+# always compiled against, having lived here. -iquote, not -I: mkfs is a
+# host program that also includes the system <fcntl.h> (gotcha 6).
+mkfs: ../tools/mkfs.c fs.h
+	gcc -iquote . -o mkfs ../tools/mkfs.c
 	#gcc -Werror -Wall -o mkfs mkfs.c
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

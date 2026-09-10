@@ -33,8 +33,8 @@ ifeq ($(hw), fvp)
 	# block's own long comment for the full story (found chasing a real
 	# "cpu0: panic: release" SMP race in this fork; identical root cause
 	# and fix to forks/arm-pi2's own equivalent bug).
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O0 -Wall -MD -MP -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
-	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O0 -Wall -MD -MP -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
+	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
 else ifeq ($(hw), rpi1)
@@ -46,12 +46,12 @@ else ifeq ($(hw), rpi1)
 	MMIO_VA   = 0xD0000000
 	MMIO_SIZE = 0x01000000
 	PERIPHBASE= 0xDF000000
-	#CFLAGS   = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
+	#CFLAGS   = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel
 	# claude: -fno-pic -fno-pie restored from the commented-out
 	# alternate CFLAGS line right above (which already had -fno-pic -
 	# real evidence someone hit this before) - see the rpi2 block's own
 	# long comment.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -92,8 +92,8 @@ else ifeq ($(hw), rpi2)
 	# the kernel and every core equally, not a QEMU quirk - real
 	# hardware would behave identically (or worse - unpopulated-GOT
 	# memory content isn't guaranteed to even be zero there either).
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -std=gnu99 -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -fno-zero-initialized-in-bss -I include
-	#CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I include
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -std=gnu99 -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -fno-zero-initialized-in-bss -I kernel
+	#CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2 -DRASPPI=2 -DNDEBUG
 else
@@ -116,7 +116,7 @@ LD_OPTIONS += --defsym=K_PDX_BASE=$(K_PDX_BASE) --defsym=K_PTX_BASE=$(K_PTX_BASE
 # Build directory
 BUILD=build/
 # Sources directory.
-SOURCE=source/
+SOURCE=kernel/
 # Generated listing file.
 LIBRARIES=
 
@@ -130,8 +130,8 @@ C_OBJECTS = $(patsubst $(SOURCE)%.c,$(BUILD)%.o,$(wildcard $(SOURCE)*.c))
 all : $(TARGET)
 
 # Rule to make the elf file.
-$(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
-	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(LD_OPTIONS) -Map kernel.map -o $(BUILD)kernel.elf -T kernel.ld
+$(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel/kernel.ld
+	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(LD_OPTIONS) -Map kernel.map -o $(BUILD)kernel.elf -T kernel/kernel.ld
 	$(TOOLCHAIN)objdump -d $(BUILD)kernel.elf > kernel.list
 	$(TOOLCHAIN)objcopy $(BUILD)kernel.elf -O binary $(TARGET)
 
@@ -183,8 +183,8 @@ QEMU_LD_OPTIONS += --defsym=K_PDX_BASE=$(K_PDX_BASE) --defsym=K_PTX_BASE=$(K_PTX
 QEMU_LD_OPTIONS += --defsym=PHYSOFFSET=$(shell printf "0x%X\n" $$(( $(PHYSTART) + $(QEMU_ARM_ENTRY) )) )
 QEMU_LD_OPTIONS += --defsym=KERNOFFSET=$(shell printf "0x%X\n" $$(( $(KERNBASE) + $(QEMU_ARM_ENTRY) )) )
 
-kernel7-qemu.bin: $(ASM_OBJECTS_QEMU) $(C_OBJECTS_QEMU) kernel.ld
-	$(TOOLCHAIN)ld $(ASM_OBJECTS_QEMU) $(C_OBJECTS_QEMU) -L. $(patsubst %,-l %,$(LIBRARIES)) $(QEMU_LD_OPTIONS) -Map kernel-qemu.map -o $(BUILD_QEMU)kernel-qemu.elf -T kernel.ld
+kernel7-qemu.bin: $(ASM_OBJECTS_QEMU) $(C_OBJECTS_QEMU) kernel/kernel.ld
+	$(TOOLCHAIN)ld $(ASM_OBJECTS_QEMU) $(C_OBJECTS_QEMU) -L. $(patsubst %,-l %,$(LIBRARIES)) $(QEMU_LD_OPTIONS) -Map kernel-qemu.map -o $(BUILD_QEMU)kernel-qemu.elf -T kernel/kernel.ld
 	$(TOOLCHAIN)objcopy $(BUILD_QEMU)kernel-qemu.elf -O binary kernel7-qemu.bin
 
 armstub64.bin: armstub64.S armstub64.ld | $(BUILD_QEMU)
@@ -239,7 +239,7 @@ qemu-graphics: kernel7-qemu.bin armstub64.bin
 		-serial mon:stdio -device usb-kbd -display $(GTK_DISPLAY) $(QMP_OPTS)
 
 $(BUILD_QEMU)%.o: $(SOURCE)%.S | $(BUILD_QEMU)
-	$(TOOLCHAIN)gcc -c $(CFLAGS) $(QEMU_CC_OPTIONS) -I source $< -o $@
+	$(TOOLCHAIN)gcc -c $(CFLAGS) $(QEMU_CC_OPTIONS) -I kernel $< -o $@
 
 $(BUILD_QEMU)%.o: $(SOURCE)%.c | $(BUILD_QEMU)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(QEMU_CC_OPTIONS) $< -o $@
@@ -257,13 +257,13 @@ $(BUILD_QEMU):
 
 # Build ASM files
 $(BUILD)%.o: $(SOURCE)%.S | $(BUILD)
-	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) -I source $< -o $@
+	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) -I kernel $< -o $@
 
 # Build C files
 $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) $<  -o $@
 
-# claude: source/fs.img is GENERATED, not checked in - the output of uprogs/'s
+# claude: kernel/fs.img is GENERATED, not checked in - the output of uprogs/'s
 # own build (mkfs plus every UPROGS binary). It used to be a committed 512KB
 # blob, which is precisely how uprogs/ here came to be unbuildable without
 # anyone noticing: bringing it up needed three real fixes (CFLAGS that asked
@@ -273,18 +273,18 @@ $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 # indefinitely and can silently drift from the uprogs/*.c it represents.
 # Same treatment and rule shape as the sibling forks/arm-pi2/Makefile.
 #
-# The phony target is "uprogs-fs-img", NOT "source/fs.img": a phony
+# The phony target is "uprogs-fs-img", NOT "kernel/fs.img": a phony
 # prerequisite of a REAL file makes that file's recipe run unconditionally
 # (GNU make treats it as always newer), which would re-assemble entry.S and
 # re-link the kernel on every build. This way the recursive make still runs
-# every time and does its own up-to-date checking, while source/fs.img's
+# every time and does its own up-to-date checking, while kernel/fs.img's
 # timestamp only moves when the image content actually changed.
 .PHONY: uprogs-fs-img
 uprogs-fs-img:
-	$(MAKE) -C uprogs TOOLPREFIX=$(TOOLCHAIN) fs.img
+	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) fs.img
 
-source/fs.img: uprogs-fs-img
-	cmp -s uprogs/fs.img $@ || cp uprogs/fs.img $@
+kernel/fs.img: uprogs-fs-img
+	cmp -s user/fs.img $@ || cp user/fs.img $@
 
 # entry.S is the only source file that embeds the image (its own
 # .incbin "fs.img"), so only ITS object needs the dependency - but this fork
@@ -295,8 +295,8 @@ source/fs.img: uprogs-fs-img
 # while the rest of the kernel is compiled against the current fs.h - which
 # boots as far as the scheduler and then hangs with no shell and no panic,
 # because mkfs wrote one on-disk layout and the kernel reads another.
-$(BUILD)entry.o: source/fs.img
-$(BUILD_QEMU)entry.o: source/fs.img
+$(BUILD)entry.o: kernel/fs.img
+$(BUILD_QEMU)entry.o: kernel/fs.img
 
 loader: loader.S kernel7.bin
 	$(TOOLCHAIN)gcc -c loader.S -o loader.elf -fpic -ffreestanding -nostdlib -nostartfiles -O0 -Wall -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -o loader.o
