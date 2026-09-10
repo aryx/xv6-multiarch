@@ -30,7 +30,7 @@ from qemu_console import QEMU, main
 # though this fork's own suite has fewer tests than riscv's (no
 # grind/sync/logstress/forphan/dorphan - see this file's own header
 # comment).
-TIMEOUT = 600
+TIMEOUT = 300
 
 
 def make_qemu(reset=True):

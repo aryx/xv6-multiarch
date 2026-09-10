@@ -23,7 +23,7 @@ from qemu_console import QEMU, main
 # Same full (non "-q") budget as forks/riscv's and forks/x86's own
 # test-xv6.py - see forks/x86/test-xv6.py's own comment for why an
 # earlier, shorter timeout wasn't safe to assume.
-TIMEOUT = 600
+TIMEOUT = 300
 
 
 def make_qemu(reset=True):

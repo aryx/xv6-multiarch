@@ -205,7 +205,13 @@ def test_boot():
     q.stop()
 
 def test_usertests(test=""):
-    timeout = 600
+    # claude: lowered from 600 - every wired-up arch's own full usertests
+    # run finishes well under 300s when it's actually going to pass (see
+    # scripts/qemu_console.py's own TIMEOUT change for the measurements
+    # this is based on); a run still going at 300s is hung or
+    # crash-looping, not "almost done", so failing sooner here only saves
+    # CI time, it does not trade away real coverage.
+    timeout = 300
     opt = ""
     if args.q:
         opt = " -q"

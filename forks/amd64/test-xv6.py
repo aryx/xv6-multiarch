@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from qemu_console import QEMU, main
 
 # Same full (non "-q") budget as every other fork's own test-xv6.py.
-TIMEOUT = 600
+TIMEOUT = 300
 
 
 def make_qemu(reset=True):

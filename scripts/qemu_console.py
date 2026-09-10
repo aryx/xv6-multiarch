@@ -131,13 +131,24 @@ def test_boot(make_qemu):
         q.kill()
 
 
-def test_usertests(make_qemu, usertests_cmd="usertests\n", timeout=600):
+def test_usertests(make_qemu, usertests_cmd="usertests\n", timeout=300):
     """Full check: boot, run usertests, assert ALL TESTS PASSED.
 
     usertests_cmd: the exact command line sent to the shell, line ending
     included - most ports want "usertests\\n", but a few (arm-pi1,
     arm-pi1-bis) only treat '\\r' as Enter - see those forks' own
     test-xv6.py header comments.
+
+    claude: timeout default lowered from 600 to 300 (2026-09-10) - every
+    wired-up arch's own full usertests run finishes in well under that
+    when it is actually going to pass (i386/amd64 ~60-80s locally under
+    Docker; even the slowest ones that legitimately complete stay under
+    it). A run still going at 300s in CI turned out to be a real
+    kernel-side bug making an ARM32 Pi port's forked children crash
+    (trap 4) one after another indefinitely, not a slow-but-fine test -
+    see forks/arm-pi2's and forks/arm-pi3's own notes_arch_*.txt. Cutting
+    the ceiling in half only makes a genuinely broken run fail faster in
+    CI; it does not trade away coverage of anything that was passing.
     """
     q = make_qemu()
     try:
@@ -153,7 +164,7 @@ def test_usertests(make_qemu, usertests_cmd="usertests\n", timeout=600):
         q.kill()
 
 
-def main(make_qemu, usertests_cmd="usertests\n", timeout=600):
+def main(make_qemu, usertests_cmd="usertests\n", timeout=300):
     """Call from a fork's own `if __name__ == "__main__":` block.
 
     "./test-xv6.py boot" runs the fast smoke check; anything else
