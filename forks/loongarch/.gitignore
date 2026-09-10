@@ -51,9 +51,10 @@ dkms.conf
 /kernel/kernel
 fs.img
 .gdb_history
-mkfs
+# claude: anchored - the host tool lives in tools/ since Phase 0
+/tools/mkfs
 initcode
-usys.S
+/ulib/usys.S
 # claude: was tracked (a generated "xxd -i fs.img" C header, up to several
 # MB, that changes on every build - see notes_arch_loongarch.txt), same
 # oversight as mkfs/initcode/usys.S above evidently were before this
