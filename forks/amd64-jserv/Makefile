@@ -147,6 +147,19 @@ $(UOBJ_DIR)/%.o: ../../shells/%.c
 	$(CC) $(CFLAGS_user) -c -o $@ $<
 
 $(UOBJ_DIR)/%.o: ../../kernel/init/user/%.c
+	@mkdir -p $(UOBJ_DIR)
+	$(CC) $(CFLAGS_user) -c -o $@ $<
+
+# claude: the portable test programs, shared at the repo root. usertests.c is
+# NOT among them - it stays in this fork's own tests/.
+$(UOBJ_DIR)/%.o: ../../tests/%.c
+	@mkdir -p $(UOBJ_DIR)
+	$(CC) $(CFLAGS_user) -c -o $@ $<
+
+# claude: the portable test programs, shared at the repo root. usertests.c
+# is NOT among them - it is genuinely per-port (twelve variants, each with its
+# own skipped sub-tests) and stays in each fork's own tests/.
+tests/%.o: ../../tests/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(UOBJ_DIR)/%.o: ../../lib_core/libc/ulib/%.c

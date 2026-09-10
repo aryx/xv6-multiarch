@@ -15,3 +15,8 @@ char *sys_sbrk(int, int);
 char *sbrklazy(int);
 int pause(int);
 int sync(void);
+
+// claude: this port renamed the sleep syscall to pause (SYS_pause, and
+// entry("pause") in usys.pl) - it has no sleep at all. Shared code says
+// sleep(), so map it here rather than special-casing every caller.
+#define sleep pause

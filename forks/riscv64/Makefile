@@ -120,6 +120,12 @@ $U/%.o: ../../shells/%.c
 $U/%.o: ../../kernel/init/user/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# claude: the portable test programs, shared at the repo root. usertests.c
+# is NOT among them - it is genuinely per-port (twelve variants, each with its
+# own skipped sub-tests) and stays in each fork's own tests/.
+tests/%.o: ../../tests/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 # claude: the shared user library, under lib_core/ per ~/principia's
 # convention. Separate rule because these objects land in $L/, not
 # alongside the programs.
