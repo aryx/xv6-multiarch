@@ -10,7 +10,7 @@ include ../makefile.inc
 # source compiled out of ../tests or ../ulib can no longer reach by sitting
 # next to them; "-iquote ../kernel" replaces the old "-iquote ../", the
 # fork root having stopped being where the kernel headers live.
-CFLAGS += -iquote . -iquote ../kernel -Wno-infinite-recursion
+CFLAGS += -iquote . -iquote ../kernel -Wno-infinite-recursion -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 # claude: usys.S needs the same treatment - make's built-in .S rule uses
 # $(ASFLAGS), never $(CFLAGS) (gotcha 9 in plan_factorization.md).
 ASFLAGS += -iquote . -I ../kernel
@@ -18,7 +18,11 @@ ASFLAGS += -iquote . -I ../kernel
 # directories since Phase 0, but their objects and linked binaries still
 # land HERE - so UPROGS below, the $(MKFS) invocation and ULIB are all
 # unchanged, and mkfs still sees bare names with no '/' in them.
-vpath %.c ../tests ../ulib
+# claude: ../../../utilities and hold the portable programs
+# shared by every fork. vpath works HERE (unlike the flat forks) because this
+# Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
+# component for vpath to have to reproduce.
+vpath %.c ../tests ../ulib ../../../utilities
 vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o

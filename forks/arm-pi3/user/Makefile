@@ -22,7 +22,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # class as forks/arm/makefile.inc's own -mfloat-abi comment.
 # -MP joins -MD so a vanished header is a rebuild, not a hard error;
 # -Wno-infinite-recursion is the GCC 12+ false positive on sh.c's runcmd().
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote .
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 all: mkfs initcode fs.img
 
@@ -45,7 +45,11 @@ ASFLAGS = -iquote .
 # above is what makes it work: a quoted #include resolves from the
 # INCLUDER's directory, which for a source compiled out of ../tests or
 # ../ulib is not where this fork's userland headers live.
-vpath %.c ../tests ../ulib
+# claude: ../../../utilities and hold the portable programs
+# shared by every fork. vpath works HERE (unlike the flat forks) because this
+# Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
+# component for vpath to have to reproduce.
+vpath %.c ../tests ../ulib ../../../utilities
 vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o

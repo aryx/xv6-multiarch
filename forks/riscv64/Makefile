@@ -106,6 +106,15 @@ $K/%.o: $K/%.S
 tags: $(OBJS)
 	etags kernel/*.S kernel/*.c
 
+# claude: the portable user programs live at the repo-root utilities/ and are
+# shared by every fork. An explicit pattern rule, not
+# vpath: vpath matches the WHOLE prerequisite path, so "vpath %.c ../../utilities"
+# would make make look for utilities/user/echo.c. The object still lands in this
+# fork, so concurrent per-fork builds never race on a shared output file.
+$U/%.o: ../../utilities/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+
 ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
 # claude: not anchored to a directory, so this one rule builds both

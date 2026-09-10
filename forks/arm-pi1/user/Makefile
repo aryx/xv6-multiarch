@@ -23,7 +23,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # sh.c's runcmd(), which recurses but always terminates via exec()/exit() in
 # its base case - see notes_debugging_techniques.txt item 1, and the same
 # flag in forks/arm-pi2/uprogs/Makefile.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -iquote .
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -iquote . -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 initcode: initcode.S
 	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
@@ -47,7 +47,11 @@ ASFLAGS = -iquote .
 # is what makes that work: a quoted #include resolves from the INCLUDER's
 # own directory, which for a source compiled out of ../tests or ../ulib is
 # not where this fork's userland headers live - they are here.
-vpath %.c ../tests ../ulib
+# claude: ../../../utilities and hold the portable programs
+# shared by every fork. vpath works HERE (unlike the flat forks) because this
+# Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
+# component for vpath to have to reproduce.
+vpath %.c ../tests ../ulib ../../../utilities
 vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o

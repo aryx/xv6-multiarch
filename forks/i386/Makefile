@@ -76,7 +76,12 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser
+# claude: -I. is the FORK ROOT, so the shared programs in the repo-root
+# utilities/ can spell their includes "kernel/types.h" / "user/user.h" the
+# way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
+# earlier attempt appended it to the last CFLAGS line, which in several
+# forks sits inside an ifeq branch that is not taken.
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 10+'s -Warray-bounds (part of -Wall) misfires on mp.c's BIOS-
 # memory pointer casts (mpconfig()/mpinit() treat a small physical address
@@ -164,6 +169,15 @@ tags: $(OBJS) kernel/entryother.S user/_init
 
 kernel/vectors.S: tools/vectors.pl
 	./tools/vectors.pl > kernel/vectors.S
+
+# claude: the portable user programs live at the repo-root utilities/ and are
+# shared by every fork. An explicit pattern rule, not
+# vpath: vpath matches the WHOLE prerequisite path, so "vpath %.c ../../utilities"
+# would make make look for utilities/user/echo.c. The object still lands in this
+# fork, so concurrent per-fork builds never race on a shared output file.
+user/%.o: ../../utilities/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 
 ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 

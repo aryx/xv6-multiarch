@@ -85,7 +85,12 @@ OBJDUMP = $(CROSS_COMPILE)objdump
 cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 	> /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi ;)
 
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror
+# claude: -I. is the FORK ROOT, so the shared programs in the repo-root
+# utilities/ can spell their includes "kernel/types.h" / "user/user.h" the
+# way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
+# earlier attempt appended it to the last CFLAGS line, which in several
+# forks sits inside an ifeq branch that is not taken.
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I.
 CFLAGS += -g -Wall -MD -fno-omit-frame-pointer
 CFLAGS += -ffreestanding -fno-common -nostdlib -Ikernel -Iuser -gdwarf-2 $(XFLAGS) $(OPT)
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
@@ -133,6 +138,12 @@ $(UOBJ_DIR)/%.o: user/%.c
 # one of the two directories. UPROGS itself needs no change: it is a flat
 # list of bare names staged into $(FS_DIR), so where a program is compiled
 # from was already decoupled from what it is called in the image.
+$(UOBJ_DIR)/%.o: ../../utilities/%.c
+	@mkdir -p $(UOBJ_DIR)
+	$(CC) $(CFLAGS_user) -c -o $@ $<
+
+	$(CC) $(CFLAGS_user) -c -o $@ $<
+
 $(UOBJ_DIR)/%.o: tests/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<

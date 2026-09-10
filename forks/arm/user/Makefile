@@ -7,14 +7,18 @@ include ../makefile.inc
 # (types.h, stat.h, fcntl.h, ...) moved into kernel/ in Phase 0. "-iquote ."
 # is for user.h, which lives here: a quoted include normally resolves from
 # the INCLUDER's own directory, which is ../tests for the test programs.
-CFLAGS += -iquote ../kernel -iquote . -Wno-infinite-recursion
+CFLAGS += -iquote ../kernel -iquote . -Wno-infinite-recursion -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 ASFLAGS += -I ../kernel
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still
 # land HERE - so UPROGS below, the $(MKFS) invocation and ULIB are all
 # unchanged, and mkfs still sees bare names with no '/' in them. Only the
 # source lookup moves, which is exactly what vpath is for.
-vpath %.c ../tests ../ulib
+# claude: ../../../utilities and hold the portable programs
+# shared by every fork. vpath works HERE (unlike the flat forks) because this
+# Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
+# component for vpath to have to reproduce.
+vpath %.c ../tests ../ulib ../../../utilities
 vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o

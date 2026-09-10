@@ -34,7 +34,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # and recurses over BOTH sides of pipes/lists/backgrounds, not itself
 # unconditionally) trips a GCC false positive, same one already seen
 # elsewhere in this repo's own sh.c ports.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote .
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 all: mkfs initcode fs.img
 
@@ -59,7 +59,11 @@ ASFLAGS = -iquote .
 # makes it work: a quoted #include resolves from the INCLUDER's directory,
 # which for a source compiled out of ../tests or ../ulib is not where this
 # fork's userland headers live - they are here.
-vpath %.c ../tests ../ulib
+# claude: ../../../utilities and hold the portable programs
+# shared by every fork. vpath works HERE (unlike the flat forks) because this
+# Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
+# component for vpath to have to reproduce.
+vpath %.c ../tests ../ulib ../../../utilities
 vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o
