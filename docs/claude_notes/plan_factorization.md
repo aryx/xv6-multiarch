@@ -431,6 +431,54 @@ correct. Grepping the Makefile for the missing path finds nothing. **When a
 link fails naming a file that is not on the command line, read the linker
 script.**
 
+### arm-pi1 (2026-09-10, DONE)
+
+Two commits, `test-arm-pi1` green, `test-all` green. **Eleven forks done,
+three to go.** 93 files moved, all R100; only `.gitignore`, `LICENSE`,
+`Makefile`, `README` and `test-xv6.py` stay at the fork root.
+`source/`, `include/` and `uprogs/` are all gone.
+
+**The two header sets stay separate.** Of the 16 basenames this fork had in
+both `include/` and `uprogs/`, **7 genuinely differ** — `types.h` by 97 diff
+lines, `arm.h` by 85, `mmu.h` by 72, `defs.h` by 59, plus `memlayout.h`,
+`proc.h`, `traps.h`. `uprogs/` is a real, deliberately distinct userland
+header set, not a stale copy, so it moved to `user/` intact and `include/`
+moved to `kernel/` intact. That leaves `kernel/user.h` and `user/user.h`
+both present — identical files, the duplication the fork already had,
+preserved rather than resolved. Reconciling them is Tier 2. **Expect the
+same on `arm-pi1-bis`, `arm-pi2` and `arm-pi3`.**
+
+`vpath` again did the work in `user/`, but this fork needed two things
+`arm` did not:
+
+1. **`-iquote .` is load-bearing.** `arm`'s sub-Makefile already pointed at
+   the shared headers explicitly; this one relied on `usys.S`, `ulib.c` and
+   the programs all sitting in the same directory as the headers they
+   include. Compiled out of `../ulib` or `../tests`, a quoted `#include`
+   resolves from the *includer's* directory and finds nothing.
+2. **Gotcha 9: `ASFLAGS` is not `CFLAGS`, and a Makefile may not set it at
+   all.** Adding `-iquote .` to `CFLAGS` fixed every `.c` and left `usys.S`
+   alone failing with `traps.h: No such file or directory` — make's built-in
+   `.S` rule uses `$(ASFLAGS)`/`$(CPPFLAGS)`, never `$(CFLAGS)`, and this
+   Makefile defined neither. Expect it on the remaining Pi ports.
+
+**Two process mistakes, both worth not repeating:**
+
+- **`git mv source/* kernel/` aborts the whole operation** if any matched
+  path is untracked (here a stale `source/fs.img` build output) — and it
+  aborts *silently enough* to look partial: other `git mv` calls in the same
+  loop had succeeded, so the staged diff looked plausible while `source/`
+  had not moved at all. Then `rm -rf source/` deleted 30 tracked files.
+  Recovered with `git reset -q HEAD -- <fork>`, `git checkout -- <fork>`,
+  `git clean -fdq <fork>`. **Run `git clean -fdxq <fork>` first, then
+  enumerate with `git ls-files` and move only tracked paths** — that is what
+  worked on the retry.
+- **Never `git checkout -- <dir>` while fixup edits are uncommitted.** Doing
+  it to get a pristine tree for the rebuild check silently discarded all
+  three Makefile fixes, and the "from-scratch rebuild" then failed for that
+  reason rather than a real one. `git clean -fdxq` alone removes build
+  output without touching tracked modifications.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
