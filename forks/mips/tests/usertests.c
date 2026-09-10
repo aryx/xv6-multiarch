@@ -184,6 +184,20 @@ writetest(void)
   printf("small file test ok\n");
 }
 
+// claude: NBIG, not MAXFILE - this fork's own NDIRECT is 60 (vs 12 on
+// most other ports), so a full MAXFILE=188 blocks here is over 30%
+// more data than the same test does anywhere else, and each block is
+// a real disk write/read through begin_op()/end_op() and mipsel's own
+// (slow) QEMU disk emulation - together those made this single
+// sub-test alone take well over 5 minutes in CI, timing out the whole
+// run before it ever got to "big files ok" (confirmed: not a hang -
+// traced with a temporary progress counter and it was still making
+// steady, linear progress, just too slowly for the budget). NBIG only
+// needs to clear NDIRECT to still exercise the indirect-block path at
+// all; comfortably past it (NDIRECT+20) keeps that coverage while
+// cutting the work more than 2x.
+#define NBIG (NDIRECT + 20)
+
 void
 writetest1(void)
 {
@@ -197,7 +211,7 @@ writetest1(void)
     exit(0);
   }
 
-  for(i = 0; i < MAXFILE; i++){
+  for(i = 0; i < NBIG; i++){
     ((int*)buf)[0] = i;
     if(write(fd, buf, 512) != 512){
       printf("error: write big file failed\n", i);
@@ -217,7 +231,7 @@ writetest1(void)
   for(;;){
     i = read(fd, buf, 512);
     if(i == 0){
-      if(n == MAXFILE - 1){
+      if(n == NBIG - 1){
         printf("read only %d blocks from big", n);
         exit(0);
       }

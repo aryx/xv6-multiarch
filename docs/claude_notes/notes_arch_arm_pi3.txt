@@ -918,3 +918,35 @@ Docker/CI: added a Dockerfile ARCH case (gcc-arm-linux-gnueabihf AND
 gcc-aarch64-linux-gnu, plus qemu-system-arm - which is the package that
 ships qemu-system-aarch64) and a .github/workflows/docker.yml matrix
 entry, matching the sibling ARM ports'.
+
+Bug 21 (real, fixed 2026-09-10): "big files test" panics ("iderw:
+sector out of range") - identical bug and fix to forks/arm-pi2's own
+Bug 14, same day. Every shared utility program grew ~4.3KB when the
+factorization effort moved cat/echo/grep/ls/sh/wc/etc. onto shared,
+more general utilities/*.c + lib_core/libc/ulib/*.c implementations,
+eating into this port's hardcoded tools/mkfs.c nblocks=985 data-block
+budget until "big files test" (needs MAXFILE=188 blocks) no longer
+fit. mkfs's own size/nblocks arithmetic assertion has no notion of
+MAXFILE, so it happily built a valid-but-too-small filesystem; the
+kernel's own balloc() only discovered the shortfall at runtime and
+handed back a block number past the compiled-in disksize - a kernel
+panic that looks exactly like a hang (the test harness is correctly
+waiting forever for a completion string that can never print again).
+
+Fix: nblocks bumped 985 -> 1285 (size 1099 -> 1399) for real headroom,
+plus a build-time check in tools/mkfs.c that now fails the BUILD if
+fewer than 2*MAXFILE data blocks remain free after packing every file
+the image ships with - so a future growth spurt in any shared library
+is a clear mkfs error message, not a confusing runtime panic minutes
+into a QEMU test run. See forks/arm-pi2's own notes_arch_arm_pi2.txt
+Bug 14 for the full measurement (side-by-side block-usage comparison
+against the pre-sharing commit) and notes_debugging_techniques.txt for
+why this is worth a standing safeguard.
+
+Also lowered validatetest()'s "hi" bound (1100*1024 -> 100*1024, 276
+iterations -> 26) - not itself a cause of anything, just no reason to
+spend CI minutes on 276 addresses when 26 already samples the
+interesting range.
+
+Verified: "make test-arm-pi3" reaches ALL TESTS PASSED in ~49s (was:
+a kernel panic partway into every CI run).

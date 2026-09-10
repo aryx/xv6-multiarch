@@ -13,19 +13,29 @@
 
 #define _static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 
-int nblocks = 985;
+// claude: nblocks was 985 (size 1099) until the factorization session
+// that moved every utility program (cat/echo/grep/ls/sh/wc/...) onto
+// shared, more general utilities/*.c + lib_core/libc/ulib/*.c
+// implementations - every single one of them grew by a near-identical
+// ~4.3KB (a few hundred bytes of new library code statically linked
+// into each), which alone ate into this budget enough that "big files
+// test" (needs MAXFILE=188 blocks for its one test file) started
+// missing by a handful of blocks. That does not fail cleanly: mkfs
+// itself still had plenty of *disk* room (the assert below still
+// held), but the kernel's own balloc() ran out mid-test and handed
+// back a block number past the compiled-in disksize, which panics
+// ("iderw: sector out of range") deep in a QEMU run instead of
+// erroring at build time - see the freeblock-margin check after the
+// packing loop below, added so the NEXT such regression fails loudly
+// right here instead. nblocks bumped to 1285 (size 1399) for real
+// headroom, not just enough to limp past today's specific shortfall.
+// Identical fix to the sibling forks/arm-pi2/tools/mkfs.c - these two
+// files are close enough to be a good factorization candidate
+// themselves, once plan_factorization.md gets to tools/.
+int nblocks = 1285;
 int nlog = LOGSIZE;
 int ninodes = 200;
-// claude: size was 1024 (nblocks(985) + usedblocks(29) + nlog(10), this
-// file's own main() asserts they sum exactly). fs.h's NDIRECT 12->60 bump
-// (see that file's own comment) grew dinode from 64 to 256 bytes, so IPB
-// fell from 8 to 2 and usedblocks' own "ninodes/IPB" term grew from 25 to
-// 100 blocks (+75) - bumped size by the same +75 to keep main()'s balance
-// assertion true. nblocks, the actual DATA block budget, is untouched.
-// There is no FSSIZE constant on the kernel side to keep in step: the
-// kernel reads this value back out of the superblock. Identical fix to the
-// sibling forks/arm-pi2/uprogs/mkfs.c.
-int size = 1099;
+int size = 1399;
 
 int fsfd;
 struct superblock sb;
@@ -100,6 +110,7 @@ main(int argc, char *argv[])
   bitblocks = size/(512*8) + 1;
   usedblocks = ninodes / IPB + 3 + bitblocks;
   freeblock = usedblocks;
+  uint usedblocks_before_files = usedblocks; // claude: see the margin check below
 
   printf("used %d (bit %d ninode %zu) free %u log %u total %d\n", usedblocks,
          bitblocks, ninodes/IPB + 1, freeblock, nlog, nblocks+usedblocks+nlog);
@@ -152,6 +163,36 @@ main(int argc, char *argv[])
       iappend(inum, buf, cc);
 
     close(fd);
+  }
+
+  // claude: fail the BUILD, loudly and here, rather than let a future
+  // growth spurt in any packed file (every utility here now statically
+  // links the same shared, growing lib_core/libc/ulib/*.c) silently eat
+  // into the margin usertests' own "big files test" needs at runtime.
+  // Missing this does not fail cleanly: mkfs has plenty of *disk* room
+  // left (nblocks is comfortably larger than what got packed), so the
+  // assert two lines up still passes - it is the KERNEL's balloc() that
+  // runs out mid-test and hands back a block number past the compiled-
+  // in disksize, which panics ("iderw: sector out of range") minutes
+  // into an unrelated QEMU test run instead of erroring right here,
+  // at the one point that actually knows both numbers. Margin is
+  // 2*MAXFILE: enough room, after everything else this image carries,
+  // to write the single biggest file this filesystem format supports
+  // and still have as much again to spare.
+  {
+    uint blocks_used_by_files = usedblocks - usedblocks_before_files;
+    uint free_after_packing = nblocks - blocks_used_by_files;
+    if (free_after_packing < 2 * MAXFILE) {
+      fprintf(stderr,
+              "mkfs: only %u data blocks free after packing this image "
+              "(nblocks=%d, %u used by the %d packed files) - need at "
+              "least %d (2*MAXFILE) so the largest file this filesystem "
+              "supports still fits at runtime. Bump nblocks (and size to "
+              "match) in tools/mkfs.c.\n",
+              free_after_packing, nblocks, blocks_used_by_files, argc - 2,
+              2 * MAXFILE);
+      exit(1);
+    }
   }
 
   // fix size of root inode dir

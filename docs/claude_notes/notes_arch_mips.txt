@@ -653,3 +653,24 @@ it: ALL TESTS PASSED with mem() enabled.
 The fix is in lib/umalloc.c (this port keeps its user library there, not
 in usr/); see morecore()'s own comment for the reasoning and for why it
 is a no-op for power-of-two allocation sizes.
+
+Bug 9 (real, fixed 2026-09-10): "big files test" (writetest1) alone
+took CI well past its 5-minute budget - genuinely slow, not hung
+
+Confirmed NOT a hang first (this port's own history in Bug 7 above was
+about MAXFILE being too small - a different failure shape, so this
+needed its own check): added a temporary progress counter to
+writetest1()'s write loop and it was making steady, linear progress the
+whole time, just far too slowly to fit the budget. This port's own
+NDIRECT is 60 (vs 12 on i386/riscv64), so MAXFILE=188 here is over 30%
+more data than the identical test writes anywhere else, and every one
+of those 188 blocks is a real disk write/read through begin_op()/
+end_op() plus mipsel's own (comparatively slow) QEMU disk emulation.
+
+Fix: tests/usertests.c's writetest1() now uses a local NBIG=(NDIRECT+20)
+instead of the full MAXFILE for its loop bound - still clears NDIRECT
+by a comfortable margin (exercises the indirect-block addressing path,
+which is the point of the test) while cutting the work more than 2x.
+Verified: "make test-mips" (the full, unmodified usertests suite,
+apart from this one loop bound) now reaches ALL TESTS PASSED in about
+10 seconds, down from timing out at 300s.

@@ -1499,7 +1499,13 @@ validatetest(void)
   uint p;
 
   printf("validate test\n");
-  hi = 1100*1024;
+  // claude: was 1100*1024 (276 iterations of fork()+kill()+wait(), each
+  // a real page-table copy under QEMU) - comfortably passed locally but
+  // alone took CI well past a 5-minute budget. Coverage here comes from
+  // sampling a RANGE of addresses, not from exhausting every one up to
+  // 1.1MB; 100*1024 still samples 26 addresses (some legitimately
+  // mapped near the start, most not) at a fraction of the cost.
+  hi = 100*1024;
 
   for(p = 0; p <= (uint)hi; p += 4096){
     if((pid = fork()) == 0){

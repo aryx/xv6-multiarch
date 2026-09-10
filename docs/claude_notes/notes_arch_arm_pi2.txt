@@ -675,3 +675,60 @@ morecore(). They pass mem() only because they have less RAM, so the fix
 was applied only where a real failure was observed and verified. Worth
 doing once, for all ports, when the factorization phase unifies
 umalloc.c.
+
+Bug 14 (real, fixed 2026-09-10): "big files test" panics ("iderw: sector
+out of range") - a factorization regression, caught late because it
+looked like a hang, not a crash
+
+CI started timing out on "big files test" (5-minute budget) after the
+sharing-effort commits moved every utility program (cat/echo/grep/ls/sh/
+wc/...) onto shared, more general utilities/*.c + lib_core/libc/ulib/*.c
+implementations. First suspected as ordinary slowness (matching the
+initial mips/arm-pi3 symptom), but tracing an ISOLATED, unloaded run all
+the way through with real timestamps showed the OPPOSITE: every test up
+through "validate ok" completed in about 5 seconds - not remotely close
+to a 5-minute budget. The actual failure only showed up watching the
+FULL suite to "ALL TESTS PASSED" (not just through validatetest, which
+an earlier measurement mistakenly stopped at): "big files test" prints,
+then "cpu0: panic: iderw: sector out of range" - a KERNEL PANIC that
+halts everything, which is why the wrapper looked hung rather than
+failed - it was correctly waiting forever for a string that could never
+print again.
+
+Root cause: every one of those shared utility binaries grew by a
+near-identical ~4.3KB (measured directly: _cat 18600->23020, _echo
+17508->21900, _sh 34560->39176, etc. - a uniform few hundred bytes to a
+few KB of new library code baked into every statically-linked binary,
+not a bug in any one utility). Packing them all into this port's fs.img
+went from 784 to 905 used blocks (verified by building both the current
+tree and the pre-sharing commit b796fcd side by side) against a
+HARDCODED nblocks=985 data-block budget in tools/mkfs.c - shrinking free
+space for new files from 305 blocks down to 184, four short of the 188
+(MAXFILE) "big files test" needs for its own file. mkfs itself never
+noticed (its own size/nblocks/usedblocks arithmetic assertion has no
+idea what MAXFILE is or how much of nblocks a real test will need at
+runtime) - it built a perfectly valid, smaller-than-declared filesystem,
+and the kernel's own balloc() only discovered the shortfall at runtime,
+handing back a block number past the compiled-in disksize.
+
+Fix, two parts:
+  - nblocks bumped from 985 to 1285 (size 1099 -> 1399) for real
+    headroom, not just enough to limp past today's specific shortfall.
+  - tools/mkfs.c now asserts (fails the BUILD, not silently succeeds)
+    if fewer than 2*MAXFILE data blocks remain free after packing every
+    file the image ships with - so the NEXT time a shared library or
+    utility grows enough to matter, it is a clear mkfs error message at
+    build time, not a confusing runtime panic discovered by watching a
+    QEMU test suite time out. See notes_debugging_techniques.txt for
+    why this class of bug is worth a standing safeguard rather than a
+    one-time constant bump.
+
+Identical bug and fix on the sibling forks/arm-pi3 (same NDIRECT=60/
+MAXFILE=188 design, same mkfs.c shape). Also lowered validatetest()'s
+own "hi" bound (1100*1024 -> 100*1024, 276 iterations -> 26) while
+investigating - not itself the cause of anything, but no need to spend
+CI minutes exhausting every one of 276 addresses when 26 already
+samples the interesting range at a fraction of the cost.
+
+Verified: "make test-arm-pi2" reaches ALL TESTS PASSED in ~21s (was: a
+kernel panic 250+s into every CI run, looking like a bare timeout).
