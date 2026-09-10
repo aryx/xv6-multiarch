@@ -88,7 +88,7 @@ $(BUILD)csud/%.o: $(CSUDDIR)source/%.c
 # claude: two build-correctness fixes, safe for real hardware AND QEMU
 # alike (neither changes any runtime behavior, just what gcc is actually
 # told to target) - see notes_arch_rpi1.txt for the fuller writeup:
-#   - "-fcommon": include/proc.h's own "struct cpu cpus[NCPU];" (no
+#   - "-fcommon": kernel/proc.h's own "struct cpu cpus[NCPU];" (no
 #     extern) needs this to avoid "multiple definition of `cpus`" under
 #     GCC 10+'s -fno-common default.
 #   - real "-mcpu=arm1176jzf-s -marm" instead of "-Wa,-march=armv6
