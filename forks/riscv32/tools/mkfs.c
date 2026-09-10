@@ -129,14 +129,13 @@ main(int argc, char *argv[])
   iappend(rootino, &de, sizeof(de));
 
   for(i = 2; i < argc; i++){
-    // get rid of "user/"
-    char *shortname;
-    if(strncmp(argv[i], "user/", 5) == 0)
-      shortname = argv[i] + 5;
-    else
-      shortname = argv[i];
-    
-    assert(index(shortname, '/') == 0);
+  // claude: was "get rid of 'user/'" - a hardcoded strncmp against
+  // that one literal prefix. Phase 0 splits the user programs across
+  // user/ and tests/, so that would have needed a second special
+  // case. Take the basename instead - strip to the last '/', whatever
+  // directory the program was built in. See plan_factorization.md.
+  char *shortname = strrchr(argv[i], '/');
+  shortname = shortname ? shortname + 1 : argv[i];
 
     if((fd = open(argv[i], 0)) < 0){
       perror(argv[i]);

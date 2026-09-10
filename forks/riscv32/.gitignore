@@ -7,8 +7,8 @@
 # (per-program *.asm disassembly listings, *.sym files, and the linked
 # "_name" user binaries are covered by the toplevel .gitignore.)
 kernel/kernel
-mkfs/mkfs
+tools/mkfs
 fs.img
 user/initcode
 user/initcode.out
-user/usys.S
+ulib/usys.S
