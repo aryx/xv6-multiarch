@@ -517,6 +517,50 @@ assuming its duplication is real:
 # anything in user/*.h not reached is dead
 ```
 
+### arm-pi2 (2026-09-10, DONE)
+
+Three commits — the move, a correction to it, then the build fixup.
+`test-arm-pi2` green, `test-all` green, **and a Docker build green**.
+**Twelve forks done, two to go.**
+
+The `arm-pi1` recipe transferred almost exactly: `-iquote .` on `CFLAGS`, a
+new `ASFLAGS = -iquote .` (gotcha 9 again), two `vpath` lines so `UPROGS`,
+`ULIB` and the `./mkfs` invocation need no change, and `mkfs.c` compiling
+from `../tools/` with `-iquote .` rather than `-I` (gotcha 6). Its
+`-I include` appears in all **three** `hw=` branches (fvp, rpi1, rpi2), not
+one.
+
+**Gotcha 10: a wildcard object list will silently enlist a file you move
+into its directory.** `loader.S` and `loader.ld` were at the fork root, not
+in `source/`, and that placement is load-bearing. `loader.S` is the
+second-stage boot loader for real rpi2 hardware; it does
+`.incbin "kernel7.bin"`, i.e. it *embeds the finished kernel* rather than
+being part of it, and has its own linker script and its own explicit
+`loader:` target. But the kernel's object list is a wildcard:
+
+```make
+ASM_OBJECTS = $(patsubst $(SOURCE)%.S,$(BUILD)%.o,$(wildcard $(SOURCE)*.S))
+```
+
+so moving it into `kernel/` enlisted it in the kernel's own build, where it
+failed on the image it wants to embed and does not exist yet:
+
+```
+kernel/loader.S:42: Error: file not found: kernel7.bin
+```
+
+Moved back to the root in its own pure-rename commit. **Before moving a
+file into `kernel/`, check whether a wildcard there would pick it up, and
+whether it is kernel source at all or a separate artifact that wraps the
+kernel.** `arm-pi3` has `loader.S`, `loader.ld` *and* `armstub64.S` at its
+root for exactly this reason — leave all three there.
+
+**Process fix applied here, after the `.dockerignore` CI regression:** a
+fork is not done until `docker build --build-arg ARCH=<name>` passes, not
+just `make test-<arch>`. `make test-all` cannot see build-context problems
+at all, because every file is present on the host by construction. This is
+CLAUDE.md's own long-standing rule; Phase 0 had not been following it.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
