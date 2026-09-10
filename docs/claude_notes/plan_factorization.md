@@ -757,20 +757,44 @@ has a real, stated reason to differ.
   `amd64-jserv` kept its own, because it `mknod()`s a second device no other
   port has. Not yet wired into any fork's build — a content merge staged for
   the eventual `arch/<name>/` cutover, not a build change.
-- **`tools/mkfs.c`** (`5d8aab0`) — four of fourteen (`arm64`, `arm64-pi4`,
-  `loongarch`, `riscv32`) collapsed into one, based on `arm64`'s version
-  (already byte-identical to `arm64-pi4`/`loongarch`; `riscv32` was missing
-  a `die()` helper cleanup the other three had). Unlike `init.c`, this one
-  **is** wired into those four forks' Makefiles (`../../tools/mkfs.c`
-  replaces each fork's own `$O/mkfs.c`) and verified with a full rebuild,
-  each fork's own full `test-<arch>`, `make test-all`, and
-  `docker build --build-arg ARCH=riscv32`/`arm64`. The other ten forks keep
-  their own copy because `mkfs.c`'s divergence is a real on-disk format
-  difference (magic number present or not, block-start fields stored on
-  disk or recomputed, `riscv64`'s own deliberate one-block log-size bump) —
-  see the file's own header comment for the fork-by-fork reasons. Forcing
-  all fourteen into one `#ifdef`-laden file was considered and rejected for
-  the reason this plan's own "two hard rules" section gives.
+- **`tools/mkfs*.c`** — `mkfs.c`'s fourteen copies split into four
+  on-disk-format families, unlike `init.c` each one **wired into its
+  forks' Makefiles** (`../../tools/mkfs*.c` or `../../../tools/mkfs*.c`
+  replaces each fork's own copy) and verified with a full rebuild, each
+  fork's own full `test-<arch>`, `make test-all`, and
+  `docker build --build-arg ARCH=<name>` for a representative fork of every
+  distinct sub-Makefile shape touched:
+  - `tools/mkfs.c` (`5d8aab0`) — `arm64`, `arm64-pi4`, `loongarch`,
+    `riscv32`. Magic number + stored logstart/inodestart/bmapstart
+    superblock.
+  - `tools/mkfs-nomagic.c` (`03c7081`) — `amd64`, `i386`. Same stored
+    superblock, no magic field.
+  - `tools/mkfs-margincheck.c` (`03c7081`) — `arm-pi2`, `arm-pi3`. Nothing
+    stored on disk (kernel recomputes via `i2b()`); a deliberately inflated
+    `nblocks` plus a freeblock-margin build-time check neither other family
+    has.
+  - `tools/mkfs-fixedbudget.c` (`03c7081`) — `arm`, `arm-pi1`,
+    `arm-pi1-bis`, `mips`. Same unstored superblock as margincheck, but a
+    "hardcode a disk budget, assert it balances" algorithm instead of a
+    dynamic one; the two per-fork literals it used to need (`nblocks`,
+    `size`) turned out to already be formulas every copy computed by hand
+    from values already in each fork's own headers, so the shared file
+    computes both instead of hardcoding them.
+
+  Two forks still have no shared file, each for a real reason recorded in
+  the files' own header comments: `riscv64` (a deliberate one-block
+  log-size bump making it incompatible with `tools/mkfs.c`'s other four)
+  and `amd64-jserv` (an algorithm not close to any of the four clusters
+  above). Forcing all fourteen (or even these last two) into one
+  `#ifdef`-laden file was considered and rejected for the reason this
+  plan's own "two hard rules" section gives — **for now**. The user's
+  stated long-term goal is a single `tools/mkfs.c`; reaching it needs the
+  on-disk superblock format itself unified first (add magic/stored fields
+  to the ten non-conforming forks' `kernel/fs.h`, and change their
+  `kernel/log.c`/`bio.c` to read them instead of recomputing from fixed
+  macros) — real per-fork kernel changes on the scale of Phase 0, not a
+  `tools/`-only change, and not started yet. Until then, these five files
+  are the documented intermediate state, not a permanent design.
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
