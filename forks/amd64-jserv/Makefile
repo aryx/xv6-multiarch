@@ -146,6 +146,9 @@ $(UOBJ_DIR)/%.o: ../../shells/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<
 
+$(UOBJ_DIR)/%.o: ../../kernel/init/user/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 $(UOBJ_DIR)/%.o: ../../lib_core/libc/ulib/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<

@@ -49,7 +49,7 @@ ASFLAGS = -iquote .
 # shared by every fork. vpath works HERE (unlike the flat forks) because this
 # Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
 # component for vpath to have to reproduce.
-vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/libc/ulib
+vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/libc/ulib ../../../kernel/init/user
 vpath %.S ../ulib
 
 ULIB = arith.o ulib.o usys.o printf.o umalloc.o

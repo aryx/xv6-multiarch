@@ -106,6 +106,9 @@ $U/%.o: ../../utilities/%.c
 $U/%.o: ../../shells/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$U/%.o: ../../kernel/init/user/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 # claude: the shared user library, under lib_core/ per ~/principia's
 # convention. Separate rule because these objects land in $L/, not
 # alongside the programs.
