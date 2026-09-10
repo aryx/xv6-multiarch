@@ -381,6 +381,56 @@ the others' `"user/"` prefix had, and was deliberately left alone: the move
 does not force it, and converging the seven divergent copies of `mkfs.c` on
 one basename idiom is Tier 3 work, not a layout commit's business.
 
+### arm (2026-09-10, DONE)
+
+Four commits — the move, the build fixup, then a flatten of `kernel/device/`
+and its own fixup (see the residue rule above for why). `test-arm` green,
+`test-all` green. **Ten forks done, four to go**, all four Raspberry Pi ports.
+
+This fork was the clearest illustration of what the exercise is for: its
+`lib/` held `string.c`, a *kernel* library, where `mips`'s `lib/` held the
+*user* one. Same name, opposite meanings.
+
+**The pleasant surprise: `vpath` does almost all the work for a fork with a
+sub-Makefile.** `arm` builds its userland from `usr/Makefile` (now
+`user/Makefile`). Rather than rewrite every rule to reach `../tests` and
+`../ulib`, two lines —
+
+```make
+vpath %.c ../tests ../ulib
+vpath %.S ../ulib
+```
+
+— leave the objects and linked binaries landing in `user/` exactly as before,
+so `UPROGS`, `ULIB` and the `$(MKFS)` invocation are **all unchanged**, `mkfs`
+still sees bare names with no `/`, and gotcha 7 never arises. This is the same
+source-layout/build-output decoupling `amd64-jserv` gets from staging into
+`.fs/`, reached a different way. **Reach for `vpath` first on the four
+remaining Pi ports** — they all have sub-Makefiles too.
+
+One wrinkle worth naming, because it bit mid-commit: `git add -A` before
+`git commit --amend` will sweep working-tree Makefile edits **into the move
+commit**, destroying its purity (it showed up as `3 M` and one `R057` among
+the renames). Recovering means `git reset --soft HEAD~1`, restoring the
+touched files from `git show HEAD:<old path>`, committing the renames alone,
+then re-applying the edits. Simpler not to amend a move commit at all once
+fixup work has started.
+
+**Gotcha 8: a linker script can name object files by their build path.**
+`kernel/kernel.ld` places `.start_sec` by listing `build/entry.o` and
+`build/start.o` explicitly, which became `build/kernel/*.o`. This cost the
+longest debugging of the eight, because of how it presents:
+
+```
+arm-linux-gnueabihf-ld: cannot find build/entry.o: No such file or directory
+```
+
+while the link command line contains `build/kernel/entry.o` and no
+`build/entry.o` anywhere, and `make -n` prints a command that looks entirely
+correct. Grepping the Makefile for the missing path finds nothing. **When a
+link fails naming a file that is not on the command line, read the linker
+script.**
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
@@ -405,12 +455,27 @@ So, cheapest first:
    Real design work; `arm-pi1-bis` alone has 8 of 16 userland headers
    genuinely divergent from the kernel's copies.
 
-**Decide the residue rule once, not per fork.** Some files fit none of the five
-buckets: `arm/device/` (`gic.c`, `timer.c`, `uart.c`), the Pi ports'
-`entry.s`/`exception.s`/`csud_glue.c`/`font.bin`, and the linker scripts
-(`kernel.ld`, `loader.ld`, `armstub64.S`). Put all of it in `kernel/` — MIT
-keeps `kernel.ld` in `kernel/` — and let Tier 4 lift it into `arch/<name>/`
-later. Do not invent `device/` or `boot/` now and move everything twice.
+**Decide the residue rule once, not per fork: `kernel/` is FLAT, everywhere.**
+Some files fit none of the five buckets: `arm/device/` (`gic.c`, `timer.c`,
+`uart.c`), the Pi ports' `entry.s`/`exception.s`/`csud_glue.c`/`font.bin`, and
+the linker scripts (`kernel.ld`, `loader.ld`, `armstub64.S`). All of it goes
+directly in `kernel/` — no subdirectories, not even ones a fork already had.
+
+Tested and confirmed on `arm` (2026-09-10). Its `device/` was first kept as
+`kernel/device/`, because `arm.h` spells its include `"device/versatile_pb.h"`
+and nesting avoided touching a source file. That was the wrong trade:
+**Phase 0's job is to make the fourteen forks structurally consistent so they
+can be merged, not to design the final subdivision.** `kernel/device/` was a
+one-fork exception — no other fork has it — so keeping it would leave the merge
+reconciling one extra level against thirteen forks without one. It was
+flattened in a follow-up pair of commits, and `arm.h`'s include turned out to
+be the only one of its kind in the entire repo, so the cost was a single line.
+
+The meaningful split into subdirectories belongs **after** the merge, where it
+can be designed once across all the ports at the same time rather than
+inherited piecemeal from whichever fork happened to have a directory. Do not
+invent `device/` or `boot/` now, and do not preserve one a fork brought with
+it.
 
 ## What the tree actually looks like today
 
