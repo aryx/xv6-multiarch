@@ -8,7 +8,11 @@
 #define T_OFLOW          4      // overflow
 #define T_BOUND          5      // bounds check
 #define T_ILLOP          6      // illegal opcode
-#define T_DEVICE         7      // device not available
+// claude: was T_DEVICE. Renamed because the file-type constant in stat.h is
+// now also T_DEVICE (matching mit-pdos/xv6-riscv, so the shared utilities/ls.c
+// compiles here) and the two would collide. This one is the x86 CPU trap
+// "device not available", trap 7, defined for documentation only.
+#define T_DEVNOTAVAIL    7      // device not available
 #define T_DBLFLT         8      // double fault
 // #define T_COPROC      9      // reserved (not used since 486)
 #define T_TSS           10      // invalid task switch segment

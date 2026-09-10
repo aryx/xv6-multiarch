@@ -51,13 +51,18 @@ ASFLAGS = -iquote .
 # shared by every fork. vpath works HERE (unlike the flat forks) because this
 # Makefile's prerequisites are bare names - "cat.o: cat.c" - with no directory
 # component for vpath to have to reproduce.
-vpath %.c ../tests ../ulib ../../../utilities ../../../shells
+vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/libc/ulib
 vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o
 	
+# claude: link libgcc. The shared lib_core/libc/ulib/umalloc.c divides, and
+# ARMv6 has no divide instruction, so gcc emits __aeabi_uidivmod - which
+# lives in libgcc. forks/arm's own user link already does this.
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
+
 _%: %.o $(ULIB)
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^ $(LIBGCC)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 

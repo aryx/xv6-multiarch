@@ -149,6 +149,12 @@ user/%.o: ../../utilities/%.c
 user/%.o: ../../shells/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# claude: the shared user library, under lib_core/ per ~/principia's
+# convention. Separate rule because these objects land in ulib/, not
+# alongside the programs.
+ulib/%.o: ../../lib_core/libc/ulib/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 
 ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 
