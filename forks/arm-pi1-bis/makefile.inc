@@ -54,7 +54,10 @@ LDFLAGS = -L.
 # happens to emit an armv7-only instruction or touch floating point).
 # claude: -mcpu=arm1176jzf-s -marm added for the same reason as CFLAGS
 # above - consistent target between hand-written .S/.s files and C code.
-ASFLAGS = -mcpu=arm1176jzf-s -marm -mfloat-abi=soft
+# claude: -Ikernel added - wrapper.s does .incbin "font1.bin", and both
+# moved into kernel/ in Phase 0, so the assembler needs to be told where to
+# look. Without it: 'kernel/wrapper.s: Error: file not found: font1.bin'.
+ASFLAGS = -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Ikernel
 
 LIBGCC = $(shell $(CC) -print-libgcc-file-name)
 
@@ -77,7 +80,9 @@ LINK_INIT = $(call quiet-command,$(LD) $(LDFLAGS) \
 OBJCOPY_INIT = $(call quiet-command,$(OBJCOPY) \
 	-S -O binary --prefix-symbols="_binary_$@" $@.out $@, "  OBJCOPY  $(TARGET_DIR)$@")
 
-build-directory = $(shell mkdir -p build build/device build/lib)
+# claude: kernel objects all land in build/kernel/ since Phase 0; this
+# fork never had device/ or lib/ directories to begin with.
+build-directory = $(shell mkdir -p build build/kernel)
 
 build/%.o: %.c
 	$(call build-directory)

@@ -6,8 +6,21 @@ include ../makefile.inc
 # infinite - the same false positive already documented/fixed in every
 # other fork this project has brought up (see notes_debugging_techniques.txt
 # item 1).
-CFLAGS += -iquote ../ -Wno-infinite-recursion
-ASFLAGS += -I ../
+# claude: "-iquote ." is for THIS directory's own userland headers, which a
+# source compiled out of ../tests or ../ulib can no longer reach by sitting
+# next to them; "-iquote ../kernel" replaces the old "-iquote ../", the
+# fork root having stopped being where the kernel headers live.
+CFLAGS += -iquote . -iquote ../kernel -Wno-infinite-recursion
+# claude: usys.S needs the same treatment - make's built-in .S rule uses
+# $(ASFLAGS), never $(CFLAGS) (gotcha 9 in plan_factorization.md).
+ASFLAGS += -iquote . -I ../kernel
+# claude: the test programs and the user library live in their own
+# directories since Phase 0, but their objects and linked binaries still
+# land HERE - so UPROGS below, the $(MKFS) invocation and ULIB are all
+# unchanged, and mkfs still sees bare names with no '/' in them.
+vpath %.c ../tests ../ulib
+vpath %.S ../ulib
+
 ULIB = ulib.o usys.o printf.o umalloc.o
 
 MKFS = ../tools/mkfs

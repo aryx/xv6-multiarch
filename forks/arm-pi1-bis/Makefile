@@ -64,41 +64,41 @@ build/csud/%.o: $(CSUDDIR)source/%.c
 LIBS = -Lbuild -lcsud $(LIBGCC)
 
 OBJS = \
-	bio.o\
-	console.o\
-	csud_glue.o\
-	exception.o\
-	exec.o\
-	file.o\
-	fs.o\
-        kalloc.o\
-	keyboard.o\
-	log.o\
-	mailbox.o\
-	main.o\
-	memide.o\
-	mmu.o\
-	pipe.o\
-	proc.o\
-	spinlock.o\
-	string.o\
-	syscall.o\
-	sysfile.o\
-	sysproc.o\
-	timer.o\
-	trap.o\
-	uart.o\
-	wrapper.o\
-	vm.o \
+	kernel/bio.o\
+	kernel/console.o\
+	kernel/csud_glue.o\
+	kernel/exception.o\
+	kernel/exec.o\
+	kernel/file.o\
+	kernel/fs.o\
+        kernel/kalloc.o\
+	kernel/keyboard.o\
+	kernel/log.o\
+	kernel/mailbox.o\
+	kernel/main.o\
+	kernel/memide.o\
+	kernel/mmu.o\
+	kernel/pipe.o\
+	kernel/proc.o\
+	kernel/spinlock.o\
+	kernel/string.o\
+	kernel/syscall.o\
+	kernel/sysfile.o\
+	kernel/sysproc.o\
+	kernel/timer.o\
+	kernel/trap.o\
+	kernel/uart.o\
+	kernel/wrapper.o\
+	kernel/vm.o \
 
 #device/picirq.o \
 
-KERN_OBJS = $(OBJS) entry.o
+KERN_OBJS = $(OBJS) kernel/entry.o
 
-kernel.elf: $(addprefix build/,$(KERN_OBJS)) kernel.ld build/initcode build/fs.img build/libcsud.a
+kernel.elf: $(addprefix build/,$(KERN_OBJS)) kernel/kernel.ld build/initcode build/fs.img build/libcsud.a
 	cp -f build/initcode initcode
 	cp -f build/fs.img fs.img
-	$(call LINK_BIN, kernel.ld, kernel.elf, \
+	$(call LINK_BIN, kernel/kernel.ld, kernel.elf, \
 		$(addprefix build/,$(KERN_OBJS)), \
 		initcode fs.img)
 	$(OBJCOPY) kernel.elf -O binary kernel.img
@@ -156,9 +156,9 @@ qemu-graphics: kernel.elf
 	$(QEMU) -M raspi1ap -kernel kernel.img -serial mon:stdio -device usb-kbd $(QMP_OPTS)
 
 INITCODE_OBJ = initcode.o
-$(addprefix build/,$(INITCODE_OBJ)): initcode.S
+$(addprefix build/,$(INITCODE_OBJ)): kernel/initcode.S
 	$(call build-directory)
-	$(call AS_WITH, -nostdinc -I.)
+	$(call AS_WITH, -nostdinc -Ikernel)
 
 #initcode is linked into the kernel, it will be used to craft the first process
 build/initcode: $(addprefix build/,$(INITCODE_OBJ))
@@ -168,7 +168,7 @@ build/initcode: $(addprefix build/,$(INITCODE_OBJ))
 
 build/fs.img:
 	make -C tools
-	make -C usr
+	make -C user
 
 
 # claude: read back the per-object header dependencies gcc writes next to
@@ -188,4 +188,4 @@ clean:
 	rm -f *.o *.d *.asm *.sym vectors.S bootblock \
 	initcode initcode.out fs.img kernel.elf kernel.dis kernel.img
 	make -C tools clean
-	make -C usr clean
+	make -C user clean

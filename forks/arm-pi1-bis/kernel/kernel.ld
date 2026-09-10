@@ -21,19 +21,19 @@ SECTIONS
    * this is a safe, load-address-only change. */
   . = 0x80010000;
   .start_sec 0x80010000 : AT(0x10000) {
-    build/entry.o(.text)
-    build/mmu.o(.text .text.*)
+    build/kernel/entry.o(.text)
+    build/kernel/mmu.o(.text .text.*)
 
-    build/entry.o(.rodata .rodata.*)
-    build/mmu.o(.rodata .rodata.*)
+    build/kernel/entry.o(.rodata .rodata.*)
+    build/kernel/mmu.o(.rodata .rodata.*)
 
-    build/entry.o(.data .data.*)
-    build/mmu.o(.data .data.*)
+    build/kernel/entry.o(.data .data.*)
+    build/kernel/mmu.o(.data .data.*)
 
     PROVIDE(edata_entry = .);
 
-    build/entry.o(.bss .bss.* COMMON)
-    build/mmu.o(.bss .bss.* COMMON)
+    build/kernel/entry.o(.bss .bss.* COMMON)
+    build/kernel/mmu.o(.bss .bss.* COMMON)
 
     PROVIDE(end_entry = .);
   }
