@@ -341,6 +341,12 @@ sys_open(void)
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
 
+  // claude: honour O_TRUNC, so the shared shells/sh.c gets '>' redirection
+  // semantics. This fork is 2019-era but predates O_TRUNC upstream. Placed
+  // while the inode is still locked, which itrunc requires.
+  if((omode & O_TRUNC) && ip->type == T_FILE)
+    itrunc(ip);
+
   iunlock(ip);
   end_op();
 

@@ -103,6 +103,9 @@ tags: $(OBJS) _init
 $U/%.o: ../../utilities/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$U/%.o: ../../shells/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 
 ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 

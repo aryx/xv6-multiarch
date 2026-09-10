@@ -21,7 +21,8 @@
 #include "file.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
-static void itrunc (struct inode*);
+// claude: no longer static - sys_open calls it for O_TRUNC.
+void itrunc (struct inode*);
 
 // Read the super block.
 void readsb (int dev, struct superblock *sb)
@@ -411,7 +412,8 @@ static uint bmap (struct inode *ip, uint bn)
 // to it (no directory entries referring to it)
 // and has no in-memory reference to it (is
 // not an open file or current directory).
-static void itrunc (struct inode *ip)
+// claude: was static; sys_open needs it for O_TRUNC.
+void itrunc (struct inode *ip)
 {
     int i, j;
     struct buf *bp;

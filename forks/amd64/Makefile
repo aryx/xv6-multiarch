@@ -146,6 +146,9 @@ kernel/vectors.S: tools/vectors.pl
 user/%.o: ../../utilities/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+user/%.o: ../../shells/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 
 ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 

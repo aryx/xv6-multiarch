@@ -108,6 +108,9 @@ tags: $(OBJS) _init
 $U/%.o: ../../utilities/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$U/%.o: ../../shells/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 
 ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
@@ -130,8 +133,11 @@ $T/_forktest: $T/forktest.o $(ULIB)
 
 SH_FLAGS = -O -fno-omit-frame-pointer -ggdb -MD -MP -march=loongarch64 -mabi=lp64s -ffreestanding -fno-common -nostdlib -I. -fno-stack-protector -fno-pie -no-pie -c -o
 
-$U/_sh: $U/sh.c $(ULIB)
-	$(CC) $(SH_FLAGS) $U/sh.o $U/sh.c
+# claude: sh.c is shared from the repo-root shells/ now. This fork compiles it
+# with its own SH_FLAGS rather than CFLAGS, so it needs its own rule updating -
+# the generic $U/%.o: ../../shells/%.c rule above never gets a look in.
+$U/_sh: ../../shells/sh.c $(ULIB)
+	$(CC) $(SH_FLAGS) $U/sh.o ../../shells/sh.c
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_sh $U/sh.o $(ULIB)
 	$(OBJDUMP) -S $U/_sh > $U/sh.asm
 

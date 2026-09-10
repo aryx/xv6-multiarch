@@ -48,6 +48,7 @@ void            iput(struct inode*);
 void            iunlock(struct inode*);
 void            iunlockput(struct inode*);
 void            iupdate(struct inode*);
+void            itrunc(struct inode*);   // claude: for sys_open's O_TRUNC
 int             namecmp(const char*, const char*);
 struct inode*   namei(char*);
 struct inode*   nameiparent(char*, char*);

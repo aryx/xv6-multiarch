@@ -321,6 +321,14 @@ sys_open(void)
     end_op();
     return -1;
   }
+  // claude: honour O_TRUNC, so the shared shells/sh.c gets the '>' redirection
+  // semantics mit-pdos/xv6-riscv has. It goes HERE, not after the f->... block
+  // the way upstream writes it: in this older sys_open the inode is unlocked
+  // and the transaction closed before those assignments, and itrunc needs both
+  // still held.
+  if((omode & O_TRUNC) && ip->type == T_FILE)
+    itrunc(ip);
+
   iunlock(ip);
   end_op();
 
