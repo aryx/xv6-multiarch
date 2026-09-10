@@ -592,6 +592,63 @@ it silently, and the build failed with `No rule to make target
 A scripted edit over a hand-maintained list needs its result read back, not
 just its exit status checked.
 
+### arm-pi3 (2026-09-10, DONE) — Phase 0 COMPLETE, all fourteen forks
+
+Two commits. `test-arm-pi3` green, `test-all` green, `docker build
+--build-arg ARCH=arm-pi3` green. **170 files moved, all R100 — the largest
+move of the set**, because this port vendors the whole USPi USB stack
+alongside xv6's own sources.
+
+Ironically the *smallest* fixup of the four Pi ports: nothing here names an
+object by build path (no gotcha 8), and `entry.S`'s three `.incbin`
+references — `font1.bin`, `initcode`, `fs.img` — were already satisfied by
+an existing `-I source`, which simply became `-I kernel`. `kernel.ld` is
+referenced in four places, across two build trees (`build/` for real
+hardware, `build-qemu/` for the emulator).
+
+**The one real exception to the flat-`kernel/` rule, and it is forced.**
+`kernel/uspi/` and `kernel/uspienv/` keep their subdirectories. Two things
+make them different in kind from `arm`'s `device/`, which was flattened:
+
+- they are the public API of a vendored third-party library, spelled with
+  the directory in the include — `#include <uspi/dwhcidevice.h>` — across
+  ~30 source files. Flattening means editing all of them, which a layout
+  move may not do.
+- flattening is not even *possible*. `uspi/types.h` and `include/types.h`
+  are different files, as are `uspi/bcm2835.h` and `uspienv/bcm2835.h`. Two
+  different headers cannot both be `kernel/types.h`.
+
+So the rule stands as written — no *preserved preference* subdirectories —
+with the amendment that a genuine basename collision in vendored
+third-party code is an exception, and one Tier 4 will want to keep together
+anyway.
+
+`loader.S`, `loader.ld`, `armstub64.S` and `armstub64.ld` stay at the fork
+root (gotcha 10): `loader.S` `.incbin`s the finished kernel, `armstub64.S`
+is a separate AArch64 stub QEMU loads *instead of* the kernel, and neither
+being in `$(SOURCE)` is what stops the wildcard object lists enlisting
+them. `timetest` and `benchmark` join `tests/` by intent — they exercise
+and measure the kernel rather than being usable userland.
+
+## Phase 0 is complete
+
+All fourteen forks now have the same five directories:
+
+```
+kernel/  user/  ulib/  tests/  tools/
+```
+
+Verified per fork: pure-rename move commit (every file `R100`), a separate
+build-fixup commit, a from-scratch rebuild on a `git clean -fdx` tree, that
+fork's own full `test-<arch>`, and `docker build --build-arg ARCH=<name>`.
+
+What this bought the rest of the plan: the **two-family split is gone as a
+structural problem**. The x86-family/riscv-family boundary that the "single
+most important structural finding" section is built on *was* the layout
+split; what remains between them is one mechanical include-path difference.
+Tier 0 can now compare `*/user/echo.c` across fourteen forks by path rather
+than by ad-hoc mapping.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
