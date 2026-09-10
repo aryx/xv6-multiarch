@@ -123,9 +123,9 @@ build/fs.img: usr-fs-img
 # explicit "make depend" pass rather than adding one.
 -include build/*.d build/*/*.d
 
-clean: 
+clean:
 	rm -rf build
 	rm -f *.o *.d *.asm *.sym vectors.S bootblock entryother \
-	initcode initcode.out kernel xv6.img fs.img kernel.elf memfs
+	initcode initcode.out xv6.img fs.img kernel.elf memfs
 	make -C tools clean
 	make -C user clean
