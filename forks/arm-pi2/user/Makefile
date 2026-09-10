@@ -34,7 +34,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # and recurses over BOTH sides of pipes/lists/backgrounds, not itself
 # unconditionally) trips a GCC false positive, same one already seen
 # elsewhere in this repo's own sh.c ports.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 all: mkfs initcode fs.img
 
@@ -86,8 +86,8 @@ _forktest: forktest.o $(ULIB)
 # let xv6's own fcntl.h shadow it (gotcha 6). The binary is still built
 # here, so ./mkfs below and .gitignore are unchanged.
 mkfs: ../tools/mkfs.c fs.h
-	gcc -iquote . -o mkfs ../tools/mkfs.c -I../../../include
-	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include
+	gcc -iquote . -o mkfs ../tools/mkfs.c -I../../../include -I../../../include/user
+	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

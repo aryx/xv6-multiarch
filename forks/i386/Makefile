@@ -81,7 +81,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I. -I../../include
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I. -I../../include -I../../include/user
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 10+'s -Warray-bounds (part of -Wall) misfires on mp.c's BIOS-
 # memory pointer casts (mpconfig()/mpinit() treat a small physical address
@@ -209,7 +209,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # -idirafter puts kernel/ after the system directories instead, so each
 # header comes from where it should. Same idiom forks/mips already used.
 tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include
+	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

@@ -79,7 +79,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/user
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
 # "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -
@@ -228,7 +228,7 @@ _forktest: tests/forktest.o $(ULIB) ulib/user.ld
 	$(OBJDUMP) -S _forktest > forktest.asm
 
 tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs tools/mkfs.c -idirafter kernel -I../../include
+	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs tools/mkfs.c -idirafter kernel -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

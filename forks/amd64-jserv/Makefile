@@ -90,7 +90,7 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -I../../include
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -I../../include -I../../include/user
 CFLAGS += -g -Wall -MD -fno-omit-frame-pointer
 CFLAGS += -ffreestanding -fno-common -nostdlib -Ikernel -Iuser -gdwarf-2 $(XFLAGS) $(OPT)
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
@@ -167,8 +167,8 @@ $(UOBJ_DIR)/%.o: ulib/%.S
 # bootblock is optimized for space
 $(OUT)/bootblock: kernel/bootasm.S kernel/bootmain.c
 	@mkdir -p $(OUT)
-	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -I../../include -Os -o $(OUT)/bootmain.o -c kernel/bootmain.c
-	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -I../../include -o $(OUT)/bootasm.o -c kernel/bootasm.S
+	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -I../../include -I../../include/user -Os -o $(OUT)/bootmain.o -c kernel/bootmain.c
+	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -I../../include -I../../include/user -o $(OUT)/bootasm.o -c kernel/bootasm.S
 	$(LD) -m elf_i386 -z nodefaultlib --omagic -e start -Ttext 0x7C00 \
 		-o $(OUT)/bootblock.o $(OUT)/bootasm.o $(OUT)/bootmain.o
 	$(OBJDUMP) -S $(OUT)/bootblock.o > $(OUT)/bootblock.asm
@@ -243,7 +243,7 @@ $(FS_DIR)/forktest: $(UOBJ_DIR)/forktest.o $(ULIB)
 
 $(OUT)/mkfs: tools/mkfs.c kernel/fs.h
 	@mkdir -p $(OUT)
-	$(HOST_CC) -Werror -Wall -o $@ tools/mkfs.c -I../../include
+	$(HOST_CC) -Werror -Wall -o $@ tools/mkfs.c -I../../include -I../../include/user
 
 out/opfs: tools/opfs.c tools/libfs.c
 	@mkdir -p $(OUT)

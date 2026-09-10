@@ -10,7 +10,7 @@ include ../makefile.inc
 # source compiled out of ../tests or ../ulib can no longer reach by sitting
 # next to them; "-iquote ../kernel" replaces the old "-iquote ../", the
 # fork root having stopped being where the kernel headers live.
-CFLAGS += -iquote . -iquote ../kernel -Wno-infinite-recursion -I.. -I../../../include   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS += -iquote . -iquote ../kernel -Wno-infinite-recursion -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 # claude: usys.S needs the same treatment - make's built-in .S rule uses
 # $(ASFLAGS), never $(CFLAGS) (gotcha 9 in plan_factorization.md).
 ASFLAGS += -iquote . -I ../kernel

@@ -84,7 +84,7 @@ XFLAGS = -m64 -mcmodel=large -ggdb
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -I. -I../../include
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -I. -I../../include -I../../include/user
 CFLAGS += -ffreestanding -fno-common -nostdlib $(XFLAGS) -Ikernel -Iuser
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
@@ -174,7 +174,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # before the system directories, so <fcntl.h> would resolve to
 # kernel/fcntl.h, which has no O_TRUNC. See i386's identical fix.
 tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include
+	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

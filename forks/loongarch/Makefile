@@ -65,7 +65,7 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 ASFLAGS = -march=loongarch64 -mabi=lp64s
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/user
 CFLAGS += -MD -MP
 CFLAGS += -march=loongarch64 -mabi=lp64s
 CFLAGS += -ffreestanding -fno-common -nostdlib
@@ -137,7 +137,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $T/_forktest $T/forktest.o $L/ulib.o $L/usys.o
 	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
-SH_FLAGS = -O -fno-omit-frame-pointer -ggdb -MD -MP -march=loongarch64 -mabi=lp64s -ffreestanding -fno-common -nostdlib -I. -I../../include -fno-stack-protector -fno-pie -no-pie -c -o
+SH_FLAGS = -O -fno-omit-frame-pointer -ggdb -MD -MP -march=loongarch64 -mabi=lp64s -ffreestanding -fno-common -nostdlib -I. -I../../include -I../../include/user -fno-stack-protector -fno-pie -no-pie -c -o
 
 # claude: sh.c is shared from the repo-root shells/ now. This fork compiles it
 # with its own SH_FLAGS rather than CFLAGS, so it needs its own rule updating -
@@ -148,7 +148,7 @@ $U/_sh: ../../shells/sh.c $(ULIB)
 	$(OBJDUMP) -S $U/_sh > $U/sh.asm
 
 $O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
-	gcc -Werror -Wall -I. -o $O/mkfs $O/mkfs.c -I../../include
+	gcc -Werror -Wall -I. -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

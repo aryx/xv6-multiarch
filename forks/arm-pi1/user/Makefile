@@ -23,7 +23,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # sh.c's runcmd(), which recurses but always terminates via exec()/exit() in
 # its base case - see notes_debugging_techniques.txt item 1, and the same
 # flag in forks/arm-pi2/uprogs/Makefile.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -iquote . -I.. -I../../../include   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -iquote . -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 initcode: initcode.S
 	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
@@ -80,7 +80,7 @@ _forktest: forktest.o $(ULIB)
 # -iquote is searched for "..." includes only, never for <...>. The binary
 # keeps being built here, so ./mkfs below and .gitignore are unchanged.
 mkfs: ../tools/mkfs.c fs.h
-	gcc -Werror -Wall -iquote . -o mkfs ../tools/mkfs.c -I../../../include
+	gcc -Werror -Wall -iquote . -o mkfs ../tools/mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

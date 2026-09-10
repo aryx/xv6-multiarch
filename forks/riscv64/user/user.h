@@ -1,50 +1,17 @@
+// claude: this port's additions to the shared API - a two-argument sys_sbrk
+// so memory can be mapped eagerly or lazily, the wrappers over it, and two
+// syscalls no other port has. Everything else lives in include/user/user.h,
+// which this pulls in by relative path; this file is found first because the
+// fork root comes earlier on the include path.
+//
+// Note this port calls its sleep syscall pause(); the shared header still
+// declares sleep(), which is harmless here - nothing in this port calls it.
+#include "../../../include/user/user.h"
+
+// claude: this port's own sentinel, returned by its sbrk wrappers on failure.
 #define SBRK_ERROR ((char *)-1)
 
-struct stat;
-
-// system calls
-int fork(void);
-int exit(int) __attribute__((noreturn));
-int wait(int *);
-int pipe(int *);
-int write(int, const void *, int);
-int read(int, void *, int);
-int close(int);
-int kill(int);
-int exec(const char *, char **);
-int open(const char *, int);
-int mknod(const char *, short, short);
-int unlink(const char *);
-int fstat(int fd, struct stat *);
-int link(const char *, const char *);
-int mkdir(const char *);
-int chdir(const char *);
-int dup(int);
-int getpid(void);
 char *sys_sbrk(int, int);
-int pause(int);
-int uptime(void);
-int sync(void);
-
-// ulib.c
-int stat(const char *, struct stat *);
-char *strcpy(char *, const char *);
-void *memmove(void *, const void *, int);
-char *strchr(const char *, char c);
-int strcmp(const char *, const char *);
-char *gets(char *, int max);
-uint strlen(const char *);
-void *memset(void *, int, uint);
-int atoi(const char *);
-int memcmp(const void *, const void *, uint);
-void *memcpy(void *, const void *, uint);
-char *sbrk(int);
 char *sbrklazy(int);
-
-// printf.c
-void fprintf(int, const char *, ...) __attribute__((format(printf, 2, 3)));
-void printf(const char *, ...) __attribute__((format(printf, 1, 2)));
-
-// umalloc.c
-void *malloc(uint);
-void free(void *);
+int pause(int);
+int sync(void);

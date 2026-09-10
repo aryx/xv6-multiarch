@@ -58,7 +58,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include
+CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/user
 CFLAGS += -MD
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
@@ -139,7 +139,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
 $O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
-	gcc -Werror -Wall -I. -o $O/mkfs $O/mkfs.c -I../../include
+	gcc -Werror -Wall -I. -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

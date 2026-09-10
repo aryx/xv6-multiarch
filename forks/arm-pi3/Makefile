@@ -33,7 +33,7 @@ ifeq ($(hw), fvp)
 	# block's own long comment for the full story (found chasing a real
 	# "cpu0: panic: release" SMP race in this fork; identical root cause
 	# and fix to forks/arm-pi2's own equivalent bug).
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O0 -Wall -MD -MP -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O0 -Wall -MD -MP -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/user
 	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
@@ -51,7 +51,7 @@ else ifeq ($(hw), rpi1)
 	# alternate CFLAGS line right above (which already had -fno-pic -
 	# real evidence someone hit this before) - see the rpi2 block's own
 	# long comment.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel -I../../include
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/user
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -92,7 +92,7 @@ else ifeq ($(hw), rpi2)
 	# the kernel and every core equally, not a QEMU quirk - real
 	# hardware would behave identically (or worse - unpopulated-GOT
 	# memory content isn't guaranteed to even be zero there either).
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -std=gnu99 -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -fno-zero-initialized-in-bss -I kernel -I../../include
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -std=gnu99 -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -fno-zero-initialized-in-bss -I kernel -I../../include -I../../include/user
 	#CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2 -DRASPPI=2 -DNDEBUG
