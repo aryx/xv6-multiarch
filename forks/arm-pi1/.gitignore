@@ -4,14 +4,14 @@
 # both the real-hardware build outputs (kernel.img/kernel.list/
 # kernel.map/build/) and the additive QEMU-only ones (kernel-qemu.img/
 # kernel-qemu.map - NOT kernel-qemu.ld, which is a real source file).
-# Deliberately does NOT ignore source/initcode or source/font1.bin/
+# Deliberately does NOT ignore kernel/initcode or kernel/font1.bin/
 # font.bin - these are pre-built binaries .incbin'd directly into the
 # kernel image and are meant to be checked in (see notes_arch_arm_pi1.txt).
 #
-# source/fs.img WAS in that list, and WAS checked in, until 2026-09-09.
+# kernel/fs.img (source/fs.img before Phase 0) WAS in that list, and WAS checked in, until 2026-09-09.
 # It is not a hand-made asset like the fonts: it is the OUTPUT of uprogs/'s
 # own build (mkfs plus every UPROGS binary), and the Makefile now
-# regenerates it on every build (see its "source/fs.img: uprogs-fs-img"
+# regenerates it on every build (see its "kernel/fs.img: uprogs-fs-img"
 # rule) rather than trusting a committed blob to stay in step with
 # uprogs/*.c. Same treatment as the sibling forks/arm-pi2. What the
 # committed copy was hiding here: uprogs/ did not build at all under a
@@ -24,4 +24,4 @@ kernel.list
 kernel.map
 kernel-qemu.img
 kernel-qemu.map
-/source/fs.img
+/kernel/fs.img

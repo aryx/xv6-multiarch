@@ -13,7 +13,7 @@
 BUILD = build/
 
 # The directory in which source files are stored.
-SOURCE = source/
+SOURCE = kernel/
 
 # The name of the output file to generate.
 TARGET = kernel.img
@@ -25,7 +25,7 @@ LIST = kernel.list
 MAP = kernel.map
 
 # The name of the linker script to use.
-LINKER = kernel.ld
+LINKER = kernel/kernel.ld
 
 # The names of libraries to use.
 LIBRARIES := csud
@@ -110,7 +110,7 @@ $(BUILD)csud/%.o: $(CSUDDIR)source/%.c
 #     the vendored libcsud.a's own prebuilt hard-float ABI - forcing
 #     soft-float here would conflict with it ("uses VFP register
 #     arguments, build/output.elf does not").
-CFLAGS := -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -I include
+CFLAGS := -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -I kernel
 
 # claude: was "CC := gcc" - ignored ARMGNU entirely, always invoking the
 # HOST compiler regardless of cross-toolchain prefix (every .s file
@@ -180,15 +180,15 @@ $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 # "$(ARMGNU)-gcc"), hence the "-" here.
 .PHONY: uprogs-fs-img
 uprogs-fs-img:
-	$(MAKE) -C uprogs TOOLPREFIX=$(ARMGNU)- fs.img
+	$(MAKE) -C user TOOLPREFIX=$(ARMGNU)- fs.img
 
-source/fs.img: uprogs-fs-img
-	cmp -s uprogs/fs.img $@ || cp uprogs/fs.img $@
+kernel/fs.img: uprogs-fs-img
+	cmp -s user/fs.img $@ || cp user/fs.img $@
 
 # entry.s is the only source file that embeds the image (its own
 # .incbin "fs.img", resolved via the "-I $(SOURCE)" on the assembler line
 # above), so only ITS object needs the dependency.
-$(BUILD)entry.o: source/fs.img
+$(BUILD)entry.o: kernel/fs.img
 
 # claude: QEMU-only targets, added alongside the existing real-hardware
 # ones above rather than replacing anything - "all"/"$(TARGET)" (which
@@ -201,8 +201,8 @@ $(BUILD)entry.o: source/fs.img
 # and notes_arch_rpi1.txt).
 QEMU ?= qemu-system-arm
 
-build/output-qemu.elf: $(OBJECTS) $(C_OBJS) kernel-qemu.ld $(BUILD)libcsud.a
-	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L$(BUILD) $(patsubst %,-l %,$(LIBRARIES)) -Map kernel-qemu.map -o build/output-qemu.elf -T kernel-qemu.ld
+build/output-qemu.elf: $(OBJECTS) $(C_OBJS) kernel/kernel-qemu.ld $(BUILD)libcsud.a
+	$(ARMGNU)-ld --no-undefined $(OBJECTS) $(C_OBJS) -L$(BUILD) $(patsubst %,-l %,$(LIBRARIES)) -Map kernel-qemu.map -o build/output-qemu.elf -T kernel/kernel-qemu.ld
 
 kernel-qemu.img: build/output-qemu.elf
 	$(ARMGNU)-objcopy build/output-qemu.elf -O binary kernel-qemu.img
