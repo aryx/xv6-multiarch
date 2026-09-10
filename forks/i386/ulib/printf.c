@@ -36,15 +36,18 @@ printint(int fd, int xx, int base, int sgn)
 }
 
 // Print to the given fd. Only understands %d, %x, %p, %s.
-void
-printf(int fd, const char *fmt, ...)
+// claude: was a single "printf(int fd, ...)". Split into a core that takes
+// the varargs pointer explicitly, plus the two entry points MIT's 2019
+// userland API uses - printf() writing to fd 1, and fprintf() taking an fd.
+// The "&fmt + 1" trick works identically in both wrappers: fmt is the last
+// named parameter either way, so the varargs start just past it.
+static void
+vprintf(int fd, const char *fmt, uint *ap)
 {
   char *s;
   int c, i, state;
-  uint *ap;
 
   state = 0;
-  ap = (uint*)(void*)&fmt + 1;
   for(i = 0; fmt[i]; i++){
     c = fmt[i] & 0xff;
     if(state == 0){
@@ -82,4 +85,16 @@ printf(int fd, const char *fmt, ...)
       state = 0;
     }
   }
+}
+
+void
+fprintf(int fd, const char *fmt, ...)
+{
+  vprintf(fd, fmt, (uint*)(void*)&fmt + 1);
+}
+
+void
+printf(const char *fmt, ...)
+{
+  vprintf(1, fmt, (uint*)(void*)&fmt + 1);
 }
