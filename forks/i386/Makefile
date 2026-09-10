@@ -230,8 +230,8 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # and no O_TRUNC - and the build fails with "'O_TRUNC' undeclared".
 # -idirafter puts kernel/ after the system directories instead, so each
 # header comes from where it should. Same idiom forks/mips already used.
-tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include -I../../include/user
+tools/mkfs: ../../tools/mkfs-nomagic.c kernel/fs.h
+	gcc -Werror -Wall -idirafter kernel -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

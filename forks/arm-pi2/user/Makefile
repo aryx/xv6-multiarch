@@ -85,8 +85,8 @@ _forktest: forktest.o $(ULIB)
 # is a host program that also includes the system <fcntl.h>, and -I would
 # let xv6's own fcntl.h shadow it (gotcha 6). The binary is still built
 # here, so ./mkfs below and .gitignore are unchanged.
-mkfs: ../tools/mkfs.c fs.h
-	gcc -iquote . -o mkfs ../tools/mkfs.c -I../../../include -I../../../include/user
+mkfs: ../../../tools/mkfs-margincheck.c fs.h
+	gcc -iquote . -o mkfs ../../../tools/mkfs-margincheck.c -I../../../include -I../../../include/user
 	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

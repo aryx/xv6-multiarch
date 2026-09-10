@@ -72,15 +72,17 @@ _forktest: forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
-# claude: mkfs.c moved to ../tools/ but still includes this directory's own
-# "types.h"/"fs.h"/"stat.h"/"param.h" - the USERLAND header set, which is
-# what it always compiled against, having lived here. -iquote, not -I:
-# mkfs is a host program that also includes the system <fcntl.h>, and -I
-# would let xv6's own fcntl.h shadow it and lose O_TRUNC (gotcha 6).
-# -iquote is searched for "..." includes only, never for <...>. The binary
-# keeps being built here, so ./mkfs below and .gitignore are unchanged.
-mkfs: ../tools/mkfs.c fs.h
-	gcc -Werror -Wall -iquote . -o mkfs ../tools/mkfs.c -I../../../include -I../../../include/user
+# claude: mkfs.c now lives at the repo-root tools/ (shared with forks/arm,
+# forks/arm-pi1-bis and forks/mips - see its own header comment) but still
+# includes this directory's own "types.h"/"fs.h"/"stat.h"/"param.h" - the
+# USERLAND header set, which is what it always compiled against, having
+# lived in ../tools/ before that. -iquote, not -I: mkfs is a host program
+# that also includes the system <fcntl.h>, and -I would let xv6's own
+# fcntl.h shadow it and lose O_TRUNC (gotcha 6). -iquote is searched for
+# "..." includes only, never for <...>. The binary keeps being built here,
+# so ./mkfs below and .gitignore are unchanged.
+mkfs: ../../../tools/mkfs-fixedbudget.c fs.h
+	gcc -Werror -Wall -iquote . -o mkfs ../../../tools/mkfs-fixedbudget.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

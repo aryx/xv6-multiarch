@@ -5,7 +5,7 @@ CFLAGS += -iquote ../kernel
 
 all: mkfs
 
-mkfs: mkfs.c
+mkfs: ../../../tools/mkfs-fixedbudget.c
 	$(HOSTCC) $(CFLAGS) -o $@ $^
 
 clean:
