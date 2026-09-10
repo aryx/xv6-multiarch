@@ -1330,3 +1330,102 @@ Two habits from this, both cheap:
 The full write-up, including why a `make depend` target is the wrong
 fix and what Linux does instead, is in
 docs/claude_notes/notes_build_system.txt.
+
+
+45. An orphaned QEMU eats a core for hours and silently invalidates every
+    timing-sensitive result you take afterwards.
+
+Half a day of chasing a "regression" in forks/arm-pi1 was spent on a
+machine that had three qemu processes pegged at 100% CPU, left over from
+test runs killed with Ctrl-C, `timeout`, or `pkill make`. The oldest had
+been running for 17,775 seconds - nearly five hours:
+
+    pid=808985 age=17775s cpu=100% qemu-system-i386
+    pid=884973 age=9914s  cpu=100% qemu-system-mipsel
+    pid=960489 age=3676s  cpu=100% qemu-system-mipsel
+
+Killing the make wrapper does not kill the emulator it spawned. Every
+`make test-<arch>` run after that was competing for three fewer cores, and
+since the harness fails on a 600-second wall-clock timeout, tests started
+"failing" that were merely slow. Worse, they failed inconsistently, which
+looks exactly like a real intermittent bug.
+
+`make kill-all` exists for this and the top-level Makefile has had it since
+the build-and-test phase. The habit that actually matters:
+
+- Before trusting ANY timing-sensitive result, run
+  `ps -eo pid,etimes,pcpu,args | grep [q]emu-system`. An emulator older
+  than the run you just started is a leftover.
+- Run `make kill-all` after any interrupted test, not just when something
+  looks wrong.
+
+Same class as item 42: validate the measuring environment before believing
+the measurement.
+
+
+46. A green CI check is weak evidence, and a red one is not automatically a
+    regression - read WHICH failure it is.
+
+Every port's harness gives up after 600 seconds with
+
+    ERROR: usertests did not report ALL TESTS PASSED within 600s
+
+On a shared GitHub runner, whose throughput varies several-fold between
+runs, that is a coin flip for the slower TCG-emulated ports. This shows up
+as jobs failing and passing across commits that cannot possibly have
+affected them, and as differing sets of failing jobs on consecutive
+commits - which makes `git bisect` against CI results actively misleading.
+
+So classify the failure before reasoning about it:
+
+- a 600s timeout is evidence about SPEED (or about the runner), not
+  necessarily about correctness;
+- a panic, a trap, or "unknown sys call" is a real defect and will
+  reproduce locally on an unloaded machine.
+
+Bisect locally, on a quiet machine, using the port's own `make
+test-<arch>`. `make test-all` is the cheap first signal - about a minute
+for all fourteen - but it only proves each kernel boots to a shell, so it
+cannot see a usertests regression at all.
+
+
+47. You cannot reproduce a port's test by piping commands into
+    `qemu -nographic`.
+
+The obvious shortcut
+
+    ( sleep 30; echo usertests ) | qemu-system-arm -nographic -kernel ...
+
+does not work: the guest echoes the characters and then sits there. The
+shell never sees a completed line, so nothing runs, and it looks like the
+shell has hung - a completely fabricated symptom that sent this
+investigation down a blind alley for several rounds.
+
+Use the port's own test-xv6.py (or `make test-<arch>`), which drives the
+console the way the guest expects. If raw output is wanted, redirect the
+whole make invocation to a file - piping it to `tail` loses everything when
+`timeout` kills the pipeline.
+
+
+48. Do not conclude "C is slower than assembly here" without reading the
+    assembly.
+
+While hunting a suspected performance regression in the shared
+lib_core/libc/ulib/ulib.c, forks/mips looked like it had lost a fast
+`memset`: its old one called `stosb()`, the shared one is a byte loop. On
+i386, `stosb` really is `rep stosb` inline assembly. But forks/mips defines
+its own `stosb` in kernel/mips.h, and it is:
+
+    static inline void
+    stosb(void *addr, int data, int cnt)
+    {
+      int i;
+      for (i = 0; i < cnt; i++)
+        *(((char *) addr) + i) = (char) data;
+    }
+
+A plain C byte loop with an x86 name, inherited from the port's x86
+ancestry. Replacing it changed nothing, and the "C versus assembly"
+explanation was wrong - it just sounded plausible because the name came
+from x86. Grep for the definition, in that port, before building a theory
+on what an identifier is called.
