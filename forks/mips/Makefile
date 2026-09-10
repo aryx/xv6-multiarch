@@ -192,7 +192,7 @@ ulib/%.o: ../../lib_core/libc/ulib/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
-ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
+ULIB = ulib/arith.o ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 
 # claude: "-T user.ld" added (was just "-N -e main -Ttext 0") - see
 # user.ld's own header comment for why: the default MIPS linker script

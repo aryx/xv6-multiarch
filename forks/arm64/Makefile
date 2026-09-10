@@ -113,7 +113,7 @@ $L/%.o: ../../lib_core/libc/ulib/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
-ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
+ULIB = $L/arith.o $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
 # claude: -T $L/user.ld (matching forks/riscv64's own rule, ported here as
 # user/user.ld) instead of the original "-N -e main -Ttext 0" - the latter

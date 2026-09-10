@@ -124,7 +124,7 @@ $L/%.o: ../../lib_core/libc/ulib/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
-ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
+ULIB = $L/arith.o $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
 # claude: not anchored to a directory, so this one rule builds both
 # user/_cat and tests/_usertests.

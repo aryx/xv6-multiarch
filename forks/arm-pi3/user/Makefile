@@ -52,7 +52,7 @@ ASFLAGS = -iquote .
 vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/libc/ulib
 vpath %.S ../ulib
 
-ULIB = ulib.o usys.o printf.o umalloc.o
+ULIB = arith.o ulib.o usys.o printf.o umalloc.o
 	
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^

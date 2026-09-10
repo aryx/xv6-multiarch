@@ -25,7 +25,7 @@ ASFLAGS += -iquote . -I ../kernel
 vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/libc/ulib
 vpath %.S ../ulib
 
-ULIB = ulib.o usys.o printf.o umalloc.o
+ULIB = arith.o ulib.o usys.o printf.o umalloc.o
 
 MKFS = ../tools/mkfs
 FS_IMAGE = ../build/fs.img

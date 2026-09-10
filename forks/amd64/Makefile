@@ -156,7 +156,7 @@ ulib/%.o: ../../lib_core/libc/ulib/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
-ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
+ULIB = ulib/arith.o ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^

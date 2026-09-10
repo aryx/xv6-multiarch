@@ -204,6 +204,7 @@ kernel/vectors.S: $(MKVECTORS)
 	perl $(MKVECTORS) > kernel/vectors.S
 
 ULIB := \
+	arith.o \
 	ulib.o \
 	usys.o \
 	printf.o \

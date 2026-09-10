@@ -130,20 +130,5 @@ memmove(void *vdst, void *vsrc, int n)
     return vdst;
 }
 
-// claude: minimal libgcc-runtime-support stub, not a real signal
-// implementation - this freestanding, libc-less user environment has no
-// definition for "raise" at all, but any 32-bit integer division
-// (__aeabi_idiv/__aeabi_uidiv, used all over printf.c's own number
-// formatting) statically pulls in libgcc's shared "_dvmd_lnx.o" object,
-// which ALSO defines the (unused-in-practice, but still present and
-// referenced) 64-bit division-by-zero trap handler __aeabi_ldiv0 - and
-// that calls raise() unconditionally. A real division by zero should
-// never happen in this codebase; if it somehow did, exiting is a
-// reasonable fallback (matches this port's own "NotOkLoop"-style fatal
-// error handling elsewhere).
-int
-raise(int sig)
-{
-    exit(0);
-    return 0; // unreached
-}
+// claude: raise() moved to the shared lib_core/libc/ulib/arith.c, so every
+// port gets it and shared code can divide freely.

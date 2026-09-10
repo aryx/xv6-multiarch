@@ -54,7 +54,7 @@ ASFLAGS = -iquote .
 vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/libc/ulib
 vpath %.S ../ulib
 
-ULIB = ulib.o usys.o printf.o umalloc.o
+ULIB = arith.o ulib.o usys.o printf.o umalloc.o
 	
 # claude: link libgcc. The shared lib_core/libc/ulib/umalloc.c divides, and
 # ARMv6 has no divide instruction, so gcc emits __aeabi_uidivmod - which

@@ -50,19 +50,13 @@ morecore(uint nu)
   Header *hp;
   uint nunits = nu;   // claude: the caller's actual request, before the clamp
 
-  // claude: grow in whole multiples of the request WITHOUT dividing. The
-  // original rounding used "nu % nunits"; now that this file is shared that
-  // costs portability - ARMv6 has no divide instruction, so gcc emits
-  // __aeabi_uidivmod, which drags in libgcc's __aeabi_idiv0 and an undefined
-  // reference to raise(). Accumulating gives the identical result (the
-  // smallest whole multiple of nunits that is at least 4096) using only adds.
-  if(nunits == 0)
-    nunits = 1;
-  if(nu < 4096){
-    nu = 0;
-    while(nu < 4096)
-      nu += nunits;
-  }
+  // claude: round the chunk up to a whole multiple of the request, so its tail
+  // does not become a permanently stranded fragment. See the note below.
+  if(nu < 4096)
+    nu = 4096;
+
+  if(nu % nunits)
+    nu += nunits - (nu % nunits);
 
   p = sbrk(nu * sizeof(Header));
   if(p == (char*)-1)
