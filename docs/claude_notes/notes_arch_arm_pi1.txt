@@ -734,13 +734,33 @@ Update 2026-09-10: arm-pi1-bis shares this exact CPU/float-ABI pair and
 DOES have the identical printf corruption bug - confirmed once a real
 build-system bug (see notes_arch_arm_pi1_bis.txt) stopped masking every
 retest as "no change". The same local-printf.c override is applied
-there too. It does NOT, however, fix that fork's separate "ls"/
-"usertests" crash ("unknown sys call 4096", trap 2) - tracing showed
-that one happens inside the forked child's very first malloc() call
-(shells/sh.c's parsecmd()/execcmd(), building the parsed command tree),
-before growproc()/sbrk()'s own kernel-side code is ever reached, so it
-is neither printf nor exec()/the ELF loader (both proven fine by the
-same trace - fork()/exec() correctly resume the child at the right PC
-with the right stack contents every time). Still needs its own
-dedicated debugging session; see notes_arch_arm_pi1_bis.txt and
-docs/claude_notes/plan_build_and_test_2.md.
+there too.
+
+That printf fix alone did NOT fix arm-pi1-bis's separate "ls"/
+"usertests" crash ("unknown sys call 4096", trap 2) - and this fork
+turned out to have the exact same bug, just not caught here (its own
+GitHub Actions CI failures on "usertests", same fault-address range,
+are it - a passing "make test-arm-pi1" locally three times in a row is
+consistent with the underlying cause being timing/scheduling-sensitive
+in which iteration first calls malloc(), not with the bug being
+genuinely absent here). Root cause, fully diagnosed on arm-pi1-bis:
+lib_core/libc/ulib/umalloc.c's morecore() does "nu % nunits", which on
+this CPU (ARMv6, no hardware divide) compiles to a call into libgcc's
+__aeabi_uidivmod -> __udivsi3 - and this cross-toolchain's one,
+non-multilib libgcc.a builds that routine using genuine Thumb-2-only
+instructions ("it eq", "bcc.w", ...) that plain ARMv6 (and QEMU's
+"arm1176" CPU model) cannot execute, causing a wild jump rather than a
+clean trap (confirmed via "-d guest_errors,unimp,int": a real
+"Prefetch Abort"/Section Translation Fault, not an "undefined
+instruction" one). forks/arm and arm-pi2/arm-pi3 never hit this because
+they are genuinely ARMv7-A (Thumb-2-capable). Fixed the same way on
+both ports: forks/arm-pi1/ulib/umalloc.c is now a local override
+restoring the exact add-only "accumulate whole multiples" rounding this
+repo's own 584383e originally used (before c24df89 reverted it the
+same day on the mistaken assumption that a clean link plus a passing
+boot-only "make test-all" meant the division was safe on every port -
+it wasn't, since neither exercises malloc() on an external shell
+command). Verified: "make test-arm-pi1" (full usertests) passes three
+times in a row after the fix, and __aeabi_uidivmod/__udivsi3 no longer
+appear in "_sh" at all. Full writeup: notes_arch_arm_pi1_bis.txt (where
+it was actually traced to ground truth).

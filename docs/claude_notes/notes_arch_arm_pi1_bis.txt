@@ -476,37 +476,62 @@ own Makefile comment). This class of bug is exactly why
 notes_debugging_techniques.txt keeps warning about stale build state
 masking retests - add it to the pile.
 
-Left open: fixing printf does NOT fix this fork's own real crash.
-"ls"/"usertests" both die immediately ("N sh: unknown sys call 4096",
-trap 2 (prefetch abort), same fault address regardless of which program
-runs). Traced step by step with temporary cprintf()s in fork()/exec()/
-forkret() plus printf()s in shells/sh.c: fork() and exec() are BOTH
-completely correct every time - the child's copied trapframe has a
+Update, same session - root-caused and fixed. Fixing printf did NOT fix
+this fork's own real crash: "ls"/"usertests" both died immediately
+("N sh: unknown sys call 4096", trap 2 (prefetch abort), same fault
+address regardless of which program ran). Traced step by step with
+temporary cprintf()s in fork()/exec()/forkret() plus printf()s in
+shells/sh.c and lib_core/libc/ulib/umalloc.c: fork() and exec() are
+BOTH completely correct every time (the child's copied trapframe has a
 valid, in-binary pc/sp, forkret() resumes it at exactly the right
-instruction (confirmed against the actual disassembly: the return
+instruction, confirmed against the actual disassembly - the return
 address matches the instruction right after the fork() syscall's own
-"svc"), and the parent's and child's stack contents match byte for
-byte post-copyuvm(). The child runs correctly all the way to
-"fork1() == 0" returning true and calling "parsecmd(cmd)" - and then
-crashes somewhere before that call returns, before ever reaching
-runcmd()'s own exec() call. The most specific trace got as far as
-"execcmd() before malloc" printing successfully (with the printf fix in
-place) and then dying before "malloc returned" - i.e. the fault is
-inside the very first malloc() a freshly-exec'd shell child ever makes,
-which needs a real sbrk() (morecore() -> sbrk() -> sys_sbrk() ->
-growproc()). growproc()'s own cprintf() (temporarily added) never
-fired, meaning whatever goes wrong happens in user-space code before
-the sbrk() syscall trap is even taken - somewhere in malloc()'s or
-morecore()'s own arithmetic, or in the "bl sbrk"/divide-routine call
-sequence GCC generated for it. ARM/Thumb interworking (this binary
-mixes ARM-mode user code with Thumb-mode libgcc division routines like
-__aeabi_uidivmod/__udivsi3) was checked and looks correctly handled
-(odd, Thumb-marked symbol addresses, called via "blx") - not yet ruled
-all the way out, but no smoking gun found there either. Needs a fresh
-session with a real hardware debugger workflow (gdb-multiarch against
-QEMU's gdbstub fought back hard on this attempt - "target remote"
-without deterministic single-stepping made it unusable for catching a
-one-shot crash; a scripted approach with real breakpoints and
-"stepi", or single-stepping through malloc()'s own disassembly by hand,
-is the next thing to try) rather than more printf-tracing, which has
-now narrowed the site as far as it usefully can.
+"svc" - and the parent's and child's stack contents match byte for byte
+post-copyuvm()). The child runs correctly all the way through
+"fork1() == 0" and into parsecmd() -> execcmd() -> malloc() -> its
+first-ever morecore() call - and dies right there, before morecore()
+ever reaches sbrk(), i.e. inside its "nu % nunits" rounding computation.
+
+ROOT CAUSE: that "%" needs a runtime division helper on this CPU
+(ARMv6, arm1176jzf-s, no hardware divide), so GCC emits a call to
+libgcc's __aeabi_uidivmod -> __udivsi3. This cross-toolchain
+(arm-linux-gnueabihf-gcc 13) ships a single, non-multilib libgcc.a, and
+that routine's own machine code uses genuine Thumb-2-only encodings
+("it eq", "bcc.w", wide "sub.w"/"cmp.w") - instructions plain ARMv6
+silicon (and, evidently, QEMU's "arm1176" CPU model) does not
+implement. Calling it does not cleanly fault as "undefined
+instruction": disassembly-level analysis of the interworking sequence
+(the "blx"/"bx lr" pair, the Thumb-marked odd symbol addresses) showed
+everything encoded exactly correctly, which is what pointed at the
+*target CPU's* instruction support rather than a codegen bug - and
+"-d guest_errors,unimp,int" QEMU logging confirmed it precisely: a
+clean "Taking exception 3 [Prefetch Abort]" with
+"IFSR 0x5 IFAR 0x10b17b4" (a Section Translation Fault - fetching from
+a virtual address with literally no page table entry, hundreds of
+pages past this tiny binary's actual size) landing moments after the
+"blx __aeabi_uidivmod", not any clean "undefined instruction" trap.
+Confirmed further by finding this repo's OWN prior history of exactly
+this problem: 584383e ("share umalloc.c...") originally rewrote this
+same "nu % nunits" into an add-only accumulate loop specifically
+because "ARMv6 has no divide instruction", but c24df89 reverted that
+the same day, providing raise() to fix a LINK error and treating the
+clean link plus a passing "make test-all" (boot-only, no usertests) as
+proof division was safe everywhere - it wasn't; a passing link and a
+passing boot are necessary, not sufficient, when the actual CPU
+executing a library routine doesn't implement instructions the
+toolchain's one-size-fits-all libgcc assumes. forks/arm and
+arm-pi2/arm-pi3 never noticed because they are ARMv7-A (cortex-a7 or
+tuned for it), genuinely Thumb-2-capable, per their own "-marm
+-mcpu=cortex-a7"/"-march=armv7-a" CFLAGS.
+
+FIX: forks/arm-pi1-bis/ulib/umalloc.c is now a local override
+(identical to the shared file except morecore()'s rounding, restored to
+584383e's original add-only accumulate loop - no "%", no "/", nothing
+that can pull in a division helper). Verified: "%readelf -s _sh" no
+longer lists __aeabi_uidivmod/__udivsi3 at all, "ls" prints a correct
+directory listing, and "make test-arm-pi1-bis" (the full, unmodified
+usertests suite) reaches ALL TESTS PASSED. The identical override was
+also applied to forks/arm-pi1 (same CPU/float-ABI pair, same shared
+sh.c/umalloc.c - its own CI failures on "usertests" are the same bug,
+just never reproduced locally there the way it did here) - see
+notes_arch_arm_pi1.txt.
