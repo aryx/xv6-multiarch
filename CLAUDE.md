@@ -160,13 +160,44 @@ Two sequential efforts, in order:
    the full bug-by-bug diagnosis.
 2. **`docs/claude_notes/plan_factorization.md`** - once ports build and
    boot, factor the near-duplicate trees into a Linux-style layout
-   (`user/`, `kernel/`, `include/` shared; `arch/<name>/` per-port).
-   **Was blocked on (1); no longer, as of 2026-09-09** - the rule that
-   produced the block still stands but now applies per commit: do not
-   merge a file you cannot rebuild and re-boot afterwards, and run `make
-   test-all` after each merge commit (`stress-test-all` before trusting
-   a batch). Merging files nobody has verified is exactly how this repo's
-   abandoned predecessor (`gitlab.com/xv6-multiarch`) died.
+   (`user/`, `kernel/`, `ulib/`, `tests/`, `tools/` shared;
+   `arch/<name>/` per-port). **Was blocked on (1); no longer, as of
+   2026-09-09** - the rule that produced the block still stands but now
+   applies per commit: do not merge a file you cannot rebuild and re-boot
+   afterwards, and run `make test-all` after each merge commit
+   (`stress-test-all` before trusting a batch). Merging files nobody has
+   verified is exactly how this repo's abandoned predecessor
+   (`gitlab.com/xv6-multiarch`) died.
+
+   **Phase 0 of that plan is DONE as of 2026-09-10.** All 14 forks now
+   have the same five directories - `kernel/ user/ ulib/ tests/ tools/` -
+   replacing the five different layouts they used to have (flat,
+   flat+`usr/`, `kernel/`+`user/`, `source/`+`include/`+`uprogs/`, and
+   jserv's own). Every fork went through the same pair of commits: a pure
+   `git mv` (all files showing `R100`, so `git blame -C -C` still reaches
+   the original authors) followed by a separate build fixup, each verified
+   with a from-scratch rebuild, that fork's own full `test-<arch>`, and
+   `docker build --build-arg ARCH=<name>`. Two extra commits fell out of
+   it: seven dead kernel headers removed from all four Pi ports'
+   userlands, and a `.dockerignore` fix after a real CI regression (see
+   below). The payoff for the remaining tiers is that the plan's
+   "two-family split" is gone as a *structural* problem - that boundary
+   WAS the layout split - so what separates the families now is one
+   mechanical include-path difference, and files can be compared across
+   forks by path (`*/user/echo.c`) rather than by ad-hoc mapping. Ten
+   numbered gotchas are recorded in the plan; read them before moving
+   files in this repo again.
+
+   **`make test-all` cannot catch a build-context break.** Phase 0's one
+   real regression was `arm-pi1` failing in Docker while green on the
+   host: `.dockerignore` excludes `**/*.bin` and negated the Pi ports'
+   font blobs *by full path*, so renaming `source/` to `kernel/` silently
+   stopped the negation matching and the fonts never reached the
+   container. Nothing on the host can see this, because every file is
+   present there by construction. **A layout change is not verified until
+   `docker build --build-arg ARCH=<name>` passes** - which is CLAUDE.md's
+   own long-standing rule under "Adding a new arch", and it applies to
+   moves as much as to new ports.
 
 Read the plans before doing substantial work in this repo - they encode
 real decisions (why riscv64 first, why per-arch files beat `#ifdef`, the
@@ -371,7 +402,7 @@ behave.
 - `docs/claude_notes/done/` - plans that are finished; each keeps its original text plus an "Outcome" section saying how it actually went
 - `docs/claude_notes/done/plan_build_and_test.md` - the build/boot/CI plan, DONE 2026-09-09
 - `docs/claude_notes/plan_build_and_test_2.md` - what that plan left behind (skipped usertests sub-tests, `arm64-pi4` out of CI, no real-hardware verification). Blocks nothing
-- `docs/claude_notes/plan_factorization.md` - the Linux-style-unification plan, unblocked and now the active work
+- `docs/claude_notes/plan_factorization.md` - the Linux-style-unification plan, active; its Phase 0 (uniform `kernel/ user/ ulib/ tests/ tools/` across all 14 forks) is DONE 2026-09-10, Tier 0 onwards is next
 - `docs/claude_notes/plan_lattepanda.md`, `plan_orange_pi.md` - proposed real-hardware bring-ups on the user's own boards
 - `docs/claude_notes/plan_tinyemu.md` - proposed second emulator (Bellard's TinyEMU) for the two RISC-V ports; includes why x86/amd64 can't work there
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
