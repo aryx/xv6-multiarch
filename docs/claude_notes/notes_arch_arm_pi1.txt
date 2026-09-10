@@ -681,3 +681,64 @@ against the emulated USB keyboard -
   confirmed after every single fix in this bring-up, not just at the
   end. A plain boot with no usb-kbd device attached (every existing
   test/CI invocation) is completely unaffected either way.
+
+Bug 11 (real, fixed 2026-09-10): factorization regression - shared
+printf.c's <stdarg.h> va_arg is miscompiled for this target, corrupting
+every "%d"
+
+After docs/claude_notes/plan_factorization.md's lib_core/libc/ulib/ulib.c
+and printf.c sharing (ba96261/7b0e7ed), this port's own "ls" and "wc"
+started printing garbage instead of numbers - e.g. "ls" showed
+"README         0000000000000000000000000000000000K-<binary>" instead
+of "README         2 2 1497" ("%s" printed fine; only "%d" broke). Found
+via "make run-arm-pi1"/typing "ls" by hand (see the top-level session
+that found this: a fresh "make test-all-graphics" run flagged it, and
+"make quick-test-arm-pi1" - boot-to-prompt only - could not have caught
+it, which is itself worth remembering: the fast smoke check proves the
+kernel boots, not that a shared library function actually works right on
+every target it was shared onto).
+
+Root cause, confirmed by bisection (swap the implementation, change
+nothing else, rebuild, retest): the shared printf.c moved every port
+from a hand-rolled "(uint*)(void*)&fmt + 1" varargs walk to
+<stdarg.h>'s va_start/va_arg, exactly the portability fix the file's own
+header comment describes needing for x86-64/AArch64/RISC-V. On this
+port's own toolchain/target - arm-linux-gnueabihf-gcc 13,
+"-mcpu=arm1176jzf-s -marm -mfloat-abi=soft" - that same <stdarg.h> code
+is MISCOMPILED for a variadic function whose only named parameter is a
+pointer (printf(const char *fmt, ...)): reading the disassembly, every
+individual piece looked individually correct (the va_start offset
+computation, the call site's register/stack argument placement, vprintf's
+jump-table dispatch, printint()'s division loop and its GCC-optimized
+loop-exit check) - not "a nice codegen bug"; if there is a specific wrong
+instruction, it is between vprintf and its own va_arg reads, not in
+anything this file calls into. The observed corruption pattern -
+~38 ASCII '0' characters followed by non-ASCII garbage - fingerprints
+exactly as printint()'s own 16-byte "buf" being overrun on the stack
+(a base-10 uint32 can never take more than 10 digits, so the do-while
+loop is looping far more than 16 times, meaning something is preventing
+the divided value from ever reaching zero).
+
+Fix: forks/arm-pi1/ulib/printf.c is now a LOCAL file (vpath finds it
+before the shared lib_core/libc/ulib/printf.c), restoring the exact old,
+pre-factorization "&fmt + 1" implementation, only re-typed for the
+current const-char* user.h prototypes. This is not a downgrade in
+portability posture: the shared file's own header comment already
+explains this technique is exactly correct on a 32-bit ABI that passes
+every argument in registers/stack slots in order (i386, ARM32, MIPS32),
+which is exactly this port. Verified: "make test-arm-pi1" (the full,
+unmodified usertests suite) reaches ALL TESTS PASSED again, and "ls"/"wc"
+print correct numbers.
+
+Left open: arm-pi1-bis shares this exact CPU/float-ABI pair
+("-mcpu=arm1176jzf-s -marm -mfloat-abi=soft") and was tried with the
+identical local-printf.c override, on the assumption it would have the
+same bug. It does not print anything long enough to tell either way -
+plain "ls" crashes immediately ("N sh: unknown sys call 4096", trap 2,
+fault address 0x10b1814) BEFORE reaching any printf call, and the exact
+same fault address shows up regardless of which program is exec'd (ls
+vs. usertests, very different sizes) - strongly suggesting a bug in
+exec()/the ELF loader for that fork specifically, not in printf. Needs
+its own dedicated debugging session; see notes_arch_arm_pi1_bis.txt (not
+yet updated with this finding) and
+docs/claude_notes/plan_build_and_test_2.md.
