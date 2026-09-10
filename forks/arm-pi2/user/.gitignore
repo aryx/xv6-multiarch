@@ -1,7 +1,7 @@
 # claude: the root .gitignore's broad "_*"/"*.o"/"*.d"/"*.sym"/"*.asm"
 # patterns already cover most of this directory's own build output, but
 # not these specific bare names - scoped here, not at the repo root,
-# since "fs.img" also exists as ../source/fs.img, the copy of it the
+# since "fs.img" also exists as ../kernel/fs.img, the copy of it the
 # kernel embeds - which is itself generated, not checked in; see that
 # fork-level .gitignore's own comment.
 /fs.img

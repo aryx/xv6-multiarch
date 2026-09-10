@@ -21,4 +21,4 @@
 /kernel.list
 /kernel.map
 /kernel-qemu.map
-/source/fs.img
+/kernel/fs.img

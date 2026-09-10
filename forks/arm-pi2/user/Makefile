@@ -34,7 +34,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # and recurses over BOTH sides of pipes/lists/backgrounds, not itself
 # unconditionally) trips a GCC false positive, same one already seen
 # elsewhere in this repo's own sh.c ports.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote .
 
 all: mkfs initcode fs.img
 
@@ -44,6 +44,23 @@ initcode: initcode.S
 	$(OBJCOPY) -S -O binary initcode.out initcode
 	$(OBJDUMP) -S initcode.o > initcode.asm
 
+
+# claude: ASFLAGS was never set here - it did not need to be while usys.S
+# sat next to the traps.h it includes. make's built-in .S rule uses
+# $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS), so the -iquote added above does
+# not reach it (gotcha 9 in plan_factorization.md).
+ASFLAGS = -iquote .
+
+# claude: the test programs and the user library live in their own
+# directories since Phase 0, but their objects and linked binaries still
+# land HERE - so UPROGS below, the ./mkfs invocation and ULIB are all
+# unchanged, and mkfs still sees bare names with no '/' in them. Only the
+# source lookup moves, which is what vpath is for. "-iquote ." is what
+# makes it work: a quoted #include resolves from the INCLUDER's directory,
+# which for a source compiled out of ../tests or ../ulib is not where this
+# fork's userland headers live - they are here.
+vpath %.c ../tests ../ulib
+vpath %.S ../ulib
 
 ULIB = ulib.o usys.o printf.o umalloc.o
 	
@@ -58,8 +75,14 @@ _forktest: forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
-mkfs: mkfs.c ../include/fs.h
-	gcc -o mkfs mkfs.c
+# claude: mkfs.c moved to ../tools/ but still includes this directory's own
+# "types.h"/"fs.h"/"stat.h"/"param.h" - the USERLAND header set, which is
+# what it always compiled against, having lived here. -iquote, not -I: mkfs
+# is a host program that also includes the system <fcntl.h>, and -I would
+# let xv6's own fcntl.h shadow it (gotcha 6). The binary is still built
+# here, so ./mkfs below and .gitignore are unchanged.
+mkfs: ../tools/mkfs.c fs.h
+	gcc -iquote . -o mkfs ../tools/mkfs.c
 	#gcc -Werror -Wall -o mkfs mkfs.c
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

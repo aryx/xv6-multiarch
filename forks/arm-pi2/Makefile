@@ -26,15 +26,15 @@ ifeq ($(hw), fvp)
 	MMIO_SIZE = 0x04000000
 	PERIPHBASE= 0xDF000000
 	# claude: -marm added - this toolchain's default is Thumb-2, but
-	# source/entry.S (hand-written assembly, all three hw= targets
+	# kernel/entry.S (hand-written assembly, all three hw= targets
 	# share it) uses plain "bl"/"b" to call into C code with no
 	# ARM<->Thumb interworking, so the C side must stay ARM too. See
 	# the rpi2 block's own longer comment below for the full story
 	# (found via QEMU/gdb; this fvp block's own bug is untested but
 	# shares the identical root cause). -fno-pic -fno-pie added for the
 	# same reason, also documented at length in the rpi2 block below.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
-	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I include
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
+	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
 else ifeq ($(hw), rpi1)
@@ -46,12 +46,12 @@ else ifeq ($(hw), rpi1)
 	MMIO_VA   = 0xD0000000
 	MMIO_SIZE = 0x01000000
 	PERIPHBASE= 0xDF000000
-	#CFLAGS   = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
+	#CFLAGS   = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel
 	# claude: -marm added, same reason as the fvp block above. Also
 	# restored "-fno-pic" from the commented-out alternate CFLAGS line
 	# right above (plus "-fno-pie", same reason) - see the rpi2 block's
 	# own long comment below for why an active kernel build needs both.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I include
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -67,7 +67,7 @@ else ifeq ($(hw), rpi2)
 	# defaults to Thumb-2 (confirmed via "readelf -s build/kernel-qemu.elf":
 	# every C function symbol - cmain, uartinit, mmuinit0, etc - had its
 	# low bit set, the ELF convention for a Thumb interworking target),
-	# but source/entry.S is hand-written pure ARM assembly whose
+	# but kernel/entry.S is hand-written pure ARM assembly whose
 	# "bl cmain" doesn't perform ARM<->Thumb interworking (unlike a
 	# "blx", "bl" never changes CPSR.T). The CPU stayed in ARM state
 	# after jumping into cmain() and executed Thumb-2 instruction bytes
@@ -118,7 +118,7 @@ else ifeq ($(hw), rpi2)
 	# kernel, not a QEMU quirk - real hardware would behave identically
 	# (or worse: whatever happened to be in that unpopulated GOT-shaped
 	# memory on real silicon is not guaranteed to even be zero).
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I include
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2
 else
@@ -141,7 +141,7 @@ LD_OPTIONS += --defsym=K_PDX_BASE=$(K_PDX_BASE) --defsym=K_PTX_BASE=$(K_PTX_BASE
 # Build directory
 BUILD=build/
 # Sources directory.
-SOURCE=source/
+SOURCE=kernel/
 # Generated listing file.
 LIBRARIES=
 
@@ -154,7 +154,7 @@ C_OBJECTS = $(patsubst $(SOURCE)%.c,$(BUILD)%.o,$(wildcard $(SOURCE)*.c))
 # claude: "all" MUST stay the first real target rule in this file - it's
 # what a bare "make hw=rpi2 TOOLCHAIN=..." (no explicit target, exactly
 # what the top-level Makefile's own build-arm-pi2 does) falls back to as
-# Make's own implicit default goal. The source/fs.img rule below was
+# Make's own implicit default goal. The kernel/fs.img rule below was
 # originally placed HERE instead and silently became the new default
 # goal - bare "make" started stopping after just regenerating fs.img,
 # never actually building the kernel at all. Kept below "all" instead.
@@ -162,51 +162,51 @@ C_OBJECTS = $(patsubst $(SOURCE)%.c,$(BUILD)%.o,$(wildcard $(SOURCE)*.c))
 all : $(TARGET)
 
 # Rule to make the elf file.
-$(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
-	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(LD_OPTIONS) -Map kernel.map -o $(BUILD)kernel.elf -T kernel.ld
+$(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel/kernel.ld
+	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(LD_OPTIONS) -Map kernel.map -o $(BUILD)kernel.elf -T kernel/kernel.ld
 	$(TOOLCHAIN)objdump -d $(BUILD)kernel.elf > kernel.list
 	$(TOOLCHAIN)objcopy $(BUILD)kernel.elf -O binary $(TARGET)
 
-# claude: source/fs.img is not checked into git - it's the OUTPUT of
-# uprogs/'s own separate build (mkfs + every UPROGS binary), regenerated
+# claude: kernel/fs.img is not checked into git - it's the OUTPUT of
+# user/'s own separate build (mkfs + every UPROGS binary), regenerated
 # here on every build rather than committed as a binary blob that could
-# silently drift from uprogs/*.c (see notes_arch_arm_pi2.txt's own
-# "Bug 11"/"Bug 12" - this repo's own uprogs/ build already needed real
+# silently drift from user/*.c (see notes_arch_arm_pi2.txt's own
+# "Bug 11"/"Bug 12" - this repo's own user/ build already needed real
 # fixes once actually exercised, exactly the kind of bit-rot a
-# checked-in fs.img would hide indefinitely). uprogs/'s own Makefile
+# checked-in fs.img would hide indefinitely). user/'s own Makefile
 # names its toolchain variable "TOOLPREFIX" (not this Makefile's own
 # "TOOLCHAIN") - passed through under its own name.
 #
-# Marked ".PHONY" (rather than listing every uprogs/*.c as a real
-# prerequisite, which would drift from uprogs/Makefile's own file list)
+# Marked ".PHONY" (rather than listing every user/*.c as a real
+# prerequisite, which would drift from user/Makefile's own file list)
 # so this recipe runs on every build unconditionally - up-to-date
-# checking is delegated to uprogs/'s own recursive "make fs.img" (its
+# checking is delegated to user/'s own recursive "make fs.img" (its
 # own objects are individually timestamp-tracked via "-MD"), which is a
 # no-op print ("'fs.img' is up to date.") when nothing changed there,
 # rather than trying to duplicate that tracking here.
 #
-# claude: the phony target is "uprogs-fs-img", NOT "source/fs.img"
+# claude: the phony target is "uprogs-fs-img", NOT "kernel/fs.img"
 # itself. A phony target used as a prerequisite of a REAL file makes
 # that file's recipe run unconditionally (GNU make treats a phony
-# prerequisite as always newer), so with ".PHONY: source/fs.img" the
+# prerequisite as always newer), so with ".PHONY: kernel/fs.img" the
 # $(BUILD)entry.o dependency below re-assembled entry.S and re-linked
 # the whole kernel on EVERY build even when nothing had changed - the
-# unconditional "cp" bumped source/fs.img's mtime to match. Delegating
-# the up-to-date check to uprogs/ still works exactly as described
+# unconditional "cp" bumped kernel/fs.img's mtime to match. Delegating
+# the up-to-date check to user/ still works exactly as described
 # above (the recursive make still runs every time); the difference is
-# that source/fs.img's own timestamp now only moves when the image
+# that kernel/fs.img's own timestamp now only moves when the image
 # CONTENT actually changed, so entry.o rebuilds only when it must.
 .PHONY: uprogs-fs-img
 uprogs-fs-img:
-	$(MAKE) -C uprogs TOOLPREFIX=$(TOOLCHAIN) fs.img
+	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) fs.img
 
-source/fs.img: uprogs-fs-img
-	cmp -s uprogs/fs.img $@ || cp uprogs/fs.img $@
+kernel/fs.img: uprogs-fs-img
+	cmp -s user/fs.img $@ || cp user/fs.img $@
 
 # entry.S is the only source file that actually embeds fs.img (via its
-# own ".incbin \"fs.img\"", source/entry.S) - only ITS object needs the
+# own ".incbin \"fs.img\"", kernel/entry.S) - only ITS object needs the
 # dependency, not every .S file the generic pattern rule below covers.
-$(BUILD)entry.o: source/fs.img
+$(BUILD)entry.o: kernel/fs.img
 
 # claude: QEMU-only target, added alongside the real-hardware ones above
 # rather than replacing anything - "all"/"$(TARGET)" (what a real
@@ -230,8 +230,8 @@ QEMU_LD_OPTIONS += --defsym=K_PDX_BASE=$(K_PDX_BASE) --defsym=K_PTX_BASE=$(K_PTX
 QEMU_LD_OPTIONS += --defsym=PHYSOFFSET=$(shell printf "0x%X\n" $$(( $(PHYSTART) + $(QEMU_OFFSET) )) )
 QEMU_LD_OPTIONS += --defsym=KERNOFFSET=$(shell printf "0x%X\n" $$(( $(KERNBASE) + $(QEMU_OFFSET) )) )
 
-kernel7-qemu.bin: $(ASM_OBJECTS) $(C_OBJECTS) kernel.ld
-	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(QEMU_LD_OPTIONS) -Map kernel-qemu.map -o $(BUILD)kernel-qemu.elf -T kernel.ld
+kernel7-qemu.bin: $(ASM_OBJECTS) $(C_OBJECTS) kernel/kernel.ld
+	$(TOOLCHAIN)ld $(ASM_OBJECTS) $(C_OBJECTS) -L. $(patsubst %,-l %,$(LIBRARIES)) $(QEMU_LD_OPTIONS) -Map kernel-qemu.map -o $(BUILD)kernel-qemu.elf -T kernel/kernel.ld
 	$(TOOLCHAIN)objcopy $(BUILD)kernel-qemu.elf -O binary kernel7-qemu.bin
 
 qemu: kernel7-qemu.bin
@@ -244,7 +244,7 @@ qemu: kernel7-qemu.bin
 # mtime, bumped by writing the first .o into it, makes every later make
 # rebuild the entire kernel. forks/arm-pi3/Makefile already had it right.
 $(BUILD)%.o: $(SOURCE)%.S | $(BUILD)
-	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) -I source $< -o $@
+	$(TOOLCHAIN)gcc -c $(CFLAGS) $(CC_OPTIONS) -I kernel $< -o $@
 
 # Build C files
 $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
