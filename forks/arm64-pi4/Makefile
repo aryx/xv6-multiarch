@@ -1,8 +1,16 @@
 K=kernel
 U=user
-T=test
+# claude: Phase 0 (docs/claude_notes/plan_factorization.md) - test programs,
+# the user library and the host-built tools each get their own directory.
+T=tests
+L=ulib
+O=tools
+# claude: renamed T= -> H= to free T= for tests/ (Phase 0), consistent
+# with the other four MIT-2019-shaped forks. This one is the bare-metal
+# hardware-probe kernel in test/, unrelated to the userland test programs.
+H=test
 
-TOBJS = $T/entry.o $T/gpio.o $T/uart.o $T/start.o $T/main.o
+TOBJS = $H/entry.o $H/gpio.o $H/uart.o $H/start.o $H/main.o
 
 OBJS = \
   $K/entry.o \
@@ -112,10 +120,10 @@ ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -MP -I.
 # kernel/entry.S now reads CurrentEL at runtime instead, so one kernel8.img
 # is correct on both - see that file's own comment on _entry.
 
-$T/hwtest: $(TOBJS) $T/test.ld
-	$(LD) $(LDFLAGS) -T $T/test.ld -o $T/hwtest $(TOBJS)
+$H/hwtest: $(TOBJS) $H/test.ld
+	$(LD) $(LDFLAGS) -T $H/test.ld -o $H/hwtest $(TOBJS)
 
-hwtest.img: $T/hwtest
+hwtest.img: $H/hwtest
 	$(OBJCOPY) -O binary $^ $@
 
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode fs.img
@@ -136,27 +144,27 @@ $U/initcode: $U/initcode.S
 tags: $(OBJS) _init
 	etags *.S *.c
 
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
-$U/usys.S : $U/usys.pl
-	perl $U/usys.pl > $U/usys.S
+$L/usys.S : $L/usys.pl
+	perl $L/usys.pl > $L/usys.S
 
-$U/usys.o : $U/usys.S
-	$(CC) $(CFLAGS) -c -o $U/usys.o $U/usys.S
+$L/usys.o : $L/usys.S
+	$(CC) $(CFLAGS) -c -o $L/usys.o $L/usys.S
 
-$U/_forktest: $U/forktest.o $(ULIB)
+$T/_forktest: $T/forktest.o $(ULIB)
 	# forktest has less library code linked in - needs to be small
 	# in order to be able to max out the proc table.
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
-	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $T/_forktest $T/forktest.o $L/ulib.o $L/usys.o
+	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
-mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
-	gcc -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
+$O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
+	gcc -Werror -Wall -I. -o $O/mkfs $O/mkfs.c
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
@@ -167,7 +175,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 UPROGS=\
 	$U/_cat\
 	$U/_echo\
-	$U/_forktest\
+	$T/_forktest\
 	$U/_grep\
 	$U/_init\
 	$U/_kill\
@@ -176,23 +184,23 @@ UPROGS=\
 	$U/_mkdir\
 	$U/_rm\
 	$U/_sh\
-	$U/_stressfs\
-	$U/_usertests\
-	$U/_grind\
+	$T/_stressfs\
+	$T/_usertests\
+	$T/_grind\
 	$U/_wc\
-	$U/_zombie\
+	$T/_zombie\
 
-fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+fs.img: $O/mkfs README $(UPROGS)
+	$O/mkfs fs.img README $(UPROGS)
 
--include kernel/*.d user/*.d
+-include kernel/*.d user/*.d tests/*.d ulib/*.d
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym *.img */*.img *.o \
-	$U/initcode $U/initcode.out $K/kernel fs.img $T/hwtest \
-	mkfs/mkfs .gdbinit \
-        $U/usys.S \
+	$U/initcode $U/initcode.out $K/kernel fs.img $H/hwtest \
+	$O/mkfs .gdbinit \
+        $L/usys.S \
 	$(UPROGS)
 
 SDPATH = /media/k-mrm/BOOT/
@@ -208,7 +216,7 @@ CPUS := 4
 endif
 
 QEMUOPTS = -cpu cortex-a72 -machine $(QEMUMACHINE) -kernel $K/kernel -m $(QEMUMEM) -smp $(CPUS) -nographic
-QEMUTOPTS = -cpu cortex-a72 -machine $(QEMUMACHINE) -kernel $T/hwtest -m $(QEMUMEM) -smp $(CPUS) -nographic
+QEMUTOPTS = -cpu cortex-a72 -machine $(QEMUMACHINE) -kernel $H/hwtest -m $(QEMUMEM) -smp $(CPUS) -nographic
 
 qemu: $K/kernel
 	$(QEMU) $(QEMUOPTS)
