@@ -353,6 +353,34 @@ that Phase 0 has just moved into `kernel/`, so relocating the set would
 mean rewriting its data file - and there is no troff/PDF toolchain here to
 verify the result. Leaving it untouched is the verifiable choice.
 
+### amd64-jserv (2026-09-10, DONE)
+
+Two commits, no prep needed, `test-amd64-jserv` green. **Nine forks done,
+five to go** - all five remaining are ARM.
+
+This is the fork that suggested `ulib/` and `tools/` in the first place, so
+only two things were missing: `tests/` split out of `user/`, and
+`include/` **dissolved** - its 22 headers into `kernel/`, `user.h` into
+`user/`, and `symlink.patch` (not a header) to the fork root. It was the
+only fork of the fourteen with an `include/`, and the Phase 0 target puts
+headers beside their consumers.
+
+None of gotchas 1, 2, 3 or 7 applied, for one reason worth generalising:
+**this fork's build is already decoupled from its source layout.** Objects
+go to `.kobj/` and `.uobj/`, outputs to `out/`, and the filesystem is staged
+in `.fs/` - so there is no bare `kernel`/`mkfs` ignore word, no target
+sharing a name with a directory, no embedded blob whose path could move,
+and `UPROGS` is a flat list of bare names that needed no change at all.
+Where a program compiles from was already independent of what it is called
+in the image. Worth remembering as the shape the other forks should
+eventually converge on.
+
+`mkfs.c` here already separates the host path it opens from the name it
+writes - by stripping a hardcoded `".fs/"`. That is the same brittleness
+the others' `"user/"` prefix had, and was deliberately left alone: the move
+does not force it, and converging the seven divergent copies of `mkfs.c` on
+one basename idiom is Tier 3 work, not a layout commit's business.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
@@ -370,9 +398,12 @@ So, cheapest first:
 1. ~~**`riscv32`, `arm64`, `loongarch`, `arm64-pi4`**~~ - **DONE**
    2026-09-10, see above.
 2. ~~**`i386`, `amd64`**~~ - **DONE** 2026-09-10, see above.
-3. **`arm`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`,
-   `amd64-jserv`** - nested sub-builds and/or duplicated header sets. Real
-   design work; leave until the recipe is boring.
+3. ~~`amd64-jserv`~~ - **DONE** 2026-09-10, see above; it turned out to be
+   the cheapest of the fourteen, not one of the hardest.
+4. **`arm`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`** - the five
+   remaining, all ARM: nested sub-builds and/or duplicated header sets.
+   Real design work; `arm-pi1-bis` alone has 8 of 16 userland headers
+   genuinely divergent from the kernel's copies.
 
 **Decide the residue rule once, not per fork.** Some files fit none of the five
 buckets: `arm/device/` (`gic.c`, `timer.c`, `uart.c`), the Pi ports'
