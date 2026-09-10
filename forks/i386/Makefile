@@ -175,25 +175,38 @@ kernel/vectors.S: tools/vectors.pl
 # vpath: vpath matches the WHOLE prerequisite path, so "vpath %.c ../../utilities"
 # would make make look for utilities/user/echo.c. The object still lands in this
 # fork, so concurrent per-fork builds never race on a shared output file.
+# claude: "@mkdir -p $(dir $@)" - user/ has no tracked file of its own any
+# more (every source that used to live there moved to a shared dir), so a
+# clean checkout (CI, docker build) never creates it; only a stale local
+# build tree happens to have it already. Caught by CI failing on i386,
+# amd64 and mips with "fatal error: opening dependency file user/cat.d: No
+# such file or directory" while the same build was green on a machine that
+# had already built here before - see arm-pi1's own $(BUILD)csud/%.o rule
+# for the same pattern.
 user/%.o: ../../utilities/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 user/%.o: ../../shells/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 user/%.o: ../../kernel/init/user/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # claude: the portable test programs, shared at the repo root. usertests.c
 # is NOT among them - it is genuinely per-port (twelve variants, each with its
 # own skipped sub-tests) and stays in each fork's own tests/.
 tests/%.o: ../../tests/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # claude: the shared user library, under lib_core/ per ~/principia's
 # convention. Separate rule because these objects land in ulib/, not
 # alongside the programs.
 ulib/%.o: ../../lib_core/libc/ulib/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 

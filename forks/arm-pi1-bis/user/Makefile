@@ -8,9 +8,15 @@ include ../makefile.inc
 # item 1).
 # claude: "-iquote ." is for THIS directory's own userland headers, which a
 # source compiled out of ../tests or ../ulib can no longer reach by sitting
-# next to them; "-iquote ../kernel" replaces the old "-iquote ../", the
-# fork root having stopped being where the kernel headers live.
-CFLAGS += -iquote . -iquote ../kernel -Wno-infinite-recursion -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+# next to them. Dropped the "-iquote ../kernel" this used to carry (on top
+# of "-I.." below, which already resolves "kernel/types.h"-style includes
+# fork-root-relative): it doesn't help anything "-I.." doesn't already
+# cover, and it actively shadows the shared "user.h" from
+# ../../../include/user with this fork's own stale, pre-2019-API
+# forks/arm-pi1-bis/kernel/user.h - dead since the 2019-API migration gave
+# this fork its own user/user.h, deleted in 819ff8c ("one shared
+# user-level API") on the assumption nothing still shadowed it.
+CFLAGS += -iquote . -Wno-infinite-recursion -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 # claude: usys.S needs the same treatment - make's built-in .S rule uses
 # $(ASFLAGS), never $(CFLAGS) (gotcha 9 in plan_factorization.md).
 ASFLAGS += -iquote . -I ../kernel
