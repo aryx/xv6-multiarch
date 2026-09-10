@@ -10,7 +10,7 @@ int write(int, const void*, int);
 int read(int, void*, int);
 int close(int);
 int kill(int);		/* POSIX incompatible */
-int exec(char*, char**);	/* POSIX incompatible */
+int exec(const char*, char**);	/* POSIX incompatible */
 int open(const char*, int);
 int mknod(const char*, short, short);
 int unlink(const char*);
@@ -29,7 +29,7 @@ int chmod(const char *, int);
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
 void *memmove(void*, const void*, int);
-char* strchr(const char*, char c);
+char* strchr(const char*, char);
 int strcmp(const char*, const char*);
 void printf(const char*, ...);
 void fprintf(int, const char*, ...);

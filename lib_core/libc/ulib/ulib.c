@@ -1,3 +1,17 @@
+// The portable half of the xv6 user library, shared by every port.
+//
+// claude: base taken from forks/arm64, which is the variant that already had
+// start() - the C entry that calls main() and then exit(). That matters where
+// the link rule passes no "-e main" and the linker script sets no ENTRY(): GNU
+// ld then falls back to its default entry symbol "start", and without this
+// function it silently uses the first byte of .text instead, i.e. whatever
+// function happened to compile first. See notes_arch_riscv32.txt's own bug 4.
+//
+// Deliberately NOT here: sbrk(). Nine ports get it straight from usys.S as a
+// plain syscall, while forks/riscv64 wraps a two-argument sys_sbrk(n, mode) to
+// support its lazy-allocation lab work. Putting either form here would clash
+// with the other, so riscv64 keeps its two wrappers in its own ulib/sbrk.c and
+// everyone else keeps the syscall stub.
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"

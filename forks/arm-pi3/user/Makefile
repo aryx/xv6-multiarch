@@ -70,8 +70,8 @@ _forktest: forktest.o $(ULIB)
 # always compiled against, having lived here. -iquote, not -I: mkfs is a
 # host program that also includes the system <fcntl.h> (gotcha 6).
 mkfs: ../tools/mkfs.c fs.h
-	gcc -iquote . -o mkfs ../tools/mkfs.c
-	#gcc -Werror -Wall -o mkfs mkfs.c
+	gcc -iquote . -o mkfs ../tools/mkfs.c -I../../../include
+	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

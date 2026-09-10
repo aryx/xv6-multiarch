@@ -228,7 +228,7 @@ _forktest: tests/forktest.o $(ULIB) ulib/user.ld
 	$(OBJDUMP) -S _forktest > forktest.asm
 
 tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs tools/mkfs.c -idirafter kernel
+	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs tools/mkfs.c -idirafter kernel -I../../include
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

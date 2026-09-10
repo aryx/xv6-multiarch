@@ -124,7 +124,7 @@ $L/%.o: ../../lib_core/libc/ulib/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
-ULIB = $L/arith.o $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
+ULIB = $L/sbrk.o $L/arith.o $L/ulib.o $L/usys.o $L/printf.o $L/umalloc.o
 
 # claude: not anchored to a directory, so this one rule builds both
 # user/_cat and tests/_usertests.
@@ -146,7 +146,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
 $O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
-	gcc -Wno-unknown-attributes -I. -o $O/mkfs $O/mkfs.c
+	gcc -Wno-unknown-attributes -I. -o $O/mkfs $O/mkfs.c -I../../include
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

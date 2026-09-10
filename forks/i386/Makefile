@@ -209,7 +209,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # -idirafter puts kernel/ after the system directories instead, so each
 # header comes from where it should. Same idiom forks/mips already used.
 tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c
+	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

@@ -80,7 +80,7 @@ _forktest: forktest.o $(ULIB)
 # -iquote is searched for "..." includes only, never for <...>. The binary
 # keeps being built here, so ./mkfs below and .gitignore are unchanged.
 mkfs: ../tools/mkfs.c fs.h
-	gcc -Werror -Wall -iquote . -o mkfs ../tools/mkfs.c
+	gcc -Werror -Wall -iquote . -o mkfs ../tools/mkfs.c -I../../../include
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

@@ -167,8 +167,8 @@ $(UOBJ_DIR)/%.o: ulib/%.S
 # bootblock is optimized for space
 $(OUT)/bootblock: kernel/bootasm.S kernel/bootmain.c
 	@mkdir -p $(OUT)
-	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -Os -o $(OUT)/bootmain.o -c kernel/bootmain.c
-	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -o $(OUT)/bootasm.o -c kernel/bootasm.S
+	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -I../../include -Os -o $(OUT)/bootmain.o -c kernel/bootmain.c
+	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -I../../include -o $(OUT)/bootasm.o -c kernel/bootasm.S
 	$(LD) -m elf_i386 -z nodefaultlib --omagic -e start -Ttext 0x7C00 \
 		-o $(OUT)/bootblock.o $(OUT)/bootasm.o $(OUT)/bootmain.o
 	$(OBJDUMP) -S $(OUT)/bootblock.o > $(OUT)/bootblock.asm
@@ -243,7 +243,7 @@ $(FS_DIR)/forktest: $(UOBJ_DIR)/forktest.o $(ULIB)
 
 $(OUT)/mkfs: tools/mkfs.c kernel/fs.h
 	@mkdir -p $(OUT)
-	$(HOST_CC) -Werror -Wall -o $@ tools/mkfs.c
+	$(HOST_CC) -Werror -Wall -o $@ tools/mkfs.c -I../../include
 
 out/opfs: tools/opfs.c tools/libfs.c
 	@mkdir -p $(OUT)

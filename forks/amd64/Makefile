@@ -174,7 +174,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # before the system directories, so <fcntl.h> would resolve to
 # kernel/fcntl.h, which has no O_TRUNC. See i386's identical fix.
 tools/mkfs: tools/mkfs.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c
+	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c -I../../include
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
