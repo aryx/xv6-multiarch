@@ -1,32 +1,32 @@
 OBJS = \
-	bio.o\
-	console.o\
-	exec.o\
-	file.o\
-	fs.o\
-	ide.o\
-	ioapic.o\
-	kalloc.o\
-	kbd.o\
-	lapic.o\
-	log.o\
-	main.o\
-	mp.o\
-	picirq.o\
-	pipe.o\
-	proc.o\
-	sleeplock.o\
-	spinlock.o\
-	string.o\
-	swtch.o\
-	syscall.o\
-	sysfile.o\
-	sysproc.o\
-	trapasm.o\
-	trap.o\
-	uart.o\
-	vectors.o\
-	vm.o\
+	kernel/bio.o\
+	kernel/console.o\
+	kernel/exec.o\
+	kernel/file.o\
+	kernel/fs.o\
+	kernel/ide.o\
+	kernel/ioapic.o\
+	kernel/kalloc.o\
+	kernel/kbd.o\
+	kernel/lapic.o\
+	kernel/log.o\
+	kernel/main.o\
+	kernel/mp.o\
+	kernel/picirq.o\
+	kernel/pipe.o\
+	kernel/proc.o\
+	kernel/sleeplock.o\
+	kernel/spinlock.o\
+	kernel/string.o\
+	kernel/swtch.o\
+	kernel/syscall.o\
+	kernel/sysfile.o\
+	kernel/sysproc.o\
+	kernel/trapasm.o\
+	kernel/trap.o\
+	kernel/uart.o\
+	kernel/vectors.o\
+	kernel/vm.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 # TOOLPREFIX = i386-jos-elf
@@ -80,7 +80,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 XFLAGS = -m64 -mcmodel=large -ggdb
 # CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -Werror -fno-omit-frame-pointer
 CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer
-CFLAGS += -ffreestanding -fno-common -nostdlib $(XFLAGS)
+CFLAGS += -ffreestanding -fno-common -nostdlib $(XFLAGS) -Ikernel -Iuser
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
 # sh.c's runcmd() - same recursive-descent shell interpreter every
@@ -88,7 +88,7 @@ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 &
 # own identical fix and comment for the full explanation. Confirmed via
 # x86_64-linux-gnu-gcc 13.3.0.
 CFLAGS += -Wno-infinite-recursion
-ASFLAGS = -gdwarf-2 -Wa,-divide $(XFLAGS)
+ASFLAGS = -gdwarf-2 -Wa,-divide $(XFLAGS) -Ikernel
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m $(shell $(LD) -V | grep elf_x86_64 2>/dev/null | head -n 1)
 LDFLAGS += -z max-page-size=4096
@@ -101,44 +101,57 @@ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
 
-kernel: $(OBJS) entry.o entryother initcode kernel.ld
-	$(LD) $(LDFLAGS) -T kernel.ld -o kernel entry.o $(OBJS) -b binary initcode entryother
-	$(OBJDUMP) -S kernel > kernel.asm
-	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
+# claude: target renamed "kernel" -> "kernel/kernel" - a make target cannot
+# share a name with an existing directory: kernel/ exists, so make would
+# treat the target as already built and never relink. See gotcha 2 in
+# plan_factorization.md.
+kernel/kernel: $(OBJS) kernel/entry.o entryother initcode kernel/kernel.ld
+	$(LD) $(LDFLAGS) -T kernel/kernel.ld -o kernel/kernel kernel/entry.o $(OBJS) -b binary initcode entryother
+	$(OBJDUMP) -S kernel/kernel > kernel/kernel.asm
+	$(OBJDUMP) -t kernel/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel/kernel.sym
 
-entryother: entryother.S
-	$(CC) $(CFLAGS) -fno-pic -nostdinc -I. -c entryother.S
+# claude: the generated "entryother" and "initcode" blobs stay at the fork
+# root even though their .S sources moved into kernel/ - "ld -b binary"
+# derives its synthetic symbols from the file path, so kernel/entryother
+# would yield _binary_kernel_entryother_start while main.c reads
+# _binary_entryother_start. Gotcha 3.
+entryother: kernel/entryother.S
+	$(CC) $(CFLAGS) -fno-pic -nostdinc -Ikernel -c kernel/entryother.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0x7000 -o bootblockother.o entryother.o
 	$(OBJCOPY) -S -O binary -j .text bootblockother.o entryother
 	$(OBJDUMP) -S bootblockother.o > entryother.asm
 
-initcode: initcode.S
-	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
+initcode: kernel/initcode.S
+	$(CC) $(CFLAGS) -nostdinc -Ikernel -c kernel/initcode.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o initcode.out initcode.o
 	$(OBJCOPY) -S -O binary initcode.out initcode
 	$(OBJDUMP) -S initcode.o > initcode.asm
 
-tags: $(OBJS) entryother.S _init
-	etags *.S *.c
+tags: $(OBJS) kernel/entryother.S user/_init
+	etags kernel/*.S kernel/*.c user/*.c tests/*.c ulib/*.c ulib/*.S
 
-vectors.S: vectors.pl
-	./vectors.pl > vectors.S
+kernel/vectors.S: tools/vectors.pl
+	./tools/vectors.pl > kernel/vectors.S
 
-ULIB = ulib.o usys.o printf.o umalloc.o
+ULIB = ulib/ulib.o ulib/usys.o ulib/printf.o ulib/umalloc.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
-_forktest: forktest.o $(ULIB)
+tests/_forktest: tests/forktest.o $(ULIB)
 	# forktest has less library code linked in - needs to be small
 	# in order to be able to max out the proc table.
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
-	$(OBJDUMP) -S _forktest > forktest.asm
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o tests/_forktest tests/forktest.o ulib/ulib.o ulib/usys.o
+	$(OBJDUMP) -S tests/_forktest > tests/forktest.asm
 
-mkfs: mkfs.c fs.h
-	gcc -Werror -Wall -o mkfs mkfs.c
+# claude: -idirafter, NOT -I. mkfs is a HOST program and includes the
+# system <fcntl.h> as well as xv6's own "fs.h" - -Ikernel is searched
+# before the system directories, so <fcntl.h> would resolve to
+# kernel/fcntl.h, which has no O_TRUNC. See i386's identical fix.
+tools/mkfs: tools/mkfs.c kernel/fs.h
+	gcc -Werror -Wall -idirafter kernel -o tools/mkfs tools/mkfs.c
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
@@ -147,32 +160,37 @@ mkfs: mkfs.c fs.h
 .PRECIOUS: %.o
 
 UPROGS=\
-	_cat\
-	_echo\
-	_forktest\
-	_grep\
-	_init\
-	_kill\
-	_ln\
-	_ls\
-	_mkdir\
-	_rm\
-	_sh\
-	_stressfs\
-	_usertests\
-	_wc\
-	_zombie\
+	user/_cat\
+	user/_echo\
+	tests/_forktest\
+	user/_grep\
+	user/_init\
+	user/_kill\
+	user/_ln\
+	user/_ls\
+	user/_mkdir\
+	user/_rm\
+	user/_sh\
+	tests/_stressfs\
+	tests/_usertests\
+	user/_wc\
+	tests/_zombie\
 
-fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+fs.img: tools/mkfs README $(UPROGS)
+	./tools/mkfs fs.img README $(UPROGS)
 
--include *.d
+-include kernel/*.d user/*.d tests/*.d ulib/*.d
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*.o *.d *.asm *.sym vectors.S bootblock entryother \
-	initcode initcode.out kernel fs.img kernelmemfs \
-	mkfs .gdbinit \
+	*.o *.d *.asm *.sym bootblock entryother \
+	initcode initcode.out fs.img \
+	tools/mkfs .gdbinit \
+	kernel/vectors.S kernel/kernel kernel/kernelmemfs \
+	kernel/*.o kernel/*.d kernel/*.asm kernel/*.sym \
+	ulib/*.o ulib/*.d \
+	user/*.o user/*.d user/*.asm user/*.sym \
+	tests/*.o tests/*.d tests/*.asm tests/*.sym \
 	$(UPROGS)
 
 # make a printout
@@ -194,21 +212,21 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 ifndef CPUS
 CPUS := 2
 endif
-QEMUOPTS = -kernel kernel -drive file=fs.img,index=1,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+QEMUOPTS = -kernel kernel/kernel -drive file=fs.img,index=1,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
 qemu: fs.img
 	$(QEMU) -serial mon:stdio $(QEMUOPTS)
 
-qemu-nox: fs.img kernel
+qemu-nox: fs.img kernel/kernel
 	$(QEMU) -nographic $(QEMUOPTS)
 
-.gdbinit: .gdbinit.tmpl-x64
+.gdbinit: tools/.gdbinit.tmpl-x64
 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
 
-qemu-gdb: fs.img kernel .gdbinit
+qemu-gdb: fs.img kernel/kernel .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
-qemu-nox-gdb: fs.img kernel .gdbinit
+qemu-nox-gdb: fs.img kernel/kernel .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -nographic $(QEMUOPTS) -S $(QEMUGDB)
 
