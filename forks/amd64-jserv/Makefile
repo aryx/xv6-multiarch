@@ -87,7 +87,7 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 
 CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror
 CFLAGS += -g -Wall -MD -fno-omit-frame-pointer
-CFLAGS += -ffreestanding -fno-common -nostdlib -Iinclude -gdwarf-2 $(XFLAGS) $(OPT)
+CFLAGS += -ffreestanding -fno-common -nostdlib -Ikernel -Iuser -gdwarf-2 $(XFLAGS) $(OPT)
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
 CFLAGS += $(call cc-option, -fno-stack-protector-all, "")
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
@@ -96,7 +96,7 @@ CFLAGS += $(call cc-option, -fno-stack-protector-all, "")
 # see forks/x86/Makefile's own identical fix and comment for the full
 # explanation. Confirmed via x86_64-linux-gnu-gcc 13.3.0.
 CFLAGS += -Wno-infinite-recursion
-ASFLAGS = -gdwarf-2 -Wa,-divide -Iinclude $(XFLAGS)
+ASFLAGS = -gdwarf-2 -Wa,-divide -Ikernel $(XFLAGS)
 
 xv6.img: $(OUT)/bootblock $(OUT)/kernel.elf fs.img
 	dd if=/dev/zero of=xv6.img count=10000
@@ -127,6 +127,16 @@ $(UOBJ_DIR)/%.o: user/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<
 
+# claude: the test programs live in tests/ since Phase 0. Two pattern rules
+# with the same target pattern is fine - GNU make picks whichever rule's
+# prerequisites can actually be made, and a program's .c exists in exactly
+# one of the two directories. UPROGS itself needs no change: it is a flat
+# list of bare names staged into $(FS_DIR), so where a program is compiled
+# from was already decoupled from what it is called in the image.
+$(UOBJ_DIR)/%.o: tests/%.c
+	@mkdir -p $(UOBJ_DIR)
+	$(CC) $(CFLAGS_user) -c -o $@ $<
+
 $(UOBJ_DIR)/%.o: ulib/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<
@@ -138,8 +148,8 @@ $(UOBJ_DIR)/%.o: ulib/%.S
 # bootblock is optimized for space
 $(OUT)/bootblock: kernel/bootasm.S kernel/bootmain.c
 	@mkdir -p $(OUT)
-	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Iinclude -Os -o $(OUT)/bootmain.o -c kernel/bootmain.c
-	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Iinclude -o $(OUT)/bootasm.o -c kernel/bootasm.S
+	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -Os -o $(OUT)/bootmain.o -c kernel/bootmain.c
+	$(CC) -fno-builtin -fno-pic -m32 -nostdinc -Ikernel -o $(OUT)/bootasm.o -c kernel/bootasm.S
 	$(LD) -m elf_i386 -z nodefaultlib --omagic -e start -Ttext 0x7C00 \
 		-o $(OUT)/bootblock.o $(OUT)/bootasm.o $(OUT)/bootmain.o
 	$(OBJDUMP) -S $(OUT)/bootblock.o > $(OUT)/bootblock.asm
@@ -211,7 +221,7 @@ $(FS_DIR)/forktest: $(UOBJ_DIR)/forktest.o $(ULIB)
 		$(UOBJ_DIR)/usys.o
 	$(OBJDUMP) -S $(FS_DIR)/forktest > $(OUT)/forktest.asm
 
-$(OUT)/mkfs: tools/mkfs.c include/fs.h
+$(OUT)/mkfs: tools/mkfs.c kernel/fs.h
 	@mkdir -p $(OUT)
 	$(HOST_CC) -Werror -Wall -o $@ tools/mkfs.c
 
