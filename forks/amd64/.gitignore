@@ -1,5 +1,11 @@
 *.img
-initcode
-initcode.out
-kernel
-mkfs
+# claude: anchored to their real build locations, and no longer bare
+# words - a bare "kernel"/"mkfs" pattern also matches a DIRECTORY of that
+# name, which the Phase 0 kernel/ and tools/ layout needs to exist, and
+# the build wrote a FILE named "kernel" at the fork root, which cannot
+# coexist with a directory of the same name at all. Same shape as
+# forks/riscv64/.gitignore's own "/kernel/kernel", "/tools/mkfs".
+/initcode
+/initcode.out
+/kernel/kernel
+/tools/mkfs
