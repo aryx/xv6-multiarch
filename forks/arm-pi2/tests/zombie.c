@@ -10,9 +10,9 @@ main(void)
 {
   if(fork() > 0){
     sleep(5);  // Let child exit before parent.
-    printf(2, "Parent exits!\n");
-    exit();
+    fprintf(2, "Parent exits!\n");
+    exit(0);
   }
-  printf(2, "Child exits!\n");
-  exit();
+  fprintf(2, "Child exits!\n");
+  exit(0);
 }

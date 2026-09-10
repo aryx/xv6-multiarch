@@ -21,8 +21,8 @@ void sum() {
   }
   buf = malloc(SUM_BUF_SIZE);
   if (buf == 0) {
-    printf(1, "Malloc failure\n");
-    exit();
+    printf("Malloc failure\n");
+    exit(0);
   }
   len = read(fd, buf, SUM_BUF_SIZE);
   while ((i + 1) * len < SUM_BUF_SIZE) {
@@ -35,7 +35,7 @@ void sum() {
     for (i = 0; i < SUM_BUF_SIZE / 2; i++) {
       sum += buf[i];
     }
-    exit();
+    exit(0);
   } else {
     for (i = SUM_BUF_SIZE / 2; i < SUM_BUF_SIZE; i++) {
       sum += buf[i];
@@ -43,7 +43,7 @@ void sum() {
   }
   free(buf);
   close(fd);
-  wait();
+  wait(0);
   return;
 }
 
@@ -56,11 +56,11 @@ int sum_bench(int n) {
     }
     if (!pid) {
       sum();
-      exit();
+      exit(0);
     }
   }
   for (i = 0; i < n; i++) {
-    wait();
+    wait(0);
   } 
   return time() - start;
 }
@@ -80,16 +80,16 @@ int fib_bench(int n) {
   j = 0;
   for (i = 0; i < n; i++) {
     while ((pid = fork()) == -1) {
-      wait();
+      wait(0);
       j++;
     }
     if (!pid) {
       fib(FIB_N);
-      exit();
+      exit(0);
     }
   }
   for (i = 0; i < n - j; i++) {
-    wait();
+    wait(0);
   }
   int end = time();
   return end - start;
@@ -103,15 +103,15 @@ int fork_bench(int n) {
   j = 0;
   for (i = 0 ; i < n; i++) {
     while ((pid = fork()) == -1) {
-      wait();
+      wait(0);
       j++;
     }
     if (!pid) {
-      exit();
+      exit(0);
     }
   }
   for (i = 0; i < n - j; i++) {
-    wait();
+    wait(0);
   }
   int end = time();
   int time = end - start;
@@ -120,8 +120,8 @@ int fork_bench(int n) {
 
 int main(int argc, char* argv[]) {
   if (argc < 3) {
-    printf(1, "Usage: \"benchmark [test] [n]\"");
-    exit();
+    printf("Usage: \"benchmark [test] [n]\"");
+    exit(0);
   }
   char benchmark = argv[1][0];
   int n = atoi(argv[2]);
@@ -129,18 +129,18 @@ int main(int argc, char* argv[]) {
   switch (benchmark) {
   case FORK_BENCH:
     score = fork_bench(n);
-    printf(1, "Benchmark Fork %d score: %d uS\n", n, score);
+    printf("Benchmark Fork %d score: %d uS\n", n, score);
     break;
   case FIB_BENCH:
     score = fib_bench(n);
-    printf(1, "Benchmark Fib %d score: %d uS\n", n, score);
+    printf("Benchmark Fib %d score: %d uS\n", n, score);
     break;
   case SUM_BENCH:
     score = sum_bench(n);
-    printf(1, "Benchmark Sum %d score: %d uS\n", n, score);
+    printf("Benchmark Sum %d score: %d uS\n", n, score);
     break;
   default:
     break;
   }
-  exit();
+  exit(0);
 }

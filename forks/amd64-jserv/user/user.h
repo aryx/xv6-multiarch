@@ -3,8 +3,8 @@ struct rtcdate;
 
 // system calls
 int fork(void);
-int exit(void) __attribute__((noreturn));
-int wait(void);		/* POSIX incompatible */
+int exit(int) __attribute__((noreturn));
+int wait(int*);		/* POSIX incompatible */
 int pipe(int*);
 int write(int, const void*, int);
 int read(int, void*, int);
@@ -31,7 +31,8 @@ char* strcpy(char*, const char*);
 void *memmove(void*, const void*, int);
 char* strchr(const char*, char c);
 int strcmp(const char*, const char*);
-void printf(int, char*, ...);
+void printf(char*, ...);
+void fprintf(int, char*, ...);
 char* gets(char*, int max);
 uint strlen(const char*);
 void* memset(void*, int, uint);

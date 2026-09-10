@@ -7,10 +7,14 @@
 
 #define N  1000
 
+// claude: renamed printf -> print, matching mit-pdos/xv6-riscv. forktest
+// links without ulib printf.o (it must stay small enough to fill the proc
+// table) so it supplies its own; under the 2019 API that would clash with
+// user.h.
 void
-printf(int fd, char *s, ...)
+print(char *s)
 {
-  write(fd, s, strlen(s));
+  write(1, s, strlen(s));
 }
 
 void
@@ -18,39 +22,39 @@ forktest(void)
 {
   int n, pid;
 
-  printf(1, "fork test\n");
+  print("fork test\n");
 
   for(n=0; n<N; n++){
     pid = fork();
     if(pid < 0)
       break;
     if(pid == 0)
-      exit();
+      exit(0);
   }
   
   if(n == N){
-    printf(1, "fork claimed to work N times!\n", N);
-    exit();
+    print("fork claimed to work N times!\n");
+    exit(0);
   }
   
   for(; n > 0; n--){
-    if(wait() < 0){
-      printf(1, "wait stopped early\n");
-      exit();
+    if(wait(0) < 0){
+      print("wait stopped early\n");
+      exit(0);
     }
   }
   
-  if(wait() != -1){
-    printf(1, "wait got too many\n");
-    exit();
+  if(wait(0) != -1){
+    print("wait got too many\n");
+    exit(0);
   }
   
-  printf(1, "fork test OK\n");
+  print("fork test OK\n");
 }
 
 int
 main(void)
 {
   forktest();
-  exit();
+  exit(0);
 }

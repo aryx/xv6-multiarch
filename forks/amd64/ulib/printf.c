@@ -48,14 +48,15 @@ printptr(int fd, uint64 x) {
 }
 
 // Print to the given fd. Only understands %d, %x, %p, %s.
-void
-printf(int fd, const char *fmt, ...)
+static void
+// claude: was a single "printf(int fd, ...)". Split into a core taking the
+// varargs explicitly, plus the two entry points MIT's 2019 userland API
+// uses - printf() to fd 1, and fprintf() taking an fd. See forks/i386 for
+// the pilot and plan_factorization.md for why the kernel needs no change.
+vprintf(int fd, const char *fmt, va_list ap)
 {
-  va_list ap;
   char *s;
   int c, i, state;
-
-  va_start(ap, fmt);
   state = 0;
   for(i = 0; fmt[i]; i++){
     c = fmt[i] & 0xff;
@@ -92,4 +93,22 @@ printf(int fd, const char *fmt, ...)
       state = 0;
     }
   }
+}
+
+void
+fprintf(int fd, const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  vprintf(fd, fmt, ap);
+  va_end(ap);
+}
+
+void
+printf(const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  vprintf(1, fmt, ap);
+  va_end(ap);
 }

@@ -144,6 +144,6 @@ memmove(void *vdst, void *vsrc, int n)
 int
 raise(int sig)
 {
-    exit();
+    exit(0);
     return 0; // unreached
 }

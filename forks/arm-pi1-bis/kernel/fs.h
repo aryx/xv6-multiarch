@@ -19,7 +19,13 @@ struct superblock {
   uint nlog;         // Number of log blocks
 };
 
-#define NDIRECT 12
+// claude: 12 -> 60. MAXFILE is (NDIRECT + NINDIRECT) blocks = 71680 bytes,
+// and _usertests was already at 71352 - under 0.5%% headroom - before the
+// 2019-API userland migration pushed it over. Same value forks/arm-pi2 and
+// arm-pi3 already carry. BOTH copies of fs.h must move together: mkfs
+// compiles against one and the kernel against the other, and they must
+// agree on the on-disk inode layout.
+#define NDIRECT 60
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 

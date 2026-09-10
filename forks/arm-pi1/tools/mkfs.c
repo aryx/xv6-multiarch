@@ -20,7 +20,11 @@
 int nblocks = 985;
 int nlog = LOGSIZE;
 int ninodes = 200;
-int size = 1024;
+// claude: 1024 -> 1099, forced by NDIRECT 12 -> 60 in fs.h. A bigger NDIRECT
+// means a bigger struct dinode, so fewer inodes per block and more inode
+// blocks - and this mkfs asserts nblocks + usedblocks + nlog == size with a
+// hardcoded nblocks of 985. forks/arm-pi2 hit exactly this and uses 1099.
+int size = 1099;
 
 int fsfd;
 struct superblock sb;
