@@ -34,3 +34,33 @@ kernelmemfs
 # claude: scripts/qemu_graphics.py gets imported by
 # scripts/test_qemu_graphics.py, which leaves a __pycache__ behind.
 __pycache__/
+
+# claude: hoisted from the per-fork .gitignore files (2026-09-10). Phase 0
+# gave all fourteen ports the same layout, so the same build outputs are now
+# at the same relative paths in every one of them and can be named once.
+#
+# NOTE ON ANCHORING: these two need the "**/" prefix. Per gitignore(5), a
+# pattern with a separator anywhere but the end is relative to the directory
+# of the .gitignore holding it - so a bare "kernel/kernel" here would mean
+# <repo-root>/kernel/kernel, which does not exist, and every fork's kernel
+# binary would silently become untracked-but-not-ignored. Only a leading
+# "**/" makes it match at any depth. Inside a fork's own .gitignore the
+# plain form worked, which is why the per-fork files could spell it both
+# "/kernel/kernel" and "kernel/kernel" and never notice the difference.
+*.img
+*.elf
+*.dis
+*.map
+*.a
+*.out
+kernel.list
+build/
+build-qemu/
+**/kernel/kernel
+**/tools/mkfs
+
+# claude: per-developer noise, previously scattered across four forks.
+TAGS
+.gdb_history
+.vscode/
+*.swp

@@ -1,6 +1,6 @@
-.*.swp
-*.img
-mkfs
+# Everything else this fork generates is covered by the repo-root
+# .gitignore. Only what is genuinely local to this port is left here.
+
 .gdbinit*
-out
-.fs
+/out/
+/.fs/

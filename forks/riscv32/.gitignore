@@ -1,14 +1,8 @@
-# claude: this fork never had a .gitignore at all - build outputs (kernel
-# ELF/asm listing, mkfs, initcode, the linked user _binaries, fs.img)
-# were untracked but cluttering `git status` after every build. None of
-# these are checked-in source; unlike forks/rpi1's source/fs.img or
-# forks/loongarch's ramdisk.h, this port's Makefile builds fs.img fresh
-# from mkfs + UPROGS every time, so nothing here needs to be tracked.
-# (per-program *.asm disassembly listings, *.sym files, and the linked
-# "_name" user binaries are covered by the toplevel .gitignore.)
-kernel/kernel
-tools/mkfs
-fs.img
+# Everything else this fork generates is covered by the repo-root
+# .gitignore. Only what is genuinely local to this port is left here.
+
 user/initcode
-user/initcode.out
+# claude: kept local - usys.S is GENERATED from usys.pl in this fork, but
+# is a hand-written tracked SOURCE file in the nine forks without usys.pl.
+# Hoisting it would mark those nine as ignored.
 ulib/usys.S

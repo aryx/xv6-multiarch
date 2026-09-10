@@ -1,64 +1,11 @@
-# Object files
-*.ko
-*.obj
-*.elf
+# Everything else this fork generates is covered by the repo-root
+# .gitignore. Only what is genuinely local to this port is left here.
 
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-.vscode/*
-/kernel/kernel
-fs.img
-.gdb_history
-# claude: anchored - the host tool lives in tools/ since Phase 0
-/tools/mkfs
+# claude: kept local - "initcode" is a GENERATED blob here, but a
+# checked-in one in arm-pi1/arm-pi2/arm-pi3, so it must never be hoisted.
 initcode
-/ulib/usys.S
-# claude: was tracked (a generated "xxd -i fs.img" C header, up to several
-# MB, that changes on every build - see notes_arch_loongarch.txt), same
-# oversight as mkfs/initcode/usys.S above evidently were before this
-# .gitignore already listed them - the port's own fs.img is embedded
-# straight into the kernel image via this file rather than a separate
-# disk image, but it's still purely a build product, not source.
+# claude: kept local - usys.S is GENERATED from usys.pl in this fork, but
+# is a hand-written tracked SOURCE file in the nine forks without usys.pl.
+# Hoisting it would mark those nine as ignored.
+ulib/usys.S
 kernel/ramdisk.h

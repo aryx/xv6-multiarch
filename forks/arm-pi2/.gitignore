@@ -1,24 +1,5 @@
-# claude: this fork never had a .gitignore at all - build outputs were
-# neither tracked nor ignored (same gap as the sibling forks/rpi1 fork).
-# Covers both the real-hardware build outputs (kernel7.bin/kernel.list/
-# kernel.map/build/) and the additive QEMU-only ones (kernel7-qemu.bin/
-# kernel-qemu.map). Root-anchored (leading "/") and by exact name,
-# deliberately NOT a broad "*.bin"/"*.img" glob - source/font.bin/
-# font1.bin are genuine checked-in binary assets (font bitmap data, not
-# build output) and a recursive glob would have caught those too.
-#
-# source/fs.img WAS checked in here too, until 2026-09-09: it's the
-# OUTPUT of uprogs/'s own separate build (mkfs + every UPROGS binary),
-# and the top-level Makefile now regenerates it automatically on every
-# build (see this Makefile's own "source/fs.img: FORCE" rule) rather
-# than trusting a committed binary blob to stay in sync with
-# uprogs/*.c - see notes_arch_arm_pi2.txt's own "Bug 11"/"Bug 12" for
-# what that committed copy was already silently hiding (a stale build
-# that no longer matched what uprogs/'s own source would produce).
-/build/
+# Everything else this fork generates is covered by the repo-root
+# .gitignore. Only what is genuinely local to this port is left here.
+
 /kernel7.bin
 /kernel7-qemu.bin
-/kernel.list
-/kernel.map
-/kernel-qemu.map
-/kernel/fs.img

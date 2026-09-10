@@ -95,3 +95,18 @@ Makefile.config
 # Editor and tooling leftovers.
 **/*~
 **/__pycache__/
+
+# claude: mirrors the patterns hoisted into the repo-root .gitignore on
+# 2026-09-10, per this file's own "keep the two in step" note at the top.
+# "**/" is required on the two with an interior slash: without it they would
+# be anchored to the build-context root rather than matching inside every
+# fork - the same anchoring rule that made the plain forms silently stop
+# matching when they were first hoisted in .gitignore.
+**/*.out
+**/kernel.list
+**/kernel/kernel
+**/tools/mkfs
+**/TAGS
+**/.gdb_history
+**/.vscode/
+**/*.swp

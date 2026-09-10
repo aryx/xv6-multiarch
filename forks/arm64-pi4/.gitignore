@@ -1,19 +1,10 @@
-*~
-_*
-*.o
-*.d
-*.asm
-*.sym
-*.img
-vectors.S
-bootblock
-entryother
+# Everything else this fork generates is covered by the repo-root
+# .gitignore. Only what is genuinely local to this port is left here.
+
+# claude: kept local - "initcode" is a GENERATED blob here, but a
+# checked-in one in arm-pi1/arm-pi2/arm-pi3, so it must never be hoisted.
 initcode
-initcode.out
-kernelmemfs
-# claude: anchored - the host tool lives in tools/ since Phase 0
-/tools/mkfs
-kernel/kernel
+# claude: kept local - usys.S is GENERATED from usys.pl in this fork, but
+# is a hand-written tracked SOURCE file in the nine forks without usys.pl.
+# Hoisting it would mark those nine as ignored.
 ulib/usys.S
-.gdbinit
-*.out
