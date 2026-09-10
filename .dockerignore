@@ -59,13 +59,20 @@ Makefile.config
 # mistake this file exists to prevent.
 **/*.img
 **/*.bin
-!forks/arm-pi1/source/font.bin
-!forks/arm-pi1/source/font1.bin
-!forks/arm-pi1-bis/font1.bin
-!forks/arm-pi2/source/font.bin
-!forks/arm-pi2/source/font1.bin
-!forks/arm-pi3/source/font.bin
-!forks/arm-pi3/source/font1.bin
+# claude: negated by NAME rather than by full path. These used to be seven
+# explicit paths (forks/arm-pi1/source/font.bin and friends), and Phase 0's
+# layout move renamed source/ to kernel/ underneath them - so the negations
+# silently stopped matching, the fonts were excluded from the build context,
+# and the container build failed where the host build passed:
+#
+#   kernel/entry.s:19: Error: file not found: font1.bin
+#
+# Every .bin file tracked in this repo is one of these font bitmap tables
+# (verified: "git ls-files | grep '\.bin$'" lists nothing else), so matching
+# on the basename is both correct and immune to the three remaining Pi ports'
+# layout moves.
+!**/font.bin
+!**/font1.bin
 
 # Other build outputs named in .gitignore: compiled user programs (xv6's
 # "_name" convention), the generated trap-vector table, boot sector,
@@ -75,7 +82,14 @@ Makefile.config
 **/bootblock
 **/entryother
 **/kernelmemfs
-**/mkfs/mkfs
+# claude: was "**/mkfs/mkfs". Phase 0 moved every port's mkfs.c into tools/,
+# so no fork has an mkfs/ directory any more and that pattern matched
+# nothing - meaning a host-built mkfs binary would have been copied into the
+# image, exactly the stale-artifact leak this file exists to prevent. No
+# tracked file in the repo is named "mkfs" (they are all mkfs.c), so
+# excluding the bare name anywhere is safe and does not need updating when a
+# port's build directory changes again.
+**/mkfs
 **/.gdbinit
 
 # Editor and tooling leftovers.
