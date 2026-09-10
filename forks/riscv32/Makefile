@@ -184,8 +184,8 @@ $T/_forktest: $T/forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $T/_forktest $T/forktest.o $L/ulib.o $L/usys.o
 	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
-$O/mkfs: $O/mkfs.c $K/fs.h
-	gcc -Werror -Wall -I. -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user
+$O/mkfs: ../../tools/mkfs.c $K/fs.h $K/param.h
+	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

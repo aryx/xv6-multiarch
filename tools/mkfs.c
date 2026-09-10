@@ -1,3 +1,33 @@
+// mkfs: host tool that builds an initial xv6 file system image.
+//
+// claude: shared by forks/arm64, forks/arm64-pi4, forks/loongarch and
+// forks/riscv32 - four of the fourteen forks whose kernel/fs.h stores the
+// same on-disk superblock (a magic number plus logstart/inodestart/bmapstart
+// written to disk, rather than recomputed from fixed offsets) and whose
+// kernel/param.h names the log-size constant LOGSIZE. Base taken from
+// forks/arm64 (byte-identical to arm64-pi4 and loongarch); folded in was the
+// one real improvement riscv32's own copy was missing - a die() helper
+// replacing four separate perror()+exit(1) call sites.
+//
+// Ten forks keep their own copy, each for a real reason:
+//   - forks/riscv64's kernel/param.h renamed this same constant to
+//     LOGBLOCKS and redefined it as data blocks only, so its mkfs.c writes
+//     nlog = LOGBLOCKS + 1 - one MORE on-disk log block than its four
+//     siblings above, which write nlog = LOGSIZE directly. A deliberate
+//     headroom fix, not a spelling difference - see kernel/log.c on each.
+//   - forks/amd64 and forks/i386 share a format with each other but with
+//     no on-disk magic number field.
+//   - forks/amd64-jserv, forks/arm, forks/arm-pi1, forks/arm-pi1-bis,
+//     forks/arm-pi2, forks/arm-pi3 and forks/mips use an older on-disk
+//     format again: no magic, no stored logstart/inodestart/bmapstart - the
+//     kernel recomputes block positions from fixed macros instead, and
+//     forks/arm-pi2/forks/arm-pi3 additionally hardcode a raised nblocks
+//     for real disk headroom (see their own notes_arch_*.txt).
+// Forcing all fourteen through one #ifdef-laden file would violate this
+// repo's own rule (CLAUDE.md: "prefer per-arch files over #ifdef ... if a
+// function body differs, it belongs in arch/<name>/") - what differs here
+// is a real on-disk format, not a constant.
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
