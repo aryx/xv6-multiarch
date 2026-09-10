@@ -303,6 +303,56 @@ path touches `$H`. Only building the fork's **other** target found it. When
 a fork has a second, non-default target, build that too before believing
 the fixup commit.
 
+### Group 2 done: the flat MIT-classic pair (2026-09-10)
+
+`i386` and `amd64` are through Phase 0 - one shared `.gitignore` prep
+commit plus two commits each - and both report ALL TESTS PASSED on their
+own full `test-<arch>`, with `make test-all` green after. **Eight forks
+done, six to go.**
+
+Both hit gotchas 1, 2 and 3 exactly as predicted, and both embed *two*
+blobs (`initcode` and `entryother`), so two generated paths had to stay at
+the fork root rather than one.
+
+**Gotcha 6: use `-idirafter`, not `-I`, for the host-built tools.** `mkfs`
+is compiled by the host `gcc` and includes the system `<fcntl.h>` alongside
+xv6's own `"fs.h"`. `-Ikernel` is searched *before* the system directories,
+so `<fcntl.h>` resolved to `kernel/fcntl.h` - which defines `O_RDONLY`,
+`O_WRONLY`, `O_RDWR`, `O_CREATE` and no `O_TRUNC`:
+
+```
+tools/mkfs.c:87:39: error: 'O_TRUNC' undeclared (first use in this function)
+```
+
+`-idirafter kernel` puts it after the system directories instead. `mips`
+already used this idiom (`-idirafter .`); the riscv-family forks never hit
+it because they spell their includes `"kernel/fs.h"` against a plain `-I.`.
+
+**Gotcha 7: the pre-2019 `mkfs.c` uses one string for two jobs.** It opens
+`argv[i]` and also writes `argv[i]` into the directory entry - fine while
+every program sat in the fork root, which its `assert(index(argv[i],'/')==0)`
+enforced. `open()` still needs the full path; the directory entry needs the
+basename. Split them, keeping the assert on the basename as documentation.
+This is gotcha 4's flat-fork variant: the riscv-family `mkfs.c` at least had
+a `shortname` variable to fix, this one does not.
+
+**And a reminder of gotcha 5's real lesson, hit again:** the `_forktest`
+rule has *comment lines between the target and its recipe* in every fork
+that has it, so a patch keyed on target-plus-recipe silently does not
+apply. Here the generic `_%: %.o $(ULIB)` rule then took over and linked
+`printf.o` into forktest, which defines its own `printf` - caught only as
+`multiple definition of 'printf'` at link time. Check that the special
+`_forktest` rule actually changed before building.
+
+**Also decided here: `tools/` means what the *build* and a debugger run.**
+Both forks still carry MIT's book typesetting pipeline (`runoff`,
+`runoff1`, `runoff.list`, `runoff.spec`, `toc.ftr`, `toc.hdr`, `pr.pl`,
+`show1`, `cuth`). It stays at the fork root, deliberately: `runoff.list` is
+a list of *bare* source filenames (`types.h`, `param.h`, `defs.h`, ...)
+that Phase 0 has just moved into `kernel/`, so relocating the set would
+mean rewriting its data file - and there is no troff/PDF toolchain here to
+verify the result. Leaving it untouched is the verifiable choice.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
@@ -319,9 +369,7 @@ So, cheapest first:
 
 1. ~~**`riscv32`, `arm64`, `loongarch`, `arm64-pi4`**~~ - **DONE**
    2026-09-10, see above.
-2. **`i386`, `amd64`** - flat MIT-classic, structurally mips's own
-   ancestors, so the mips recipe transfers almost directly. Both hit
-   gotchas 1, 2 and 3 together.
+2. ~~**`i386`, `amd64`**~~ - **DONE** 2026-09-10, see above.
 3. **`arm`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`,
    `amd64-jserv`** - nested sub-builds and/or duplicated header sets. Real
    design work; leave until the recipe is boring.
