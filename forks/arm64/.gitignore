@@ -1,8 +1,9 @@
 *.img
 initcode
 initcode.out
-mkfs
+# claude: anchored - the host tool lives in tools/ since Phase 0
+/tools/mkfs
 kernel/kernel
-user/usys.S
+ulib/usys.S
 .gdbinit
 *.out
