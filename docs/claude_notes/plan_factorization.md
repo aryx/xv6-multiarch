@@ -561,6 +561,37 @@ just `make test-<arch>`. `make test-all` cannot see build-context problems
 at all, because every file is present on the host by construction. This is
 CLAUDE.md's own long-standing rule; Phase 0 had not been following it.
 
+### arm-pi1-bis (2026-09-10, DONE)
+
+Two commits. `test-arm-pi1-bis` green, `test-all` green, `docker build
+--build-arg ARCH=arm-pi1-bis` green. **Thirteen forks done, one to go —
+`arm-pi3`.**
+
+Structurally the closest of the Pi ports to `arm`: flat kernel sources plus
+`usr/` and `tools/`, a `makefile.inc` shared by all three Makefiles. 81
+files, all R100.
+
+**Gotcha 8 applies here too.** `kernel/kernel.ld` places its entry section
+by naming object files by build path — `build/entry.o` and `build/mmu.o`,
+now `build/kernel/*.o`. Second fork of the fourteen to do this, after `arm`.
+
+**A second, distinct instance of the `.incbin` problem.** `wrapper.s` does
+`.incbin "font1.bin"`, and the `.s` and the font moved into `kernel/`
+together; the assembler resolves `.incbin` against its include path, which
+this fork's `ASFLAGS` did not set. So `ASFLAGS` needed `-Ikernel` for a
+reason that has nothing to do with headers. Generalising: **an `.incbin`
+is a build-time file reference that no grep for `#include` will find** —
+check for them explicitly. `arm-pi1` and `arm-pi2` had theirs satisfied by
+an existing `-I $(SOURCE)`; this one did not.
+
+**And one worth admitting: a hand-check caught what a regex missed.** The
+`OBJS` list's last entry is `vm.o \` — with a space before the
+continuation — so the scripted edit that prefixed every other entry skipped
+it silently, and the build failed with `No rule to make target
+'build/vm.o'`. Cheap to spot here because the link named the missing file.
+A scripted edit over a hand-maintained list needs its result read back, not
+just its exit status checked.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
