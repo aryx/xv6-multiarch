@@ -1,8 +1,6 @@
-typedef unsigned int   uint;
-typedef unsigned short ushort;
-typedef unsigned char  uchar;
+#include "core/types.h"   // claude: portable typedefs, shared by every port
 
-typedef unsigned int  uint32;
+
 typedef unsigned long uint64;
 
 #if X64

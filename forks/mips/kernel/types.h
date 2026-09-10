@@ -1,7 +1,6 @@
+#include "core/types.h"   // claude: portable typedefs, shared by every port
 typedef unsigned long long int   ulonglong;
-typedef unsigned int   uint;
-typedef unsigned short ushort;
-typedef unsigned char  uchar;
+
 typedef uint pde_t;
 typedef ulonglong pte_t;
 typedef unsigned long long uint64;  // claude: needed by the shared

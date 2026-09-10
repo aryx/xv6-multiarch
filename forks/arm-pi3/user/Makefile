@@ -22,7 +22,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # class as forks/arm/makefile.inc's own -mfloat-abi comment.
 # -MP joins -MD so a vanished header is a rebuild, not a hard error;
 # -Wno-infinite-recursion is the GCC 12+ false positive on sh.c's runcmd().
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 all: mkfs initcode fs.img
 

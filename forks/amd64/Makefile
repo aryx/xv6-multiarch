@@ -84,7 +84,7 @@ XFLAGS = -m64 -mcmodel=large -ggdb
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -I.
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -I. -I../../include
 CFLAGS += -ffreestanding -fno-common -nostdlib $(XFLAGS) -Ikernel -Iuser
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on

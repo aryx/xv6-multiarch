@@ -34,7 +34,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # and recurses over BOTH sides of pipes/lists/backgrounds, not itself
 # unconditionally) trips a GCC false positive, same one already seen
 # elsewhere in this repo's own sh.c ports.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I..   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 all: mkfs initcode fs.img
 

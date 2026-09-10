@@ -1,14 +1,11 @@
+#include "core/types.h"   // claude: portable typedefs, shared by every port
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
 typedef unsigned long long u64;
 
-typedef unsigned int   uint;
-typedef unsigned short ushort;
-typedef unsigned char  uchar;
 typedef uint pde_t;
 typedef uint pte_t;
-
 
 /* trap vectors layout at virtual 
 address HVECTORS (and KZERO(0x80000000), doubled mapped).*/
@@ -16,7 +13,6 @@ typedef struct Vpage0 {
         void    (*vectors[8])(void);
         u32     vtable[8];
 } Vpage0;
-
 
 /* interrupt control registers */
 typedef struct Intregs {
@@ -28,7 +24,6 @@ typedef struct Intregs {
         u32  GPUdisable[2];
         u32  ARMdisable;
 } Intregs;
-
 
 typedef struct Mach
 {
@@ -46,7 +41,6 @@ typedef struct Mach
         int     intr;
         int     lastintr;
         int     ilockdepth;
-
 
         int     cpumhz;
         /* vfp2 or vfp3 fpu */
@@ -68,7 +62,6 @@ typedef struct Mach
 
         int     stack[1];
 } Mach;
-
 
 struct framebufferdescription {
 	u32 width; //width
