@@ -156,7 +156,13 @@ $U/_sh: ../../shells/sh.c $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_sh $U/sh.o $(ULIB)
 	$(OBJDUMP) -S $U/_sh > $U/sh.asm
 
+# claude: "@mkdir -p $O" - tools/ has no tracked file of its own any more
+# (mkfs.c moved to the shared ../../tools/mkfs.c), so a clean checkout (CI,
+# docker build) never creates it; only a stale local build tree happens to
+# have it already. Same bug class forks/i386's own user/%.o mkdir-p fix
+# describes - a real CI regression this exact change caused.
 $O/mkfs: ../../tools/mkfs.c $K/fs.h $K/param.h
+	@mkdir -p $O
 	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
