@@ -265,6 +265,44 @@ goes away for good. **`riscv32`, `arm64`, `loongarch` and `arm64-pi4` each
 carry their own copy of this same `mkfs.c` and will each need the same
 fix.**
 
+### Group 1 done: the four MIT-2019 siblings (2026-09-10)
+
+`riscv32`, `arm64`, `loongarch` and `arm64-pi4` are through Phase 0, two
+commits each, each verified with its own full `test-<arch>` (not just the
+quick boot check) and `make test-all` green after the batch. Six forks
+done, eight to go.
+
+The recipe held with no surprises: `T=tests`, `L=ulib`, `O=tools` alongside
+the existing `K=kernel` and `U=user`; `ULIB`, the `usys.pl`/`usys.S`/
+`usys.o` rules, `forktest`'s own explicit rule, the `mkfs` rule, the
+`UPROGS` entries, the `.d` includes and `clean` all follow their files.
+Each fork needed its own copy of the gotcha-4 `mkfs.c` basename fix -
+there are five separate copies of that file, not one.
+
+**`initcode.S` stays in `user/`.** All four keep it there (riscv64 has
+none), and it should not move: it is neither a test nor library code, MIT
+put it in `user/`, and leaving it put keeps the generated `user/initcode`
+blob's path - and so its `_binary_*` symbol names - unchanged. Gotcha 3
+avoided by not moving the file rather than by working around it. Same
+reasoning protects `arm64-pi4`'s `fs.img`, which it also embeds.
+
+**Gotcha 5: in make, a bare `$X` is a *single-character* variable
+reference.** `arm64-pi4` already had a `T=`, bound to `test/` - a
+bare-metal hardware-probe kernel building `test/hwtest`, unrelated to the
+userland test programs. Renaming it to `HW=` and writing `$HW/entry.o`
+silently expands as `$(H)` followed by the literal `W/entry.o`:
+
+```
+make: *** No rule to make target 'W/entry.o', needed by 'W/hwtest'.  Stop.
+```
+
+Multi-character variable names must be written `$(HW)`. Renamed to `H=`
+instead, matching the single-letter convention. Worth noting *how* this was
+caught: the kernel build passed clean, because nothing in the main build
+path touches `$H`. Only building the fork's **other** target found it. When
+a fork has a second, non-default target, build that too before believing
+the fixup commit.
+
 ### Suggested order for the remaining twelve
 
 Recon corrected an earlier guess that `arm-pi1-bis` would be an easy
@@ -279,11 +317,8 @@ deleting it after - do not disturb that.
 
 So, cheapest first:
 
-1. **`riscv32`, `arm64`, `loongarch`, `arm64-pi4`** - same shape as
-   `riscv64`, so the same recipe plus the `mkfs.c` basename fix. `arm64`,
-   `loongarch` and `arm64-pi4` also need the gotcha-1 `.gitignore` prep
-   (bare `mkfs`); `arm64-pi4` additionally embeds a blob via `ld -b binary`
-   (gotcha 3).
+1. ~~**`riscv32`, `arm64`, `loongarch`, `arm64-pi4`**~~ - **DONE**
+   2026-09-10, see above.
 2. **`i386`, `amd64`** - flat MIT-classic, structurally mips's own
    ancestors, so the mips recipe transfers almost directly. Both hit
    gotchas 1, 2 and 3 together.
