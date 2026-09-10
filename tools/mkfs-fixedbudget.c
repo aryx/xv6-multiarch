@@ -1,3 +1,38 @@
+// mkfs: host tool that builds an initial xv6 file system image.
+//
+// claude: shared by forks/arm, forks/arm-pi1, forks/arm-pi1-bis and
+// forks/mips - four forks whose kernel/fs.h stores nothing but
+// size/nblocks/ninodes/nlog on disk (no magic, no logstart/inodestart/
+// bmapstart - the kernel recomputes block positions from IPB alone via
+// i2b()). Their mkfs.c copies differed only in two numbers that both turn
+// out to be formulas already implicit in every copy, not real per-fork
+// constants:
+//
+//   - `nblocks`: three of the four hardcoded 985; forks/mips wrote the same
+//     value as `995 - LOGSIZE`, which is the general form (forks/arm,
+//     forks/arm-pi1 and forks/arm-pi1-bis all have LOGSIZE 10, so
+//     995-10=985; forks/mips has LOGSIZE (MAXOPBLOCKS*3)=30, so 965). Took
+//     mips's formula.
+//   - `size`: hardcoded per fork (1024 for forks/arm's NDIRECT-12 fs.h,
+//     1099 for the other three's NDIRECT-60 fs.h - a bigger NDIRECT means a
+//     bigger struct dinode, fewer inodes per block, more inode blocks) and
+//     asserted to equal nblocks+usedblocks+nlog after the fact. usedblocks
+//     already depends on IPB, which already comes from each fork's own
+//     fs.h - so computing `size` directly from it, instead of hardcoding a
+//     value by hand and asserting it back, produces the exact same 1024 and
+//     1099 automatically and needs no per-fork literal at all.
+//
+// forks/arm-pi1's own copy also renamed the static_assert() helper to
+// _static_assert() to dodge a redefinition under a C11 host <assert.h> -
+// the same problem the #ifndef guard below already solves; folded back to
+// the shared name.
+//
+// Every other fork keeps its own copy - see tools/mkfs.c's header comment
+// for the fork-by-fork breakdown of the other on-disk formats in this repo.
+// forks/amd64-jserv and forks/arm-pi2/forks/arm-pi3 share this same
+// no-magic-no-stored-fields superblock but compute nblocks/nmeta the other,
+// dynamic way (like tools/mkfs.c), not this hardcoded-budget way.
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -14,21 +49,19 @@
 // claude: guarded - modern glibc's own <assert.h> (already #included
 // above) now provides a "static_assert" macro too (aliasing C11's
 // _Static_assert, pulled in whenever gcc's default -std= is C11 or
-// later, which it is on this host) - this file's own hand-rolled
-// version predates that and is functionally equivalent, so skip
-// redefining it rather than erroring under -Werror.
+// later) - this file's own hand-rolled version predates that and is
+// functionally equivalent, so skip redefining it rather than erroring
+// under -Werror.
 #ifndef static_assert
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 #endif
 
-int nblocks = 985;
+// claude: general form of what all four forks already computed by hand -
+// see this file's own header comment.
+int nblocks = 995 - LOGSIZE;
 int nlog = LOGSIZE;
 int ninodes = 200;
-// claude: 1024 -> 1099, forced by NDIRECT 12 -> 60 in fs.h. A bigger NDIRECT
-// means a bigger struct dinode, so fewer inodes per block and more inode
-// blocks - and this mkfs asserts nblocks + usedblocks + nlog == size with a
-// hardcoded nblocks of 985. forks/arm-pi2 hit exactly this and uses 1099.
-int size = 1099;
+int size;  // computed in main(), once usedblocks is known - see header comment
 
 int fsfd;
 struct superblock sb;
@@ -95,19 +128,26 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  // claude: bitblocks depends on `size` and `size` depends on usedblocks,
+  // which depends on bitblocks - true circularity, but this filesystem
+  // never gets close to the 4096-block threshold where bitblocks would
+  // need to be more than 1 (every fork here sits around 1000-1100 blocks
+  // total), so seed it at 1 and assert that assumption instead of solving
+  // the circularity properly.
+  bitblocks = 1;
+  usedblocks = ninodes / IPB + 3 + bitblocks;
+  size = nblocks + usedblocks + nlog;
+  assert(bitblocks == (uint)(size/(512*8) + 1));
+
   sb.size = xint(size);
   sb.nblocks = xint(nblocks); // so whole disk is size sectors
   sb.ninodes = xint(ninodes);
   sb.nlog = xint(nlog);
 
-  bitblocks = size/(512*8) + 1;
-  usedblocks = ninodes / IPB + 3 + bitblocks;
   freeblock = usedblocks;
 
   printf("used %d (bit %d ninode %zu) free %u log %u total %d\n", usedblocks,
          bitblocks, ninodes/IPB + 1, freeblock, nlog, nblocks+usedblocks+nlog);
-
-  assert(nblocks + usedblocks + nlog == size);
 
   for(i = 0; i < nblocks + usedblocks + nlog; i++)
     wsect(i, zeroes);
@@ -136,7 +176,7 @@ main(int argc, char *argv[])
       perror(argv[i]);
       exit(1);
     }
-    
+
     // Skip leading _ in name when writing to file system.
     // The binaries are named _rm, _cat, etc. to keep the
     // build operating system from trying to execute them

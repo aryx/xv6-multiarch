@@ -1,3 +1,22 @@
+// mkfs: host tool that builds an initial xv6 file system image.
+//
+// claude: shared by forks/arm-pi2 and forks/arm-pi3 - their own copies
+// differed only in comment wording (forks/arm-pi3's comment already named
+// this pairing as a factorization candidate). Same no-magic,
+// nothing-stored-on-disk superblock as tools/mkfs-fixedbudget.c's four
+// forks, but a different mkfs algorithm: `nblocks` here is a deliberately
+// inflated 1285 (not the minimal value the budget would allow), because
+// this fork already hit a real bug from cutting it close - see the
+// freeblock-margin check below, added after growth in the shared userland
+// library silently ate into the disk budget and the kernel's own balloc()
+// ran out mid-usertests ("iderw: sector out of range"), several minutes
+// into an unrelated QEMU run, instead of failing at build time where the
+// problem actually is. That margin check is what keeps this file separate
+// from tools/mkfs-fixedbudget.c's four forks rather than folded into it.
+//
+// Every other fork keeps its own copy - see tools/mkfs.c's header comment
+// for the fork-by-fork breakdown of the other on-disk formats in this repo.
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -18,13 +37,13 @@
 // shared, more general utilities/*.c + lib_core/libc/ulib/*.c
 // implementations - every single one of them grew by a near-identical
 // ~4.3KB (a few hundred bytes of new library code statically linked
-// into each), which alone ate 121 of this budget's blocks (784 -> 905
-// used) and left only 184 free where "big files test" needs MAXFILE
-// (188) for its single test file. Missing it by just 4 blocks did not
-// fail cleanly - mkfs itself had plenty of *disk* room (the assert
-// below still held), but the kernel's own balloc() ran out mid-test and
-// handed back a block number past the compiled-in disksize, which
-// panics ("iderw: sector out of range") deep in a QEMU run instead of
+// into each), which alone ate into this budget enough that "big files
+// test" (needs MAXFILE=188 blocks for its one test file) started
+// missing by a handful of blocks. That does not fail cleanly: mkfs
+// itself still had plenty of *disk* room (the assert below still
+// held), but the kernel's own balloc() ran out mid-test and handed
+// back a block number past the compiled-in disksize, which panics
+// ("iderw: sector out of range") deep in a QEMU run instead of
 // erroring at build time - see the freeblock-margin check after the
 // packing loop below, added so the NEXT such regression fails loudly
 // right here instead. nblocks bumped to 1285 (size 1399) for real
@@ -141,7 +160,7 @@ main(int argc, char *argv[])
       perror(argv[i]);
       exit(1);
     }
-    
+
     // Skip leading _ in name when writing to file system.
     // The binaries are named _rm, _cat, etc. to keep the
     // build operating system from trying to execute them
@@ -185,7 +204,7 @@ main(int argc, char *argv[])
               "(nblocks=%d, %u used by the %d packed files) - need at "
               "least %d (2*MAXFILE) so the largest file this filesystem "
               "supports still fits at runtime. Bump nblocks (and size to "
-              "match) in tools/mkfs.c.\n",
+              "match) in tools/mkfs-margincheck.c.\n",
               free_after_packing, nblocks, blocks_used_by_files, argc - 2,
               2 * MAXFILE);
       exit(1);
