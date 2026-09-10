@@ -373,6 +373,7 @@ behave.
 - `docs/claude_notes/plan_build_and_test_2.md` - what that plan left behind (skipped usertests sub-tests, `arm64-pi4` out of CI, no real-hardware verification). Blocks nothing
 - `docs/claude_notes/plan_factorization.md` - the Linux-style-unification plan, unblocked and now the active work
 - `docs/claude_notes/plan_lattepanda.md`, `plan_orange_pi.md` - proposed real-hardware bring-ups on the user's own boards
+- `docs/claude_notes/plan_tinyemu.md` - proposed second emulator (Bellard's TinyEMU) for the two RISC-V ports; includes why x86/amd64 can't work there
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
 - `docs/claude_notes/notes_debugging_techniques.txt` - general debugging methodology, grown from real investigations in this repo
 - `docs/claude_notes/notes_build_system.txt` - how the ports' Makefiles behave as builds: header dependency tracking (and why `make depend` is the wrong fix), order-only vs normal prerequisites, and what `test-<arch>` legitimately needs to redo
