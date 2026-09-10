@@ -443,3 +443,70 @@ run-arm-pi1-bis-qemu-graphics/test-arm-pi1-bis/clean-arm-pi1-bis/
 kill-arm-pi1-bis, folded into build-all/test-all/clean-all/kill-all,
 plus a Dockerfile ARCH=arm-pi1-bis case and .github/workflows/
 docker.yml matrix entry.
+
+Bug 9 (real, fixed): same shared-printf.c "%d" corruption as arm-pi1's
+own Bug 11, plus a real build-system bug that hid it on retest
+
+After the factorization work shared lib_core/libc/ulib/printf.c across
+every port, this fork's toolchain/target - arm-linux-gnueabihf-gcc 13,
+"-mcpu=arm1176jzf-s -marm -mfloat-abi=soft", identical to arm-pi1's -
+started printing garbage for every "%d" while "%s" stayed fine. See
+notes_arch_arm_pi1.txt's own Bug 11 for the full root-cause writeup
+(the shared file's <stdarg.h> va_start/va_arg is miscompiled for this
+specific ABI pair; the fix is the same local ulib/printf.c override,
+restoring the pre-factorization "(uint*)(void*)&fmt + 1" hand-rolled
+implementation).
+
+What's specific to THIS port: the first attempt to verify the fix here
+gave a false "no change" - the crash under test ("ls") looked byte-for-
+byte identical with and without the printf.c swap, same fault address
+and everything. The reason was a separate, real Makefile bug: this
+fork's "build/fs.img:" rule has NO listed prerequisites, so once that
+file exists on disk, "make build-arm-pi1-bis" never re-enters "user/"
+again - editing ulib/printf.c (or ANY user program, or a shared file
+like shells/sh.c) silently kept linking the OLD fs.img into the next
+kernel.elf. Only a "make clean-arm-pi1-bis" first forced a real
+rebuild, at which point the printf.c fix's actual effect became
+visible (a debug printf's own "%d" trace, which came out as garbage
+before, prints correctly with the override in place). Fixed by giving
+"build/fs.img" a ".PHONY: uprogs-fs-img" prerequisite that always
+re-invokes "make -C user" - the exact pattern forks/arm-pi1's own
+"uprogs-fs-img" already uses, for the identical reason (see that fork's
+own Makefile comment). This class of bug is exactly why
+notes_debugging_techniques.txt keeps warning about stale build state
+masking retests - add it to the pile.
+
+Left open: fixing printf does NOT fix this fork's own real crash.
+"ls"/"usertests" both die immediately ("N sh: unknown sys call 4096",
+trap 2 (prefetch abort), same fault address regardless of which program
+runs). Traced step by step with temporary cprintf()s in fork()/exec()/
+forkret() plus printf()s in shells/sh.c: fork() and exec() are BOTH
+completely correct every time - the child's copied trapframe has a
+valid, in-binary pc/sp, forkret() resumes it at exactly the right
+instruction (confirmed against the actual disassembly: the return
+address matches the instruction right after the fork() syscall's own
+"svc"), and the parent's and child's stack contents match byte for
+byte post-copyuvm(). The child runs correctly all the way to
+"fork1() == 0" returning true and calling "parsecmd(cmd)" - and then
+crashes somewhere before that call returns, before ever reaching
+runcmd()'s own exec() call. The most specific trace got as far as
+"execcmd() before malloc" printing successfully (with the printf fix in
+place) and then dying before "malloc returned" - i.e. the fault is
+inside the very first malloc() a freshly-exec'd shell child ever makes,
+which needs a real sbrk() (morecore() -> sbrk() -> sys_sbrk() ->
+growproc()). growproc()'s own cprintf() (temporarily added) never
+fired, meaning whatever goes wrong happens in user-space code before
+the sbrk() syscall trap is even taken - somewhere in malloc()'s or
+morecore()'s own arithmetic, or in the "bl sbrk"/divide-routine call
+sequence GCC generated for it. ARM/Thumb interworking (this binary
+mixes ARM-mode user code with Thumb-mode libgcc division routines like
+__aeabi_uidivmod/__udivsi3) was checked and looks correctly handled
+(odd, Thumb-marked symbol addresses, called via "blx") - not yet ruled
+all the way out, but no smoking gun found there either. Needs a fresh
+session with a real hardware debugger workflow (gdb-multiarch against
+QEMU's gdbstub fought back hard on this attempt - "target remote"
+without deterministic single-stepping made it unusable for catching a
+one-shot crash; a scripted approach with real breakpoints and
+"stepi", or single-stepping through malloc()'s own disassembly by hand,
+is the next thing to try) rather than more printf-tracing, which has
+now narrowed the site as far as it usefully can.

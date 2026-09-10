@@ -730,15 +730,17 @@ which is exactly this port. Verified: "make test-arm-pi1" (the full,
 unmodified usertests suite) reaches ALL TESTS PASSED again, and "ls"/"wc"
 print correct numbers.
 
-Left open: arm-pi1-bis shares this exact CPU/float-ABI pair
-("-mcpu=arm1176jzf-s -marm -mfloat-abi=soft") and was tried with the
-identical local-printf.c override, on the assumption it would have the
-same bug. It does not print anything long enough to tell either way -
-plain "ls" crashes immediately ("N sh: unknown sys call 4096", trap 2,
-fault address 0x10b1814) BEFORE reaching any printf call, and the exact
-same fault address shows up regardless of which program is exec'd (ls
-vs. usertests, very different sizes) - strongly suggesting a bug in
-exec()/the ELF loader for that fork specifically, not in printf. Needs
-its own dedicated debugging session; see notes_arch_arm_pi1_bis.txt (not
-yet updated with this finding) and
+Update 2026-09-10: arm-pi1-bis shares this exact CPU/float-ABI pair and
+DOES have the identical printf corruption bug - confirmed once a real
+build-system bug (see notes_arch_arm_pi1_bis.txt) stopped masking every
+retest as "no change". The same local-printf.c override is applied
+there too. It does NOT, however, fix that fork's separate "ls"/
+"usertests" crash ("unknown sys call 4096", trap 2) - tracing showed
+that one happens inside the forked child's very first malloc() call
+(shells/sh.c's parsecmd()/execcmd(), building the parsed command tree),
+before growproc()/sbrk()'s own kernel-side code is ever reached, so it
+is neither printf nor exec()/the ELF loader (both proven fine by the
+same trace - fork()/exec() correctly resume the child at the right PC
+with the right stack contents every time). Still needs its own
+dedicated debugging session; see notes_arch_arm_pi1_bis.txt and
 docs/claude_notes/plan_build_and_test_2.md.

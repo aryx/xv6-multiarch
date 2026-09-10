@@ -166,9 +166,21 @@ build/initcode: $(addprefix build/,$(INITCODE_OBJ))
 	$(call OBJCOPY_INIT)
 	$(OBJDUMP) -S $< > initcode.asm
 
-build/fs.img:
+# claude: "build/fs.img" itself has NO listed prerequisites, so once the
+# file exists on disk make treats it as permanently up to date and never
+# re-enters "user/" again - editing any user program (or a shared file
+# like shells/sh.c) silently keeps linking the OLD fs.img into the next
+# kernel.elf, no error, no rebuild. Route through a .PHONY target that
+# always re-invokes "make -C user" (which does its own real dependency
+# checking) instead, matching forks/arm-pi1's own "uprogs-fs-img" for
+# exactly the same reason. Caught while debugging a real crash and
+# getting a false "no change" from an actually-stale binary.
+.PHONY: uprogs-fs-img
+uprogs-fs-img:
 	make -C tools
 	make -C user
+
+build/fs.img: uprogs-fs-img
 
 
 # claude: read back the per-object header dependencies gcc writes next to
