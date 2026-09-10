@@ -16,20 +16,26 @@ SECTIONS
    * notes_arch_armv6_rpi.txt's own bug 5 for the sibling "-M raspi1ap"
    * port. See notes_arch_armv7_rpi.txt. */
   . = 0x00010000;
+  /* claude: these name object files by their BUILD path, and entry.S and
+   * start.c moved into kernel/ in Phase 0, so the objects are now
+   * build/kernel/*.o. Worth knowing that ld reports this as "cannot find
+   * build/entry.o" even though that path appears nowhere on the link
+   * command line - a linker script naming inputs is easy to miss when
+   * grepping the Makefile. See plan_factorization.md's gotcha 8. */
   .start_sec : {
-    build/entry.o(.text)
-    build/start.o(.text .text.*)
+    build/kernel/entry.o(.text)
+    build/kernel/start.o(.text .text.*)
 
-    build/entry.o(.rodata .rodata.*)
-    build/start.o(.rodata .rodata.*)
+    build/kernel/entry.o(.rodata .rodata.*)
+    build/kernel/start.o(.rodata .rodata.*)
 
-    build/entry.o(.data .data.*)
-    build/start.o(.data .data.*)
+    build/kernel/entry.o(.data .data.*)
+    build/kernel/start.o(.data .data.*)
 
     PROVIDE(edata_entry = .);
 
-    build/entry.o(.bss .bss.* COMMON)
-    build/start.o(.bss .bss.* COMMON)
+    build/kernel/entry.o(.bss .bss.* COMMON)
+    build/kernel/start.o(.bss .bss.* COMMON)
 
     /*define a stack for the entry*/
     . = ALIGN(0x1000);

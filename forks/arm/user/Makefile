@@ -3,8 +3,20 @@ include ../makefile.inc
 # claude: -Wno-infinite-recursion - same GCC false positive on sh.c's
 # own runcmd() as every other fork brought up in this repo, see
 # notes_debugging_techniques.txt item 1.
-CFLAGS += -iquote ../ -Wno-infinite-recursion
-ASFLAGS += -I ../
+# claude: -iquote ../kernel, was -iquote ../ - the shared headers
+# (types.h, stat.h, fcntl.h, ...) moved into kernel/ in Phase 0. "-iquote ."
+# is for user.h, which lives here: a quoted include normally resolves from
+# the INCLUDER's own directory, which is ../tests for the test programs.
+CFLAGS += -iquote ../kernel -iquote . -Wno-infinite-recursion
+ASFLAGS += -I ../kernel
+# claude: the test programs and the user library live in their own
+# directories since Phase 0, but their objects and linked binaries still
+# land HERE - so UPROGS below, the $(MKFS) invocation and ULIB are all
+# unchanged, and mkfs still sees bare names with no '/' in them. Only the
+# source lookup moves, which is exactly what vpath is for.
+vpath %.c ../tests ../ulib
+vpath %.S ../ulib
+
 ULIB = ulib.o usys.o printf.o umalloc.o
 
 MKFS = ../tools/mkfs

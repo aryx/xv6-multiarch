@@ -7,43 +7,43 @@ include makefile.inc
 LIBS = $(LIBGCC)
 
 OBJS = \
-	lib/string.o \
+	kernel/string.o \
 	\
-	arm.o\
-	asm.o\
-	bio.o\
-	buddy.o\
-	cache.o\
-	console.o\
-	exec.o\
-	file.o\
-	fs.o\
-	log.o\
-	main.o\
-	memide.o\
-	pipe.o\
-	proc.o\
-	spinlock.o\
-	start.o\
-	swtch.o\
-	syscall.o\
-	sysfile.o\
-	sysproc.o\
-	trap_asm.o\
-	trap.o\
-	vm.o \
+	kernel/arm.o\
+	kernel/asm.o\
+	kernel/bio.o\
+	kernel/buddy.o\
+	kernel/cache.o\
+	kernel/console.o\
+	kernel/exec.o\
+	kernel/file.o\
+	kernel/fs.o\
+	kernel/log.o\
+	kernel/main.o\
+	kernel/memide.o\
+	kernel/pipe.o\
+	kernel/proc.o\
+	kernel/spinlock.o\
+	kernel/start.o\
+	kernel/swtch.o\
+	kernel/syscall.o\
+	kernel/sysfile.o\
+	kernel/sysproc.o\
+	kernel/trap_asm.o\
+	kernel/trap.o\
+	kernel/vm.o \
 	\
-	device/timer.o \
-	device/uart.o \
-	device/gic.o
+	kernel/device/timer.o \
+	kernel/device/uart.o \
+	kernel/device/gic.o
 
 #device/picirq.o \
 	
-KERN_OBJS = $(OBJS) entry.o
-kernel.elf: $(addprefix build/,$(KERN_OBJS)) kernel.ld build/initcode build/fs.img
+KERN_OBJS = $(OBJS) kernel/entry.o
+kernel.elf: $(addprefix build/,$(KERN_OBJS)) kernel/kernel.ld build/initcode build/fs.img
 	cp -f build/initcode initcode
 	cp -f build/fs.img fs.img
-	$(call LINK_BIN, kernel.ld, kernel.elf, \
+	$(call LINK_BIN, kernel/kernel.ld, kernel.elf, \
 		$(addprefix build/,$(KERN_OBJS)), \
 		initcode fs.img)
 	$(OBJCOPY) kernel.elf -O binary xv6.img
@@ -79,9 +79,9 @@ qemu: kernel.elf
 	$(QEMU) -M raspi2b -nographic -kernel xv6.img
 
 INITCODE_OBJ = initcode.o
-$(addprefix build/,$(INITCODE_OBJ)): initcode.S
+$(addprefix build/,$(INITCODE_OBJ)): kernel/initcode.S
 	$(call build-directory)
-	$(call AS_WITH, -nostdinc -I.)
+	$(call AS_WITH, -nostdinc -Ikernel)
 
 #initcode is linked into the kernel, it will be used to craft the first process
 build/initcode: $(addprefix build/,$(INITCODE_OBJ))
@@ -105,7 +105,7 @@ build/initcode: $(addprefix build/,$(INITCODE_OBJ))
 .PHONY: usr-fs-img
 usr-fs-img:
 	$(MAKE) -C tools
-	$(MAKE) -C usr
+	$(MAKE) -C user
 
 build/fs.img: usr-fs-img
 	@:
@@ -128,4 +128,4 @@ clean:
 	rm -f *.o *.d *.asm *.sym vectors.S bootblock entryother \
 	initcode initcode.out kernel xv6.img fs.img kernel.elf memfs
 	make -C tools clean
-	make -C usr clean
+	make -C user clean

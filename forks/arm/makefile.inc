@@ -44,7 +44,7 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # docs/claude_notes/notes_build_system.txt. The .d lands next to the
 # object (build/foo.d for build/foo.o) and is read back by the
 # "-include" at the bottom of Makefile.
-CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g -mfloat-abi=soft -fno-stack-protector -marm -MD -MP
+CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -Ikernel -g -mfloat-abi=soft -fno-stack-protector -marm -MD -MP
 LDFLAGS = -L.
 #ASFLAGS = -march=armv7-a
 ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft -MD -MP
@@ -69,7 +69,9 @@ LINK_INIT = $(call quiet-command,$(LD) $(LDFLAGS) \
 OBJCOPY_INIT = $(call quiet-command,$(OBJCOPY) \
 	-S -O binary --prefix-symbols="_binary_$@" $@.out $@, "  OBJCOPY  $(TARGET_DIR)$@")
 
-build-directory = $(shell mkdir -p build build/device build/lib)
+# claude: kernel objects land in build/kernel/ (and build/kernel/device/)
+# now that lib/ folded into kernel/ and device/ became kernel/device/.
+build-directory = $(shell mkdir -p build build/kernel build/kernel/device)
 
 build/%.o: %.c
 	$(call build-directory)
