@@ -887,8 +887,45 @@ verify any build rule writing into it guards with `mkdir -p`.**
   that already show up via a search for the header's own name from the
   repo root.**
 
-  Candidates fcntl.h (8-fork cluster) and stat.h (7-fork cluster) are
-  queued next, same eleven-ish forks, same include/kernel/ home.
+  **Done: `include/kernel/fcntl.h`** (`baca96d`) — 8-fork cluster (`amd64`,
+  `amd64-jserv`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`, `i386`,
+  `mips`). Simpler than syscall.h - only `kernel/sysfile.c` (an ordinary
+  `.c` file) consumes it in any of the eight, so no gotcha 12 to worry
+  about, just the same `-I` addition to each fork's `CFLAGS`.
+
+  **Done: `include/kernel/stat.h`** (`3b94b79`) — 7-fork cluster (`amd64`,
+  `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`, `i386`, `mips` -
+  `amd64-jserv` has its own distinct copy, not part of this one).
+
+  **Gotcha 13: a shared header can have consumers outside every fork's
+  own `kernel/` entirely - the host-built `mkfs` sources are exactly this,
+  and `-idirafter` needs its own matching addition, not a plain `-I`.**
+  All four `tools/mkfs*.c` variants `#include "stat.h"` (for `T_DIR`), a
+  build rule with its own include flags completely separate from the
+  fork's kernel-side `CFLAGS` - so `grep -rl <header> forks/<name>/kernel/`
+  (gotcha 12's own advice) isn't enough; also check the already-shared
+  `tools/*.c` and `tests/*.c` sources themselves. Worse: `forks/amd64`,
+  `forks/i386` and `forks/mips`'s own mkfs rules use `-idirafter kernel`
+  specifically so the HOST's real `<fcntl.h>` isn't shadowed by xv6's own
+  (which lacks `O_TRUNC` under the old per-fork copy, and spells create
+  `O_CREATE` not `O_CREAT` even in the new shared one) - adding a plain
+  `-I../../include/kernel` there would have reintroduced exactly the bug
+  `-idirafter` exists to prevent, since `mkfs.c`'s own `<fcntl.h>` is the
+  *host's* header, not xv6's. Needed `-idirafter ../../include/kernel`
+  instead, matching the existing `-idirafter kernel`'s own low-priority
+  intent. And a genuine non-fix: `forks/arm-pi1`, `forks/arm-pi2` and
+  `forks/arm-pi3`'s own mkfs builds needed no change at all, because each
+  already carries its own separate, untouched `user/stat.h` (the Pi
+  ports' long-known duplicated-header set - see this file's own
+  "arm-pi1" section) that their `-iquote .` mkfs rule resolves against
+  instead - checked byte-for-byte identical to the new shared content
+  before trusting that, not assumed.
+
+  Next candidates: a second `stat.h` cluster already exists
+  (`arm64`/`arm64-pi4`/`loongarch`/`riscv32`, byte-identical to each
+  other, distinct from the 7-fork one above) but wasn't attempted this
+  session; `elf.h` and `spinlock.h` are still fully per-fork (18 and 14
+  copies respectively) and unexamined.
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
