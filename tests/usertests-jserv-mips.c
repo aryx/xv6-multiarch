@@ -1,53 +1,30 @@
-// claude: shared by forks/amd64-jserv and forks/mips - the closest
-// pairwise diff of any two remaining per-fork usertests.c files (99
-// lines apart out of ~1800, per scripts/pairwise_diff.sh), despite the
-// two forks being completely unrelated ISAs. Base taken from
-// forks/amd64-jserv - it runs every sub-test, where forks/mips itself
-// skips four (see below) - so the merge is "add mips's real exceptions
-// to the fuller file", not the other way around.
+// claude: shared by forks/amd64-jserv and forks/mips, despite being
+// unrelated ISAs - both forks raised NDIRECT well past xv6-public's
+// default 12, for the same "pack dinode into a power-of-two size"
+// reason, which is why they converge here.
 //
-// NBIG, not MAXFILE, for the "big file" write/read test: both forks
-// raised their own NDIRECT well past xv6-public's default 12
-// (forks/amd64-jserv to 58, forks/mips to 60 - both increases forced by
-// the same "pack dinode into a power-of-two size" constraint, not a
-// coincidence), which makes a full MAXFILE-block run (186/188 blocks)
-// real disk I/O through a slow QEMU backend - forks/mips alone measured
-// this at 5+ minutes and timed out CI before this fix. NBIG only needs
-// to clear NDIRECT to still exercise the indirect-block path, so
-// NDIRECT+20 keeps that coverage on both forks at a small, fixed cost
-// instead of one that scales with each fork's own (already-inflated)
-// NDIRECT.
+// NBIG, not MAXFILE, for the "big file" write/read test: a full
+// MAXFILE-block run is real disk I/O through a slow QEMU backend, and
+// NBIG (NDIRECT+20) only needs to clear NDIRECT to still exercise the
+// indirect-block path.
 //
 // uintp, not a bare uint, for the pointer<->integer casts in sbrktest()
-// and validatetest() - forks/amd64-jserv already needed this (its own
-// uint is only 4 bytes on its 64-bit build); forks/mips picked up the
-// same cast here too, even though its own uint is already pointer-
-// sized, so the two forks share one source rather than one needing a
-// real behavioral difference. Needed forks/mips/kernel/types.h to gain
-// its own uintp typedef (== uint there, same shape as every other
-// fork's own).
+// and validatetest() - real on forks/amd64-jserv (its own uint is 4
+// bytes on a 64-bit build); harmless on forks/mips, whose own uint is
+// already pointer-sized.
 //
-// validateint()'s 32-bit x86 inline asm syscall-trap probe: real on
-// forks/amd64-jserv's own 32-bit build, a no-op on its 64-bit build,
-// and previously commented out ENTIRELY as raw source text on
-// forks/mips - inline asm text is handed to the target assembler
-// verbatim, and x86 mnemonics fed to the MIPS assembler do not merely
-// no-op, they fail to build. Replaced forks/amd64-jserv's own custom
-// "#ifndef X64" with the real, GCC-predefined "__i386__"/"__x86_64__"
-// macros (same idiom tests/usertests-x86.c already uses for the
-// identical probe), so the guard is correct on every target rather than
-// only the forks that used to define X64 themselves.
+// validateint()'s 32-bit x86 inline asm syscall-trap probe is guarded by
+// the real GCC macros "__i386__"/"!__x86_64__" (same idiom
+// tests/usertests-x86.c uses), not a custom macro - inline asm text goes
+// to the target assembler verbatim, so a guard that isn't a real arch
+// check would try to feed x86 mnemonics to the MIPS assembler.
 //
-// Four sub-tests forks/mips itself cannot pass, each root-caused and
-// recorded in notes_arch_mips.txt rather than silently dropped:
-// sbrktest() and validatetest() (real hangs under memory-pressure /
-// TLB-refill conditions, not chased further), and exitwait()/
-// forktest() (retested after the preempt()/mem() fixes elsewhere in
-// this file and still hang on their own). Gated behind
-// SKIP_SBRKTEST/SKIP_VALIDATETEST/SKIP_EXITWAIT/SKIP_FORKTEST, each
-// defined only in forks/mips's own Makefile recipe for this file (same
-// shape as tests/usertests-pi.c's own SKIP_PREEMPT_TEST) -
-// forks/amd64-jserv runs all four.
+// forks/mips skips four sub-tests it cannot pass (sbrktest,
+// validatetest, exitwait, forktest - each root-caused in
+// notes_arch_mips.txt), gated behind SKIP_SBRKTEST/SKIP_VALIDATETEST/
+// SKIP_EXITWAIT/SKIP_FORKTEST defined only in its own Makefile recipe
+// for this file (same shape as tests/usertests-arm32.c's own
+// SKIP_PREEMPT_TEST). forks/amd64-jserv runs all four.
 #include "param.h"
 #include "types.h"
 #include "stat.h"
@@ -1603,15 +1580,9 @@ void
 validateint(int *p)
 {
   // claude: real on the 32-bit x86 build (int $T_SYSCALL, juggling esp
-  // directly, to probe the kernel's own syscall-argument validation with
-  // a deliberately bad pointer) - a no-op everywhere else, including
-  // forks/amd64-jserv's own 64-bit build. __i386__/__x86_64__ are GCC's
-  // own predefined macros, not flags this repo has to pass - see this
-  // file's own header comment for why forks/mips specifically needs a
-  // real arch check here rather than the "#ifndef X64" this used to be:
-  // inline asm text goes to the target assembler verbatim, so leaving
-  // this enabled on a non-x86 build doesn't merely no-op, it fails to
-  // assemble.
+  // directly, to probe the kernel's syscall-argument validation with a
+  // deliberately bad pointer) - a no-op everywhere else. See this file's
+  // own header comment for why the guard is a real arch check.
 #if defined(__i386__) && !defined(__x86_64__)
   int res;
   asm("mov %%esp, %%ebx\n\t"
