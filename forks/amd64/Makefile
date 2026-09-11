@@ -203,8 +203,12 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # system <fcntl.h> as well as xv6's own "fs.h" - -Ikernel is searched
 # before the system directories, so <fcntl.h> would resolve to
 # kernel/fcntl.h, which has no O_TRUNC. See i386's identical fix.
+# -idirafter ../../include/kernel too, same reasoning now that fcntl.h
+# and stat.h moved there (include/kernel/fcntl.h itself defines O_CREATE,
+# not POSIX's O_CREAT that this file's own <fcntl.h> use needs - a plain
+# -I here would reintroduce the exact shadowing this rule exists to avoid).
 tools/mkfs: ../../tools/mkfs-nomagic.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
+	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

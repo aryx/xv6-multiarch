@@ -1,7 +1,7 @@
 include ../makefile.inc
 
 CFLAGS = -Werror -Wall -I../../../include
-CFLAGS += -iquote ../kernel
+CFLAGS += -iquote ../kernel -iquote ../../../include/kernel
 
 all: mkfs
 
