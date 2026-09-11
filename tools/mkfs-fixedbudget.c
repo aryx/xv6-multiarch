@@ -1,12 +1,13 @@
 // mkfs: host tool that builds an initial xv6 file system image.
 //
 // claude: shared by forks/arm, forks/arm-pi1, forks/arm-pi1-bis and
-// forks/mips - four forks whose kernel/fs.h stores nothing but
-// size/nblocks/ninodes/nlog on disk (no magic, no logstart/inodestart/
-// bmapstart - the kernel recomputes block positions from IPB alone via
-// i2b()). Their mkfs.c copies differed only in two numbers that both turn
-// out to be formulas already implicit in every copy, not real per-fork
-// constants:
+// forks/mips. Since include/kernel/fs.h unified the on-disk superblock
+// (magic, stored logstart/inodestart/bmapstart) across every fork, this
+// file now writes the same fields tools/mkfs.c does; what still keeps
+// it a separate file is its own hardcoded-disk-budget algorithm below,
+// not the on-disk format. Their mkfs.c copies differed only in two
+// numbers that both turn out to be formulas already implicit in every
+// copy, not real per-fork constants:
 //
 //   - `nblocks`: three of the four hardcoded 985; forks/mips wrote the same
 //     value as `995 - LOGSIZE`, which is the general form (forks/arm,
@@ -29,9 +30,9 @@
 //
 // Every other fork keeps its own copy - see tools/mkfs.c's header comment
 // for the fork-by-fork breakdown of the other on-disk formats in this repo.
-// forks/amd64-jserv and forks/arm-pi2/forks/arm-pi3 share this same
-// no-magic-no-stored-fields superblock but compute nblocks/nmeta the other,
-// dynamic way (like tools/mkfs.c), not this hardcoded-budget way.
+// forks/amd64-jserv and forks/arm-pi2/forks/arm-pi3 share the same
+// on-disk format now but compute nblocks/nmeta the other, dynamic way
+// (like tools/mkfs.c), not this hardcoded-budget way.
 
 #include <stdio.h>
 #include <unistd.h>
@@ -139,10 +140,14 @@ main(int argc, char *argv[])
   size = nblocks + usedblocks + nlog;
   assert(bitblocks == (uint)(size/(512*8) + 1));
 
+  sb.magic = xint(FSMAGIC);
   sb.size = xint(size);
   sb.nblocks = xint(nblocks); // so whole disk is size sectors
   sb.ninodes = xint(ninodes);
   sb.nlog = xint(nlog);
+  sb.inodestart = xint(2);
+  sb.bmapstart = xint(ninodes / IPB + 3);
+  sb.logstart = xint(size - nlog);
 
   freeblock = usedblocks;
 
@@ -225,7 +230,7 @@ wsect(uint sec, void *buf)
 uint
 i2b(uint inum)
 {
-  return (inum / IPB) + 2;
+  return (inum / IPB) + xint(sb.inodestart);
 }
 
 void
@@ -294,8 +299,8 @@ balloc(int used)
   for(i = 0; i < used; i++){
     buf[i/8] = buf[i/8] | (0x1 << (i%8));
   }
-  printf("balloc: write bitmap block at sector %zu\n", ninodes/IPB + 3);
-  wsect(ninodes / IPB + 3, buf);
+  printf("balloc: write bitmap block at sector %u\n", xint(sb.bmapstart));
+  wsect(xint(sb.bmapstart), buf);
 }
 
 #define min(a, b) ((a) < (b) ? (a) : (b))

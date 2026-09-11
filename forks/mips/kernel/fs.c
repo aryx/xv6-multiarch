@@ -60,7 +60,7 @@ balloc(uint dev)
   bp = 0;
   readsb(dev, &sb);
   for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb.ninodes));
+    bp = bread(dev, BBLOCK(b, sb));
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
       m = 1 << (bi % 8);
       if((bp->data[bi/8] & m) == 0){  // Is block free?
@@ -85,7 +85,7 @@ bfree(int dev, uint b)
   int bi, m;
 
   readsb(dev, &sb);
-  bp = bread(dev, BBLOCK(b, sb.ninodes));
+  bp = bread(dev, BBLOCK(b, sb));
   bi = b % BPB;
   m = 1 << (bi % 8);
   if((bp->data[bi/8] & m) == 0)
@@ -184,7 +184,7 @@ ialloc(uint dev, short type)
   readsb(dev, &sb);
 
   for(inum = 1; inum < sb.ninodes; inum++){
-    bp = bread(dev, IBLOCK(inum));
+    bp = bread(dev, IBLOCK(inum, sb));
     dip = (struct dinode*)bp->data + inum%IPB;
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
@@ -204,8 +204,10 @@ iupdate(struct inode *ip)
 {
   struct buf *bp;
   struct dinode *dip;
+  struct superblock sb;
 
-  bp = bread(ip->dev, IBLOCK(ip->inum));
+  readsb(ip->dev, &sb);
+  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
   dip = (struct dinode*)bp->data + ip->inum%IPB;
   dip->type = ip->type;
   dip->major = ip->major;
@@ -282,7 +284,9 @@ ilock(struct inode *ip)
   release(&icache.lock);
 
   if(!(ip->flags & I_VALID)){
-    bp = bread(ip->dev, IBLOCK(ip->inum));
+    struct superblock sb;
+    readsb(ip->dev, &sb);
+    bp = bread(ip->dev, IBLOCK(ip->inum, sb));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
     ip->major = dip->major;

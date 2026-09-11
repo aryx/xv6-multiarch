@@ -5,8 +5,8 @@ CFLAGS += -iquote ../kernel -iquote ../../../include/kernel
 
 all: mkfs
 
-mkfs: ../../../tools/mkfs-fixedbudget.c
-	$(HOSTCC) $(CFLAGS) -o $@ $^
+mkfs: ../../../tools/mkfs-fixedbudget.c ../../../include/kernel/fs.h ../kernel/conf.h
+	$(HOSTCC) $(CFLAGS) -o $@ ../../../tools/mkfs-fixedbudget.c
 
 clean:
 	rm -f mkfs	

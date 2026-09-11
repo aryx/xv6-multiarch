@@ -38,7 +38,7 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # freestanding kernel with no reason to ever be in Thumb state.
 # claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
 # so top-level kernel/ rather than include/kernel/).
-CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/arm
+CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Ikernel -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/arm
 LDFLAGS = -L.
 # claude: added -mfloat-abi=soft - this modern arm-linux-gnueabihf- cross
 # toolchain defaults to "-march=armv7-a+fp -mfloat-abi=hard" (confirmed

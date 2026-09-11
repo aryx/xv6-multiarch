@@ -23,7 +23,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # sh.c's runcmd(), which recurses but always terminates via exec()/exit() in
 # its base case - see notes_debugging_techniques.txt item 1, and the same
 # flag in forks/arm-pi2/uprogs/Makefile.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -iquote . -I.. -I../../../include -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -iquote . -I.. -I../kernel -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; -I../kernel so the shared include/kernel/fs.h's own bare #include "conf.h" resolves to this fork's own kernel/conf.h; -I../../../include/kernel so tests/usertests-arm32.c's own bare #include "fs.h" finds the shared header now that user/fs.h (this fork's old duplicate copy) is gone
 
 initcode: initcode.S
 	$(CC) $(CFLAGS) -nostdinc -I. -c initcode.S
@@ -88,8 +88,8 @@ _forktest: forktest.o $(ULIB)
 # fcntl.h shadow it and lose O_TRUNC (gotcha 6). -iquote is searched for
 # "..." includes only, never for <...>. The binary keeps being built here,
 # so ./mkfs below and .gitignore are unchanged.
-mkfs: ../../../tools/mkfs-fixedbudget.c fs.h
-	gcc -Werror -Wall -iquote . -o mkfs ../../../tools/mkfs-fixedbudget.c -I../../../include -I../../../include/user
+mkfs: ../../../tools/mkfs-fixedbudget.c ../../../include/kernel/fs.h ../kernel/conf.h
+	gcc -Werror -Wall -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs-fixedbudget.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
