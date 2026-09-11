@@ -89,7 +89,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../include/arch/arm64
 CFLAGS += -MD -MP
 CFLAGS += -ffreestanding -fno-common -nostdlib
-CFLAGS += -I.
+CFLAGS += -I. -Ikernel
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 12+'s -Warray-bounds (part of -Wall) misfires on start.c's
 # cpuN_wakeup(), which writes the secondary cores' entry address into the
@@ -204,9 +204,9 @@ $T/_forktest: $T/forktest.o $(ULIB)
 # docker build) never creates it; only a stale local build tree happens to
 # have it already. Same bug class forks/i386's own user/%.o mkdir-p fix
 # describes - a real CI regression this exact change caused.
-$O/mkfs: ../../tools/mkfs.c $K/fs.h $K/param.h
+$O/mkfs: ../../tools/mkfs.c ../../include/kernel/fs.h $K/conf.h $K/param.h
 	@mkdir -p $O
-	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/arm64
+	gcc -Werror -Wall -I. -idirafter kernel -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/arm64
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

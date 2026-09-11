@@ -71,7 +71,7 @@ CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../
 CFLAGS += -MD -MP
 CFLAGS += -march=loongarch64 -mabi=lp64s
 CFLAGS += -ffreestanding -fno-common -nostdlib
-CFLAGS += -I. -fno-stack-protector
+CFLAGS += -I. -Ikernel -fno-stack-protector
 CFLAGS += -fno-pie -no-pie
 LDFLAGS = -z max-page-size=4096
 
@@ -170,9 +170,9 @@ $U/_sh: ../../shells/sh.c $(ULIB)
 # docker build) never creates it; only a stale local build tree happens to
 # have it already. Same bug class forks/i386's own user/%.o mkdir-p fix
 # describes - a real CI regression this exact change caused.
-$O/mkfs: ../../tools/mkfs.c $K/fs.h $K/param.h
+$O/mkfs: ../../tools/mkfs.c ../../include/kernel/fs.h $K/conf.h $K/param.h
 	@mkdir -p $O
-	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/loongarch
+	gcc -Werror -Wall -I. -idirafter kernel -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/loongarch
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
