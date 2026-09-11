@@ -90,9 +90,15 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -I../../include -I../../include/kernel -I../../include/user
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -I../../include -I../../include/user
 CFLAGS += -g -Wall -MD -fno-omit-frame-pointer
 CFLAGS += -ffreestanding -fno-common -nostdlib -Ikernel -Iuser -gdwarf-2 $(XFLAGS) $(OPT)
+# claude: AFTER -Ikernel, not alongside -I. above - this fork keeps its own
+# kernel/stat.h and kernel/syscall.h (real extra fields/syscalls, see
+# plan_factorization.md), so -Ikernel must win the search for those two
+# names; only fcntl.h (deleted here, shared from include/kernel/) actually
+# falls through to this path.
+CFLAGS += -I../../include/kernel
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
 CFLAGS += $(call cc-option, -fno-stack-protector-all, "")
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
