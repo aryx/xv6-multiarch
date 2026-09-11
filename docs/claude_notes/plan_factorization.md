@@ -1215,6 +1215,35 @@ per-arch drift", not just administrative dedup of accidental
 duplicates. Verify every migrated fork exactly as everywhere else in
 this plan: build, full boot-test, `docker build` where it applies.
 
+**Refinement, same conversation: `kernel/arch/<arch>/kernel.h` is for
+*interfaces*, not just types - which makes step (3) above collapse
+splits that otherwise look permanent.** `uintp` is the existing proof
+this already works in this repo: it names one contract ("the pointer-
+sized integer"), each fork's own `arch.h` implements it differently
+(`uint64` on 64-bit ports, plain `uint` on i386), and because shared
+code casts through `uintp` instead of hardcoding a width, that code is
+portable despite the real representation differing per arch. Extend
+the identical idea from types to *functions*. The `pipe.c` "memory-
+access model split" this session found and left unreconciled
+(`arm64`'s own `copyin()`/`copyout()`, page-table-aware, vs `amd64`'s
+own direct pointer dereference) is not actually two irreconcilable
+implementations - it is one missing interface: `amd64`/`i386`/`mips`/
+`amd64-jserv` have no `copyin()`/`copyout()` at all, only because they
+have no separate user/kernel address space to translate through - a
+*trivial* implementation (a straight `memmove`) is a perfectly valid
+backend for that interface on those forks. Once every fork provides
+`copyin()`/`copyout()` (real page-table walk on some, a bare `memmove`
+on others) under a name shared kernel code can always call, `pipe.c`
+stops needing two clusters at all. Same likely story for `myproc()`:
+`amd64-jserv`/`mips` use a raw global `proc` instead, which is just a
+zero-effort `#define myproc() (proc)` away from being the same
+interface everyone else already calls. **Before accepting a split as
+"a real arch difference, not naming" (as this session did for
+`pipe.c`), check whether it is actually a missing interface
+implementation instead** - the fork lacking the interface is usually
+the trivial case, not the hard one, since it means that fork's own
+hardware/memory model doesn't need to do the real work at all.
+
 **Started (2026-09-11/12).** `scripts/pairwise_diff.sh` against these six
 files immediately found a real 9-vs-5 split hiding under them: 9 forks
 (`amd64`, `i386`, `arm64`, `arm64-pi4`, `loongarch`, `riscv32`, `riscv64`,
