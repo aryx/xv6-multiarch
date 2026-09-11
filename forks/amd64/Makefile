@@ -164,9 +164,17 @@ user/%.o: ../../kernel/init/user/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # claude: the portable test programs, shared at the repo root. usertests.c
-# is NOT among them - it is genuinely per-port (twelve variants, each with its
-# own skipped sub-tests) and stays in each fork's own tests/.
+# is only partly among them - most forks' own copy is genuinely per-port
+# (each with its own skipped sub-tests) and stays local, but this fork's
+# copy was close enough to forks/i386's to share - see the explicit rule
+# below and tests/usertests-x86.c's own header comment.
 tests/%.o: ../../tests/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# claude: explicit rule, not covered by the generic pattern above - the
+# shared file's name doesn't match usertests.o's expected usertests.c.
+tests/usertests.o: ../../tests/usertests-x86.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 

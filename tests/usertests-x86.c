@@ -1,3 +1,36 @@
+// claude: shared by forks/amd64 and forks/i386 - the "flat MIT-classic
+// pair" already sharing tools/mkfs-nomagic.c (see that file's own header
+// comment). Base taken from forks/amd64: it was already more complete in
+// three places forks/i386 was not (explicit fork()-failure checks in
+// preempt(), a named NCHILD constant instead of a repeated literal 4 in
+// createdelete(), and a "no fork at all!" guard forktest() was missing) -
+// took the better version in each, per the same rule the init.c and
+// usertests-arm64.c merges used.
+//
+// One real, irreducible difference: validateint() deliberately passes a
+// bad pointer through a raw syscall trap to probe kernel argument
+// validation, using 32-bit-only inline asm (int $T_SYSCALL, juggling esp
+// directly) that has no forks/amd64 equivalent - kept as its own already-
+// working state on each side (real asm on i386, a no-op on amd64, not
+// newly written for either) behind a #ifndef __x86_64__ guard, GCC's own
+// predefined macro.
+//
+// uintp, not uint64, for pointer<->integer casts: forks/i386's own
+// uint64 is 8 bytes (unsigned long long, needed by the shared printf.c's
+// printptr() - see that fork's own types.h) even though its pointers are
+// 4 - -Werror=pointer-to-int-cast correctly rejects casting one to the
+// other. Each fork's own types.h now defines uintp as whichever of its
+// existing types is actually pointer-sized (uint64 on forks/amd64, uint
+// on forks/i386) - same name and purpose as forks/amd64-jserv's own
+// uintp, which independently solved the identical problem.
+//
+// forks/amd64-jserv (76-120 lines from either of these) was considered
+// and left out: it is missing two real test functions entirely (uio(), a
+// raw outb/inb hardware-port probe, and argptest()), not just a style
+// difference - extending it would mean either writing new test coverage
+// unverified against its own kernel's userspace I/O permissions, or
+// dropping real coverage from the shared file. Out of scope for this
+// pass.
 #include "param.h"
 #include "types.h"
 #include "stat.h"
@@ -363,17 +396,29 @@ preempt(void)
 
   printf("preempt: ");
   pid1 = fork();
+  if(pid1 < 0) {
+    printf("fork failed");
+    exit(0);
+  }
   if(pid1 == 0)
     for(;;)
       ;
 
   pid2 = fork();
+  if(pid2 < 0) {
+    printf("fork failed\n");
+    exit(0);
+  }
   if(pid2 == 0)
     for(;;)
       ;
 
   pipe(pfds);
   pid3 = fork();
+  if(pid3 < 0) {
+     printf("fork failed\n");
+     exit(0);
+  }
   if(pid3 == 0){
     close(pfds[0]);
     if(write(pfds[1], "x", 1) != 1)
@@ -583,13 +628,13 @@ fourfiles(void)
 void
 createdelete(void)
 {
-  enum { N = 20 };
+  enum { N = 20, NCHILD=4 };
   int pid, i, fd, pi;
   char name[32];
 
   printf("createdelete test\n");
 
-  for(pi = 0; pi < 4; pi++){
+  for(pi = 0; pi < NCHILD; pi++){
     pid = fork();
     if(pid < 0){
       printf("fork failed\n");
@@ -619,13 +664,13 @@ createdelete(void)
     }
   }
 
-  for(pi = 0; pi < 4; pi++){
+  for(pi = 0; pi < NCHILD; pi++){
     wait(0);
   }
 
   name[0] = name[1] = name[2] = 0;
   for(i = 0; i < N; i++){
-    for(pi = 0; pi < 4; pi++){
+    for(pi = 0; pi < NCHILD; pi++){
       name[0] = 'p' + pi;
       name[1] = '0' + i;
       fd = open(name, 0);
@@ -642,7 +687,7 @@ createdelete(void)
   }
 
   for(i = 0; i < N; i++){
-    for(pi = 0; pi < 4; pi++){
+    for(pi = 0; pi < NCHILD; pi++){
       name[0] = 'p' + i;
       name[1] = '0' + i;
       unlink(name);
@@ -1391,6 +1436,11 @@ forktest(void)
       exit(0);
   }
 
+  if (n == 0) {
+    printf("no fork at all!\n");
+    exit(0);
+  }
+
   if(n == 1000){
     printf("fork claimed to work 1000 times!\n");
     exit(0);
@@ -1414,16 +1464,16 @@ forktest(void)
 void
 sbrktest(void)
 {
-  int fds[2], pid, pids[10], ppid;
-  char *a, *b, *c, *lastaddr, *oldbrk, *p, scratch;
-  uint amt;
+  int i, fds[2], pids[10], pid, ppid;
+  char *c, *oldbrk, scratch, *a, *b, *lastaddr, *p;
+  uintp amt;
+  #define BIG (100*1024*1024)
 
   printf("sbrk test\n");
   oldbrk = sbrk(0);
 
   // can one sbrk() less than a page?
   a = sbrk(0);
-  int i;
   for(i = 0; i < 5000; i++){
     b = sbrk(1);
     if(b != a){
@@ -1449,9 +1499,8 @@ sbrktest(void)
   wait(0);
 
   // can one grow address space to something big?
-#define BIG (100*1024*1024)
   a = sbrk(0);
-  amt = (BIG) - (uint)a;
+  amt = (BIG) - (uintp)a;
   p = sbrk(amt);
   if (p != a) {
     printf("sbrk test failed to grow big address space; enough phys mem?\n");
@@ -1508,7 +1557,7 @@ sbrktest(void)
     }
     wait(0);
   }
-
+    
   // if we run the system out of memory, does it clean up the last
   // failed allocation?
   if(pipe(fds) != 0){
@@ -1518,7 +1567,7 @@ sbrktest(void)
   for(i = 0; i < sizeof(pids)/sizeof(pids[0]); i++){
     if((pids[i] = fork()) == 0){
       // allocate a lot of memory
-      sbrk(BIG - (uint)sbrk(0));
+      sbrk(BIG - (uintp)sbrk(0));
       write(fds[1], "x", 1);
       // sit around until killed
       for(;;) sleep(1000);
@@ -1526,6 +1575,7 @@ sbrktest(void)
     if(pids[i] != -1)
       read(fds[0], &scratch, 1);
   }
+
   // if those failed allocations freed up the pages they did allocate,
   // we'll be able to allocate here
   c = sbrk(4096);
@@ -1549,6 +1599,15 @@ sbrktest(void)
 void
 validateint(int *p)
 {
+  // claude: real on forks/i386 (32-bit int $T_SYSCALL trap, manipulating
+  // esp directly around it to probe the kernel's own syscall-argument
+  // validation with a deliberately bad pointer) - forks/amd64 never had a
+  // working equivalent for its own syscall entry convention, so this was
+  // already a no-op there before this file was shared (kept a no-op, not
+  // newly written, to avoid guessing at amd64-specific asm no port here
+  // has verified). __x86_64__ is GCC's own predefined macro, not a flag
+  // this repo has to pass.
+#ifndef __x86_64__
   int res;
   asm("mov %%esp, %%ebx\n\t"
       "mov %3, %%esp\n\t"
@@ -1557,13 +1616,14 @@ validateint(int *p)
       "=a" (res) :
       "a" (SYS_sleep), "n" (T_SYSCALL), "c" (p) :
       "ebx");
+#endif
 }
 
 void
 validatetest(void)
 {
   int hi, pid;
-  uint p;
+  uintp p;
 
   printf("validate test\n");
   hi = 1100*1024;
