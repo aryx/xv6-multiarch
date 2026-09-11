@@ -363,9 +363,21 @@ check-amd64-toolchain:
 
 # Unlike every other fork here, this one boots via QEMU's own multiboot
 # "-kernel" loading (see docs/claude_notes/notes_arch_amd64.txt) - no
-# bootblock/xv6.img to build, just "kernel" and "fs.img" directly.
+# bootblock/xv6.img to build, just "kernel/kernel" and "fs.img" directly.
+#
+# claude: this MUST say "kernel/kernel", not "kernel" - forks/amd64/
+# Makefile's own comment above its "kernel/kernel:" rule explains why:
+# a target named plain "kernel" collides with the existing kernel/
+# directory, so make treats it as already up to date and never links it.
+# Silently no-ops ("Nothing to be done for 'kernel'") instead of failing,
+# which is what let this drift after the Phase 0 factorization rename -
+# forks/amd64/Makefile's target was renamed but this caller wasn't
+# updated, so "run-amd64-qemu-graphics" launched QEMU with no kernel
+# file to load ("could not open kernel file 'kernel/kernel'"), which
+# manifests to a QMP client as connection refused (QEMU exits before the
+# QMP socket ever comes up).
 build-amd64: check-amd64-toolchain
-	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) kernel fs.img
+	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) kernel/kernel fs.img
 
 run-amd64: check-amd64-toolchain
 	$(MAKE) -C forks/amd64 TOOLPREFIX=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) qemu-nox

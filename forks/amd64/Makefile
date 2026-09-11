@@ -270,7 +270,12 @@ ifndef CPUS
 CPUS := 2
 endif
 QEMUOPTS = -kernel kernel/kernel -drive file=fs.img,index=1,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
-qemu: fs.img
+# claude: was "qemu: fs.img" - missing the "kernel/kernel" prerequisite
+# its three siblings below (qemu-nox, qemu-gdb, qemu-nox-gdb) all have,
+# so "make qemu" (and the top-level Makefile's run-amd64-qemu-graphics,
+# which calls it) could launch QEMU with a stale or entirely missing
+# kernel/kernel and no rebuild.
+qemu: fs.img kernel/kernel
 	$(QEMU) -serial mon:stdio $(QEMUOPTS)
 
 qemu-nox: fs.img kernel/kernel
