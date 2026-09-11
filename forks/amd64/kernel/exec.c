@@ -15,9 +15,9 @@ exec(char *path, char **argv)
   char *s, *last;
   int i, off;
   uint64 argc, sz, sp, ustack[3+MAXARG+1];
-  struct elfhdr elf;
+  struct elf64hdr elf;
   struct inode *ip;
-  struct proghdr ph;
+  struct proghdr64 ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
   uint64 oldsz = curproc->sz;

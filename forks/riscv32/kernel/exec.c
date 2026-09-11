@@ -15,9 +15,9 @@ exec(char *path, char **argv)
   char *s, *last;
   int i, off;
   uint32 argc, sz, sp, ustack[MAXARG+1], stackbase;
-  struct elfhdr elf;
+  struct elf32hdr elf;
   struct inode *ip;
-  struct proghdr ph;
+  struct proghdr32 ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
 

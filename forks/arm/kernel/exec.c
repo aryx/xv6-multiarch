@@ -10,9 +10,9 @@
 // load a user program for execution
 int exec (char *path, char **argv)
 {
-    struct elfhdr elf;
+    struct elf32hdr elf;
     struct inode *ip;
-    struct proghdr ph;
+    struct proghdr32 ph;
     pde_t *pgdir;
     pde_t *oldpgdir;
     char *s;

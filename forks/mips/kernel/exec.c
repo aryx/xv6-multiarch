@@ -13,9 +13,9 @@ exec(char *path, char **argv)
   char *s, *last;
   int i, off;
   uint argc, sz, sp, ustack[3+MAXARG+1];
-  struct elfhdr elf;
+  struct elf32hdr elf;
   struct inode *ip;
-  struct proghdr ph;
+  struct proghdr32 ph;
   pde_t *pgdir, *oldpgdir;
 
   begin_op();
