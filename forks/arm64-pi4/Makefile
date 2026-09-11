@@ -86,7 +86,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 
 # claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
 # (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs
+CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../include/arch/arm64
 CFLAGS += -MD -MP
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
@@ -206,7 +206,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 # describes - a real CI regression this exact change caused.
 $O/mkfs: ../../tools/mkfs.c $K/fs.h $K/param.h
 	@mkdir -p $O
-	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user
+	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/arm64
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

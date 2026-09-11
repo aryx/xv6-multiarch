@@ -1,4 +1,4 @@
-#include "core/types.h"   // claude: portable typedefs, shared by every port
+#include <core/types.h>   // claude: portable typedefs, shared by every port
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;

@@ -5,7 +5,8 @@
 *
 ********************************************************************/
 
-#include "core/types.h"   // claude: portable typedefs, shared by every port
+#include <core/types.h>   // claude: portable typedefs, shared by every port
+#include <arch.h>   // claude: this port's own general, arch-specific types (uint64, uintp)
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
@@ -46,10 +47,3 @@ struct framebufdescription {
 };
 
 typedef struct framebufdescription FBI;
-typedef unsigned long long uint64;  // claude: needed by the shared
-                                    // printf.c's printptr(); this port is
-                                    // 32-bit, so it has no native 64-bit
-                                    // word, but the C type is still fine.
-typedef uint uintp;  // claude: pointer-sized integer, for kernel/spinlock.h's
-                     // pcs[10] - same name and purpose as forks/amd64-jserv's
-                     // own uintp, just already equal to uint on this port.

@@ -61,7 +61,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 
 # claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
 # (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../include/arch/riscv32
 CFLAGS += -MD
 # claude: this repo has no dedicated riscv32-unknown-elf- package (Ubuntu's
 # gcc-riscv64-unknown-elf is multilib and defaults to rv64/lp64d) - without
@@ -193,7 +193,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 # describes - a real CI regression this exact change caused.
 $O/mkfs: ../../tools/mkfs.c $K/fs.h $K/param.h
 	@mkdir -p $O
-	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user
+	gcc -Werror -Wall -I. -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/riscv32
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

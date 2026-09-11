@@ -86,7 +86,7 @@ XFLAGS = -m64 -mcmodel=large -ggdb
 # forks sits inside an ifeq branch that is not taken.
 # claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
 # so top-level kernel/ rather than include/kernel/).
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/amd64
 CFLAGS += -ffreestanding -fno-common -nostdlib $(XFLAGS) -Ikernel -Iuser
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on
@@ -210,7 +210,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # not POSIX's O_CREAT that this file's own <fcntl.h> use needs - a plain
 # -I here would reintroduce the exact shadowing this rule exists to avoid).
 tools/mkfs: ../../tools/mkfs-nomagic.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
+	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/amd64 -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

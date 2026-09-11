@@ -81,7 +81,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # forks sits inside an ifeq branch that is not taken.
 # claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
 # so top-level kernel/ rather than include/kernel/).
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/mips
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
 # "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -
@@ -262,7 +262,7 @@ _forktest: tests/forktest.o $(ULIB) ulib/user.ld
 	$(OBJDUMP) -S _forktest > forktest.asm
 
 tools/mkfs: ../../tools/mkfs-fixedbudget.c kernel/fs.h
-	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs ../../tools/mkfs-fixedbudget.c -idirafter kernel -idirafter ../../include/kernel -I../../include -I../../include/user
+	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs ../../tools/mkfs-fixedbudget.c -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/mips -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

@@ -70,7 +70,7 @@ DETFLAGS = -ffile-prefix-map=$(CURDIR)=.
 
 # claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
 # (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs
+CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../include/arch/riscv64
 CFLAGS += $(DETFLAGS)
 CFLAGS += -march=rv64gc
 CFLAGS += -std=gnu99
@@ -157,7 +157,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
 $O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
-	gcc -Wno-unknown-attributes -I. -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user
+	gcc -Wno-unknown-attributes -I. -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user -I../../include/arch/riscv64
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

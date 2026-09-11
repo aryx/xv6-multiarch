@@ -7,7 +7,7 @@ include ../makefile.inc
 # (types.h, stat.h, fcntl.h, ...) moved into kernel/ in Phase 0. "-iquote ."
 # is for user.h, which lives here: a quoted include normally resolves from
 # the INCLUDER's own directory, which is ../tests for the test programs.
-CFLAGS += -iquote ../kernel -iquote . -Wno-infinite-recursion -I.. -I../../../include -I../../../include/kernel -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS += -iquote ../kernel -iquote . -Wno-infinite-recursion -I.. -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 ASFLAGS += -I ../kernel -I ../../../include/kernel
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still

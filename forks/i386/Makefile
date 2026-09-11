@@ -83,7 +83,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # forks sits inside an ifeq branch that is not taken.
 # claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
 # so top-level kernel/ rather than include/kernel/).
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/i386
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 10+'s -Warray-bounds (part of -Wall) misfires on mp.c's BIOS-
 # memory pointer casts (mpconfig()/mpinit() treat a small physical address
@@ -243,7 +243,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # -idirafter ../../include/kernel too, same reasoning now that fcntl.h
 # and stat.h moved there.
 tools/mkfs: ../../tools/mkfs-nomagic.c kernel/fs.h
-	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
+	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/i386 -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
