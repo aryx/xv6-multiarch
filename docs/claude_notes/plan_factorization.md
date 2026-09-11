@@ -984,8 +984,25 @@ verify any build rule writing into it guards with `mkdir -p`.**
   `test diskfull: ` was invisible). Nothing about `riscv64` changed -
   `647cc47`'s own measurements simply didn't cover it.
 
-  Next candidates: `elf.h` and `spinlock.h` are still fully per-fork (18
-  and 14 copies respectively) and unexamined.
+  **Done: `include/elf.h`, 13 of 14 forks** (`3e95e33`). Unlike
+  `stat.h`/`fcntl.h`/`syscall.h`, this one has a genuine structural split,
+  not per-fork drift: ELF32 and ELF64 are different on-disk formats
+  (`e_entry`/`e_phoff`/`e_shoff` are 32- vs 64-bit; `Elf64_Phdr` also moves
+  `p_flags` right after `p_type`, where `Elf32_Phdr` has it between
+  `p_memsz` and `p_align`). Rather than one struct behind a bitness macro
+  (which would need a `uintp`/`X64`-style discriminator this repo doesn't
+  have on every fork yet - see the postponed uintp/uintptr reorg idea),
+  the shared header declares two named struct pairs unconditionally -
+  `elf32hdr`/`proghdr32` and `elf64hdr`/`proghdr64` - and each fork's own
+  `exec.c`/`bootmain.c` just references whichever pair matches its own
+  word size. No macros, no conditional compilation, no Makefile changes
+  anywhere (every fork's kernel build already carries `-I../../include`).
+  `amd64-jserv` keeps its own copy for the same *kind* of real reason
+  `stat.h` has one exception too: it's genuinely dual-mode (32/64-bit via
+  its own `uintp` typedef and `#if X64`), not an oversight.
+
+  Next candidate: `spinlock.h` is still fully per-fork (14 copies) and
+  unexamined.
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
