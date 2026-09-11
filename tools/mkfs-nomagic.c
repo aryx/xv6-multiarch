@@ -1,10 +1,14 @@
 // mkfs: host tool that builds an initial xv6 file system image.
 //
 // claude: shared by forks/amd64 and forks/i386 - the "flat MIT-classic
-// pair" (see plan_factorization.md's Phase 0 "Group 2"). Their kernel/fs.h
-// stores logstart/inodestart/bmapstart on disk, same as tools/mkfs.c's four
-// forks, but has no magic number field at all - hence this file's own name
-// and the one real difference from tools/mkfs.c: no `sb.magic = ...` line.
+// pair" (see plan_factorization.md's Phase 0 "Group 2"). Since
+// include/kernel/fs.h unified the on-disk superblock (magic included)
+// across every fork, this file now writes the same fields tools/mkfs.c
+// does; the name is legacy (kept so both forks' Makefiles need no
+// change) and the only real remaining difference is coding style
+// (perror()+exit(1) inline instead of a die() helper, and this file's
+// own basename-splitting fix for building programs under user/ and
+// tests/ rather than the fork root).
 // Base taken from forks/i386 (its comment wording was the more recent
 // revision; the code itself was already byte-identical to forks/amd64's).
 //
@@ -107,6 +111,7 @@ main(int argc, char *argv[])
   nmeta = 2 + nlog + ninodeblocks + nbitmap;
   nblocks = FSSIZE - nmeta;
 
+  sb.magic = xint(FSMAGIC);
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
   sb.ninodes = xint(NINODES);

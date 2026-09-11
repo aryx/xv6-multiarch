@@ -10,5 +10,12 @@
 #define MAXOPBLOCKS  10  // max # of blocks any FS op writes
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
-#define FSSIZE       1000  // size of file system in blocks
+// claude: was 1000 - too small once include/kernel/fs.h's own NDIRECT
+// grew to 58 (universal dinode format, see that file's own comment):
+// IPB dropped from 8 to 2, so the inode region alone nearly quadrupled
+// (25 -> 101 blocks), and usertests.c's "big files test" writes a
+// single MAXFILE(186)-block file. Doubled to 2000, matching
+// forks/amd64-jserv/kernel/param.h's own fix for the identical
+// shortfall (its dinode grew the same way, earlier).
+#define FSSIZE       2000  // size of file system in blocks
 

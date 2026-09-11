@@ -242,7 +242,7 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # header comes from where it should. Same idiom forks/mips already used.
 # -idirafter ../../include/kernel too, same reasoning now that fcntl.h
 # and stat.h moved there.
-tools/mkfs: ../../tools/mkfs-nomagic.c kernel/fs.h
+tools/mkfs: ../../tools/mkfs-nomagic.c ../../include/kernel/fs.h kernel/conf.h
 	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/i386 -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
