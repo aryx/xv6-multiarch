@@ -921,11 +921,71 @@ verify any build rule writing into it guards with `mkdir -p`.**
   instead - checked byte-for-byte identical to the new shared content
   before trusting that, not assumed.
 
-  Next candidates: a second `stat.h` cluster already exists
-  (`arm64`/`arm64-pi4`/`loongarch`/`riscv32`, byte-identical to each
-  other, distinct from the 7-fork one above) but wasn't attempted this
-  session; `elf.h` and `spinlock.h` are still fully per-fork (18 and 14
-  copies respectively) and unexamined.
+  **Done: `include/kernel/stat.h` widened to 13 of 14 forks** (`721bad2`)
+  — folded the second `arm`/`arm64`/`arm64-pi4`/`loongarch`/`riscv32`/
+  `riscv64` cluster into the same shared file rather than spinning off a
+  second named variant (`stat-pi.h` or similar): all six were whitespace-
+  only different from the existing 7-fork content, confirmed by diff
+  before merging. `amd64-jserv` alone keeps its own copy - real extra
+  `ownerid`/`groupid`/`mode` fields its `chmod.c` actually uses, not a
+  reconcilable difference. One shared header, one fork-local exception -
+  not "a cluster per near-identical variant."
+
+  **Two real Docker CI regressions found in the *already-merged*
+  `fcntl.h`/`syscall.h` commits** (`c329deb`), caught by the user reading
+  a live GitHub Actions run rather than by anything local - `make
+  test-all`/`test-<arch>` reuse `.o`/`.d` artifacts that predate a header
+  move and never notice it went stale. Both are variants of gotcha 12/13's
+  own lesson, one layer deeper each:
+  - `forks/arm`'s `user/Makefile` and `tools/Makefile` compile one
+    directory deeper than `makefile.inc`'s own `-I../../include/kernel`
+    was scoped for, so the flag silently resolved to nothing at that depth
+    (gcc treats a missing `-I` dir as a no-op, not an error) - any bare
+    `#include "syscall.h"`/`"fcntl.h"` fell through to the HOST's own
+    `/usr/include/syscall.h` inside the Docker image (present there,
+    apparently absent on this dev host, which is exactly why it never
+    showed up locally). Needed the correctly-depthed path added directly
+    to each of those two files, not just `makefile.inc`.
+  - `forks/amd64-jserv` keeps its own `stat.h`/`syscall.h` but shares
+    `fcntl.h`; its main Makefile's `-I../../include/kernel` addition
+    landed *earlier* in the CFLAGS flag order than its own `-Ikernel`, so
+    gcc's first-match search let the shared header win for `stat.h` too -
+    `chmod.c`'s `st.mode` access stopped compiling. **Flag ORDER matters
+    when a fork keeps some of its own headers and shares others under the
+    same directory name** - moving `-I../../include/kernel` after
+    `-Ikernel` let the fork's own copies win while still falling through
+    for the one file it doesn't have locally.
+
+  **Gotcha 14: a fork's own `test-xv6.py` can silently lose a
+  `TOOLPREFIX` override if it only relies on the environment.**
+  `forks/riscv32` has no real `riscv32-unknown-elf-` toolchain installed
+  (this host's `TOOLPREFIX_RISCV32` override points at `riscv64-unknown-
+  elf-` instead - see `Makefile.config`), and its own `test-xv6.py` calls
+  `["make", "fs.img"]` with no explicit `TOOLPREFIX=`, relying on it being
+  inherited via the environment. But `forks/riscv32/Makefile` sets
+  `TOOLPREFIX = riscv32-unknown-elf-` with a plain `=`, which *overrides*
+  an inherited environment value - only a `make` command-line argument
+  beats it. This stayed invisible for as long as nothing forced a rebuild
+  inside that specific subprocess call (an up-to-date target never
+  touches `CC`), until the `stat.h` merge's own mtime change made `make
+  fs.img` legitimately want to rebuild `user/cat.o` and immediately hit
+  the nonexistent compiler. Fixed by forwarding `TOOLPREFIX` explicitly
+  on both `reset_cmds`. Any other fork whose installed toolchain name
+  differs from its own Makefile's hardcoded default has this same latent
+  exposure - `riscv32` is simply the only one where those two names
+  genuinely differ right now.
+
+  **Also restored `riscv64`'s own usertests timeout to 600s**, undoing
+  `647cc47`'s blanket 600→300 drop for this one fork specifically: its
+  own full run (through the `diskfull`/`outofinodes` disk-stress
+  subtests) measures ~570s wall-clock here, matching CI's own ~8m12s job
+  time, and a passing-but-still-running process at 300s looked identical
+  to a hang (the harness only prints *completed* lines, so an in-flight
+  `test diskfull: ` was invisible). Nothing about `riscv64` changed -
+  `647cc47`'s own measurements simply didn't cover it.
+
+  Next candidates: `elf.h` and `spinlock.h` are still fully per-fork (18
+  and 14 copies respectively) and unexamined.
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
