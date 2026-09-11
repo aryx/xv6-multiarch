@@ -1041,6 +1041,20 @@ verify any build rule writing into it guards with `mkdir -p`.**
   first kernel-only header, placed at top-level `kernel/` rather than
   `include/kernel/`).
 
+  **Done: `include/arch/<arch>/arch.h`, all 14 forks** (`5f08922`) - the
+  `uint64`/`uintp` typedefs this tier kept re-adding by hand per fork
+  finally got their own home, one per ISA (`arch/arm/arch.h` covers all
+  five ARM32 ports, `arch/arm64/arch.h` covers `arm64`+`arm64-pi4`).
+  `core/types.h`'s own header comment had named this design since it was
+  written - "the per-arch specific are in `include/arch/<arch>/u.h`" -
+  but nobody had followed through on it until this pass forced the
+  question by needing `uintp` in enough places at once. Spelled `arch.h`,
+  not `u.h` (less cryptic), and included as bare `#include <arch.h>` with
+  angle brackets - each fork's own Makefile supplies exactly one
+  `-I .../include/arch/<arch>`, so the same include line resolves
+  correctly everywhere, matching Plan9's own `<u.h>`. `amd64-jserv` keeps
+  its inline `uint64`/`uintp`, its usual dual-mode exception.
+
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
 `umalloc.c` — 7 arches, one content. Within the riscv family: `ls.c`,
