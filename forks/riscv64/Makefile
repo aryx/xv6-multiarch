@@ -84,7 +84,7 @@ CFLAGS += -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin
 CFLAGS += -fno-builtin-free
 CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
-CFLAGS += -I.
+CFLAGS += -I. -Ikernel
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -156,8 +156,8 @@ $T/_forktest: $T/forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $T/_forktest $T/forktest.o $L/ulib.o $L/usys.o
 	$(OBJDUMP) -S $T/_forktest > $T/forktest.asm
 
-$O/mkfs: $O/mkfs.c $K/fs.h $K/param.h
-	gcc -Wno-unknown-attributes -I. -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user -I../../include/arch/riscv64
+$O/mkfs: $O/mkfs.c ../../include/kernel/fs.h $K/conf.h $K/param.h
+	gcc -Wno-unknown-attributes -I. -idirafter kernel -o $O/mkfs $O/mkfs.c -I../../include -I../../include/user -I../../include/arch/riscv64
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
