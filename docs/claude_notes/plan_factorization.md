@@ -847,6 +847,26 @@ verify any build rule writing into it guards with `mkdir -p`.**
     lines away) stayed out: missing two real test functions (`uio()`,
     `argptest()`) entirely, not just style.
 
+  **`tests/usertests-jserv-mips.c`** (`08ba259`) — `amd64-jserv`, `mips`.
+  Re-running `scripts/pairwise_diff.sh tests/usertests.c` after the three
+  clusters above found the closest pair of any two forks left in the
+  whole set: 99 lines apart, despite being unrelated ISAs (x86-64 and
+  MIPS). Base taken from `forks/amd64-jserv` (it ran every sub-test,
+  where `forks/mips` itself skips four). Same `NBIG`/`uintp` pattern as
+  the other clusters, plus one new thing: `forks/amd64-jserv`'s own
+  `validateint()` guard was `#ifndef X64` (a custom macro, true on any
+  fork that never defines it, `mips` included) - replaced with the real
+  GCC-predefined `#if defined(__i386__) && !defined(__x86_64__)`, since
+  `mips`'s `.c` was carrying this 32-bit inline x86 asm fully commented
+  out as raw text specifically because inline asm goes to the target
+  assembler *verbatim* - x86 mnemonics reaching the MIPS assembler is a
+  build failure, not a silent no-op like the equivalent `#ifdef` gets on
+  amd64-jserv's own 64-bit build. `mips`'s four already-skipped
+  sub-tests (`sbrktest`/`validatetest`/`exitwait`/`forktest`, all
+  root-caused in `notes_arch_mips.txt`, not silently dropped) became
+  `-DSKIP_*` flags on its own `usertests.o` recipe, the same shape as
+  `usertests-pi.c`'s own `SKIP_PREEMPT_TEST`.
+
   `riscv32`/`riscv64` remain real outliers (thousands of lines apart from
   every other fork, including each other) - not attempted. New tools:
   `scripts/debug_timing.py` (`95ceb85`) - per-checkpoint wall-clock timing
