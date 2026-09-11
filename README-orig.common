@@ -1,143 +1,45 @@
-# xv6-multiarch
+ACKNOWLEDGMENTS FOR EVERY xv6 PORT IN THIS REPOSITORY
 
-`xv6-multiarch` unifies **14 xv6 ports across 8 instruction sets** — x86,
-x86-64, ARM32, AArch64, RV64, RV32, MIPS and LoongArch — into one
-repository, with git history stitched together so `git blame -C -C` traces
-every unchanged line back to its real original commit, even across ports
-that started life as a fresh `git init` with no shared history at all:
+Every port under forks/ descends from MIT's xv6 and inherits the same
+acknowledgments, so they are kept here once rather than repeated fourteen
+times.  Each fork's own README keeps only what is actually specific to it:
+which machine it targets, where it borrows arch-specific code from, where
+to send error reports, and how to build and run it.
 
-```sh
-$ git blame forks/i386/sh.c           | head -1
-1b25f3b0 sh.c (rsc 2007-08-28 ...) // Shell.
-$ git blame forks/loongarch/user/sh.c | head -1
-1b25f3b0 sh.c (rsc 2007-08-28 ...) // Shell.
-```
+Where the ports' own copies disagreed, the fullest text was taken - in
+particular the contributor list below is the longest of the fourteen (the
+one from the actively maintained mit-pdos/xv6-riscv), and it was checked to
+be a superset of every other fork's list, so that no contributor loses
+credit by this consolidation.
 
-That's the same commit object — Russ Cox's original 2007 line — surfacing
-identically from two ports with no shared repository history until this one
-stitched them together. The full story of how (fork points, evidence,
-techniques, pitfalls) is in [`docs/provenance.md`](docs/provenance.md).
+xv6 is inspired by John Lions's Commentary on UNIX 6th Edition (Peer
+to Peer Communications; ISBN: 1-57398-013-7; 1st edition (June 14,
+2000)).  See also https://pdos.csail.mit.edu/6.1810/, which provides
+pointers to on-line resources for v6.
 
-## Status: all 14 ports build and boot
+The following people have made contributions: Russ Cox (context switching,
+locking), Cliff Frey (MP), Xiao Yu (MP), Nickolai Zeldovich, and Austin
+Clements.
 
-**Goal 1 is done** (2026-09-09). Every port in this repo builds with a
-current toolchain, boots to a real interactive shell under QEMU, and passes
-its own `usertests` suite — not a mock, not a partial boot. `make test-all`
-re-checks all of it in about a minute:
+We are also grateful for the bug reports and patches contributed by
+Abhinavpatel00, Takahiro Aoyagi, Marcelo Arroyo, Hirbod Behnam, Silas
+Boyd-Wickizer, Anton Burtsev, carlclone, Ian Chen, clivezeng, Dan
+Cross, Cody Cutler, Mike CAT, Tej Chajed, Asami Doi,Wenyang Duan,
+echtwerner, eyalz800, Nelson Elhage, Saar Ettinger, Alice Ferrazzi,
+Nathaniel Filardo, flespark, Peter Froehlich, Yakir Goaron, Shivam
+Handa, Matt Harvey, Bryan Henry, jaichenhengjie, Jim Huang, Matúš
+Jókay, John Jolly, Alexander Kapshuk, Anders Kaseorg, kehao95,
+Wolfgang Keller, Jungwoo Kim, Jonathan Kimmitt, Eddie Kohler, Vadim
+Kolontsov, Austin Liew, Bruce Lowekamp, l0stman, Pavan Maddamsetti,
+Imbar Marinescu, Yandong Mao, Matan Shabtay, Hitoshi Mitake, Carmi
+Merimovich, mes900903, Mark Morrissey, mtasm, Joel Nider, Hayato Ohhashi,
+OptimisticSide, papparapa, phosphagos, Harry Porter, Greg Price, Zheng
+qhuo, Quancheng, RayAndrew, Jude Rich, segfault, Ayan Shafqat, Eldar
+Sehayek, Yongming Shen, Fumiya Shigemitsu, snoire, Taojie, Cam Tenny,
+tyfkda, Warren Toomey, Stephen Tu, Alissa Tung, Rafael Ubal, unicornx,
+Amane Uehara, Pablo Ventura, Luc Videau, Xi Wang, WaheedHafez, Keiichi
+Watanabe, Lucas Wolf, Nicolas Wolovick, wxdao, Grant Wu, x653, Andy
+Zhang, Jindong Zhang, Icenowy Zheng, ZhUyU1997, and Zou Chang Wei.
 
-| port | ISA | QEMU machine | boots | `usertests` |
-|---|---|---|---|---|
-| `forks/i386` | x86 | `qemu-system-i386` (pc) | ✅ | ✅ |
-| `forks/amd64` | x86-64 | `qemu-system-x86_64 -kernel` | ✅ | ✅ |
-| `forks/amd64-jserv` | x86-64 | `qemu-system-x86_64` | ✅ | ✅ |
-| `forks/riscv64` | RV64 | `-M virt` | ✅ | ✅ |
-| `forks/riscv32` | RV32 | `-M virt` | ✅ | ✅ |
-| `forks/arm64` | AArch64 | `-M virt,gic-version=3` | ✅ | ✅ |
-| `forks/arm64-pi4` | AArch64 | `-M raspi4b` † | ✅ | ✅ |
-| `forks/arm` | ARM32 | `-M raspi2b` | ✅ | ✅ |
-| `forks/arm-pi1` | ARM32 | `-M raspi1ap` | ✅ | ✅ |
-| `forks/arm-pi1-bis` | ARM32 | `-M raspi1ap` | ✅ | ✅ |
-| `forks/arm-pi2` | ARM32 | `-M raspi2b` | ✅ | ✅ |
-| `forks/arm-pi3` | ARM32 | `-M raspi3b` | ✅ | ✅ |
-| `forks/mips` | MIPS | `-M malta` | ✅ | ✅ * |
-| `forks/loongarch` | LoongArch | `-M virt` | ✅ | ✅ |
-
-Verified on Ubuntu 24.04.2 aarch64, GCC 13.3, QEMU 8.2.2, pinned in the
-`Dockerfile` and re-run per-arch by
-[CI](.github/workflows/docker.yml). "Boots" means a genuinely interactive
-shell over the serial console; six ports (`i386`, `amd64`, `amd64-jserv`,
-`arm-pi1`, `arm-pi1-bis`, `arm-pi3`) also boot into a real graphical
-framebuffer console with a working emulated keyboard — `make
-run-<arch>-qemu-graphics`.
-
-† `arm64-pi4` needs QEMU ≥ 9.1 (`-M raspi4b` did not exist before that);
-this distro ships 8.2.2, so its **boot** is verified against a local source
-build of QEMU and is deliberately kept out of `test-all` and CI. Its
-**build** is in `build-all` like every other port.
-
-\* One port reaches "ALL TESTS PASSED" with some `usertests` sub-tests
-commented out and individually diagnosed: `mips` skips four
-(`sbrktest`, `validatetest`, `exitwait`, `forktest`). Each skip is
-recorded in that port's own `usertests.c` and written up in
-`docs/claude_notes/notes_arch_mips.txt`. **Thirteen of the fourteen
-ports now run `usertests` with nothing skipped at all.**
-
-**No port skips `preempt()`, `mem()` or (outside `mips`) `sbrktest()`
-any more** — all four of those skips were fixed 2026-09-09, and none was
-what it had been recorded as.
-`arm` had no working timer interrupt at all (it drove the SP804, which
-QEMU stubs out with `create_unimp()`). `mips` had the interrupt but a
-yield condition comparing the CP0 Cause register against an x86
-constant, so it could never fire. And `mem()`, skipped in two ports as
-"real memory pressure", was neither a hang nor a kernel bug: `umalloc`'s
-`morecore()` stranded an unusable fragment on the free list per chunk,
-making the whole thing quadratic in RAM — which is why ports with small
-fixed `PHYSTOP` passed it and ports that size memory from real firmware
-did not. And `arm`'s `sbrktest()` was a leak: data aborts were handled in
-ABT mode on a single globally shared stack page that `exit()` never
-unwound, so ~56 deliberate faults ran it off its own page into other
-processes' kernel stacks. All four sibling ARM ports switch to SVC mode
-on exception entry; `forks/arm` was the only one that didn't.
-
-Getting there took dozens of separately diagnosed bugs — modern-GCC
-breakage, missing `.bss` zeroing, SMP boot races, a Top-Byte-Ignore setting
-that aliased every user pointer, a per-CPU GIC timer that left three of four
-cores unpreemptible. Every one is written up per port under
-[`docs/claude_notes/`](docs/claude_notes/), alongside the general
-[debugging techniques](docs/claude_notes/notes_debugging_techniques.txt)
-they produced. The plan that got there is
-[`docs/claude_notes/done/plan_build_and_test.md`](docs/claude_notes/done/plan_build_and_test.md);
-the leftovers it did not cover are in
-[`plan_build_and_test_2.md`](docs/claude_notes/plan_build_and_test_2.md).
-
-## Where this is going next
-
-**Goal 2: factor the near-duplicate trees into a Linux-style layout** —
-`user/`, `kernel/`, `include/` shared, `arch/<name>/` per port. This was
-blocked on goal 1, because merging files you haven't verified still build is
-how this repo's abandoned predecessor (`gitlab.com/xv6-multiarch`) died. That
-block is now lifted, and `make test-all` is the safety net it was waiting
-for. See
-[`docs/claude_notes/plan_factorization.md`](docs/claude_notes/plan_factorization.md).
-
-## Build and run
-
-```sh
-./configure           # detects each wired-up arch's toolchain + qemu-system-*
-make build-riscv64    # build one arch
-make run-riscv64      # build + boot interactively (Ctrl-A X to quit QEMU)
-make quick-test-riscv64   # build + boot headless + assert a shell prompt
-make test-riscv64     # build + boot headless + run that port's usertests suite
-make test-all         # quick boot check of every wired-up arch (~1 min)
-make stress-test-all  # every arch's full usertests run (~25 min)
-make build-all / clean-all / kill-all   # across every wired-up arch
-make build-docker [ARCH=riscv64]        # same, inside the pinned Dockerfile
-```
-
-Same shape for every other wired-up arch — replace `riscv64` with any port
-name from the table above. A few ports also have
-`make run-<arch>-qemu-graphics` (a real GTK window with a framebuffer console
-and an emulated keyboard, instead of `-nographic`). See `./configure --help`
-or `Makefile` for the current list, or `CLAUDE.md` for the full recipe used
-to bring up a new one.
-
-## Layout
-
-```
-forks/<name>/     one port's full tree, own Makefile, own LICENSE
-docs/             provenance evidence, build/factorization plans, per-arch notes
-scripts/          shared test harness (QEMU console/graphics drivers)
-scripts/repo-history/   archived, unmaintained record of how the history was built
-```
-
-Each `forks/<name>/` is a complete, independently-buildable xv6 — nothing is
-shared yet (that's goal 2 above). Several ports target the same ISA
-independently (e.g. `amd64` and `amd64-jserv` are unrelated x86-64 efforts);
-see `docs/provenance.md` for which ports are peers vs. derivatives of each
-other.
-
-## Licensing
-
-Each `forks/<name>/LICENSE` carries the terms from that architecture's
-original repository, all descending from MIT's xv6 permission notice (see
-`forks/i386/LICENSE`). No license text was altered by this merge.
+The code in the files that constitute xv6 is
+Copyright 2006-2020 Frans Kaashoek, Robert Morris, and Russ Cox.
