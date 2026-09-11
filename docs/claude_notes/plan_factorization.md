@@ -1197,6 +1197,24 @@ on-disk format unification, not a byte-identical merge).
 `string.c`, and the arch-independent half of `syscall.c`. Genuinely shared
 logic, but with real per-arch drift accumulated over a decade.
 
+**Working method, settled with the user 2026-09-12 (apply to every
+remaining Tier 3 file):** don't just look for forks that already happen
+to match. For each file: (1) read it in a few candidate forks and judge
+how much of it is genuinely portable vs. really arch-coupled (the
+`pipe.c` work found real couples like this - a `pagetable_t`/`copyin()`
+memory-access model, not just naming); (2) pick ONE baseline - the
+simplest or most modern/canonical implementation, not necessarily the
+current majority - as the shared file's target content; (3) migrate
+other forks toward that baseline deliberately, editing their real
+differences away (a rename, a control-flow reshape, a missing type
+factored out to `kernel/arch/<arch>/kernel.h`) rather than only merging
+the forks that were already identical. This is slower and touches more
+real code per file than the pure byte-identical merges below, but is
+the actual point of Tier 3 - "genuinely shared logic... with real
+per-arch drift", not just administrative dedup of accidental
+duplicates. Verify every migrated fork exactly as everywhere else in
+this plan: build, full boot-test, `docker build` where it applies.
+
 **Started (2026-09-11/12).** `scripts/pairwise_diff.sh` against these six
 files immediately found a real 9-vs-5 split hiding under them: 9 forks
 (`amd64`, `i386`, `arm64`, `arm64-pi4`, `loongarch`, `riscv32`, `riscv64`,
