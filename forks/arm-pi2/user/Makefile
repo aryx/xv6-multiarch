@@ -49,7 +49,7 @@ initcode: initcode.S
 # sat next to the traps.h it includes. make's built-in .S rule uses
 # $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS), so the -iquote added above does
 # not reach it (gotcha 9 in plan_factorization.md).
-ASFLAGS = -iquote .
+ASFLAGS = -iquote . -I ../../../include/kernel
 
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still

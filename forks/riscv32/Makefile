@@ -59,7 +59,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/user
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user
 CFLAGS += -MD
 # claude: this repo has no dedicated riscv32-unknown-elf- package (Ubuntu's
 # gcc-riscv64-unknown-elf is multilib and defaults to rv64/lp64d) - without

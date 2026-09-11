@@ -36,7 +36,7 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # (not Thumb) instruction generation outright, removing the
 # state-switch question entirely - simplest, most robust fix for a
 # freestanding kernel with no reason to ever be in Thumb state.
-CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -I../../include -I../../include/user
+CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -I../../include -I../../include/kernel -I../../include/user
 LDFLAGS = -L.
 # claude: added -mfloat-abi=soft - this modern arm-linux-gnueabihf- cross
 # toolchain defaults to "-march=armv7-a+fp -mfloat-abi=hard" (confirmed
@@ -57,7 +57,7 @@ LDFLAGS = -L.
 # claude: -Ikernel added - wrapper.s does .incbin "font1.bin", and both
 # moved into kernel/ in Phase 0, so the assembler needs to be told where to
 # look. Without it: 'kernel/wrapper.s: Error: file not found: font1.bin'.
-ASFLAGS = -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Ikernel
+ASFLAGS = -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Ikernel -I../../include/kernel
 
 LIBGCC = $(shell $(CC) -print-libgcc-file-name)
 

@@ -37,7 +37,7 @@ initcode: initcode.S
 # .S rule uses $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS), so the -iquote added
 # to CFLAGS above does not reach it, and usys.S alone fails with
 # "traps.h: No such file or directory".
-ASFLAGS = -iquote .
+ASFLAGS = -iquote . -I ../../../include/kernel
 
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still

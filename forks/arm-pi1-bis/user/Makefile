@@ -19,7 +19,7 @@ include ../makefile.inc
 CFLAGS += -iquote . -Wno-infinite-recursion -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 # claude: usys.S needs the same treatment - make's built-in .S rule uses
 # $(ASFLAGS), never $(CFLAGS) (gotcha 9 in plan_factorization.md).
-ASFLAGS += -iquote . -I ../kernel
+ASFLAGS += -iquote . -I ../kernel -I ../../../include/kernel
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still
 # land HERE - so UPROGS below, the $(MKFS) invocation and ULIB are all

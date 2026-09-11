@@ -58,7 +58,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/user
+CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user
 CFLAGS += -MD
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
@@ -79,7 +79,7 @@ CFLAGS += -fno-pie -nopie
 endif
 
 LDFLAGS = -z max-page-size=4096
-ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -I.
+ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -I. -I../../include/kernel
 
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode
 	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS) 

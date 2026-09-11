@@ -79,7 +79,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/user
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/kernel -I../../include/user
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
 # "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -
@@ -94,7 +94,7 @@ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 &
 # defaulted -mabicalls off for a bare-metal target; this modern Ubuntu
 # Linux-userspace-oriented cross toolchain does not.
 CFLAGS += -mno-abicalls
-ASFLAGS = -gdwarf-2 -Ikernel -G0 -march=mips4 -mno-abicalls
+ASFLAGS = -gdwarf-2 -Ikernel -I../../include/kernel -G0 -march=mips4 -mno-abicalls
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m elf32ltsmip -L. -G0
 
