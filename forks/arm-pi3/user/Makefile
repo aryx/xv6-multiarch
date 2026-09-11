@@ -53,14 +53,14 @@ vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/
 vpath %.S ../ulib
 
 # claude: explicit rule, not covered by vpath above - the shared file's
-# name (tests/usertests-pi.c, shared with forks/arm-pi1, forks/arm-pi1-bis
+# name (tests/usertests-arm32.c, shared with forks/arm-pi1, forks/arm-pi1-bis
 # and forks/arm-pi2 - see its own header comment) doesn't match what
 # vpath's "usertests.o: usertests.c" search would look for. -DSKIP_PREEMPT_TEST
 # is this fork's own, real exception (this fork alone boots -smp 4 and
 # preempt() does not finish in it - see notes_arch_arm_pi3.txt's own Bug 22
 # "What it does NOT do") - scoped to this one recipe, not this fork's
 # kernel CC_OPTIONS, since only this one userland test file reads it.
-usertests.o: ../../../tests/usertests-pi.c
+usertests.o: ../../../tests/usertests-arm32.c
 	$(CC) $(CFLAGS) -DSKIP_PREEMPT_TEST -c -o $@ $<
 
 ULIB = arith.o ulib.o usys.o printf.o umalloc.o

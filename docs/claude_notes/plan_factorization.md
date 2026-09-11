@@ -867,6 +867,18 @@ verify any build rule writing into it guards with `mkdir -p`.**
   `-DSKIP_*` flags on its own `usertests.o` recipe, the same shape as
   `usertests-pi.c`'s own `SKIP_PREEMPT_TEST`.
 
+  **`tests/usertests-pi.c` renamed to `tests/usertests-arm32.c`**,
+  widened to `arm`. Pairwise diff against `arm` looked huge (thousands of
+  lines) against every other file, `riscv32`/`riscv64` included - but
+  `diff -b -w` against `usertests-pi.c` specifically showed the real
+  difference was indentation style alone (`arm`'s copy used 4-space
+  indent, every other fork 2-space): same function set, same test
+  coverage. Folded in with the existing `hi = 100*1024`/
+  `SKIP_PREEMPT_TEST` behavior unchanged, and one real fix carried along:
+  a stray `#include "traps.h"` (unused - `validateint()` here probes via
+  `sleep(*p)`, not a raw trap) that `arm` has no such header for at all,
+  dropped rather than worked around. Renamed because the file now covers
+  every ARM32 port, not just the four Raspberry Pi ones.
   `riscv32`/`riscv64` remain real outliers (thousands of lines apart from
   every other fork, including each other) - not attempted. New tools:
   `scripts/debug_timing.py` (`95ceb85`) - per-checkpoint wall-clock timing

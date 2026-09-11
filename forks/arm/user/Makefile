@@ -45,6 +45,13 @@ UPROGS=\
 
 all: $(FS_IMAGE)
 
+# claude: usertests.c is shared now too, with the four Raspberry Pi ARM32
+# ports - see tests/usertests-arm32.c's own header comment. Explicit rule,
+# not covered by vpath above - the shared file's name doesn't match what
+# vpath's "usertests.o: usertests.c" search would look for.
+usertests.o: ../../../tests/usertests-arm32.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^  -L ../ $(LIBGCC)
 	$(OBJDUMP) -S $@ > $*.asm

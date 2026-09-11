@@ -1,28 +1,20 @@
-// claude: shared by forks/arm-pi1, forks/arm-pi1-bis, forks/arm-pi2 and
-// forks/arm-pi3 - the four Raspberry Pi ports (arm-pi1/arm-pi1-bis were
-// already byte-identical; arm-pi2/arm-pi3 differ from them mostly in
-// comment wording and disk-budget numbers already handled by
-// tools/mkfs-margincheck.c). Base taken from forks/arm-pi1 (cleanest of
-// the four - no leftover debugging output). Two real differences:
+// claude: shared by all five ARM32 ports - the four Raspberry Pi ports
+// (forks/arm-pi1, forks/arm-pi1-bis, forks/arm-pi2, forks/arm-pi3) and
+// forks/arm, a different real board (see docs/provenance.md) but the
+// same old test harness. Two real behavioral differences kept:
 //
-//   - validatetest()'s "hi" bound: forks/arm-pi2/forks/arm-pi3 lowered it
-//     from 1100*1024 to 100*1024 with a stated reason (276 fork()+kill()+
-//     wait() iterations pushed CI past its 5-minute budget; 100*1024 still
-//     samples 26 addresses across the interesting range at a fraction of
-//     the cost) - kept, and applied to all four here.
-//   - preempt(): forks/arm-pi3 boots -smp 4 and, as of this factorization
-//     session, preempt() genuinely does not finish there within this
-//     repo's own 300s test budget even in complete isolation - a real,
-//     separate, unresolved issue (see notes_arch_arm_pi3.txt's own Bug 22
-//     "What it does NOT do") from the ALSO-real mem() quadratic-slowdown
-//     bug that same investigation found and fixed (kernel/vm.c's
-//     switchuvm() - so mem() stays unconditional here, sharing all four
-//     forks' identical mem() body without arm-pi3's own now-unneeded
-//     50MB early-break). preempt() is gated behind SKIP_PREEMPT_TEST, a
-//     compile flag forks/arm-pi3's own Makefile alone defines - not a
-//     repo-wide #ifdef, a single named exception for a single fork with a
-//     stated, real reason, same shape as the mem()/preempt() reasoning
-//     above.
+//   - validatetest()'s "hi" bound is 100*1024, not the original
+//     1100*1024: fork()+kill()+wait() 276 times is real page-table work
+//     under QEMU, and this still samples enough of the interesting range
+//     at a fraction of the cost.
+//   - preempt() is gated behind SKIP_PREEMPT_TEST, defined only in
+//     forks/arm-pi3's own Makefile: that fork boots -smp 4 and
+//     preempt() genuinely does not finish there, a real, separate,
+//     unresolved issue from the mem() quadratic-slowdown bug fixed in
+//     kernel/vm.c's switchuvm() (see notes_arch_arm_pi3.txt's own Bug 22).
+//
+// No "#include \"traps.h\"": unused (validateint() below probes a bad
+// pointer via sleep(*p), not a raw trap) and forks/arm has no traps.h.
 #include "param.h"
 #include "types.h"
 #include "stat.h"
@@ -30,7 +22,6 @@
 #include "fs.h"
 #include "fcntl.h"
 #include "syscall.h"
-#include "traps.h"
 #include "memlayout.h"
 
 char buf[8192];

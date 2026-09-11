@@ -55,10 +55,10 @@ vpath %.c ../tests ../ulib ../../../utilities ../../../shells ../../../lib_core/
 vpath %.S ../ulib
 
 # claude: explicit rule, not covered by vpath above - the shared file's
-# name (tests/usertests-pi.c, shared with forks/arm-pi1-bis, forks/arm-pi2
+# name (tests/usertests-arm32.c, shared with forks/arm-pi1-bis, forks/arm-pi2
 # and forks/arm-pi3 - see its own header comment) doesn't match what
 # vpath's "usertests.o: usertests.c" search would look for.
-usertests.o: ../../../tests/usertests-pi.c
+usertests.o: ../../../tests/usertests-arm32.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ULIB = arith.o ulib.o usys.o printf.o umalloc.o

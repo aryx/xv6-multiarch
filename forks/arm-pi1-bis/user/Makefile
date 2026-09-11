@@ -56,7 +56,7 @@ UPROGS=\
 all: $(FS_IMAGE)
 
 # claude: explicit rule, not covered by vpath above - the shared file's
-# name (tests/usertests-pi.c, shared with forks/arm-pi1, forks/arm-pi2 and
+# name (tests/usertests-arm32.c, shared with forks/arm-pi1, forks/arm-pi2 and
 # forks/arm-pi3 - see its own header comment) doesn't match what vpath's
 # "usertests.o: usertests.c" search would look for. Placed AFTER "all:"
 # above deliberately - this fork's own top Makefile invokes "make -C user"
@@ -64,7 +64,7 @@ all: $(FS_IMAGE)
 # becomes the default goal; putting a new rule before "all:" silently
 # replaces it (the exact bug forks/arm-pi2's own notes_arch_arm_pi2.txt
 # Bug 13 already documents, hit again here while wiring this file up).
-usertests.o: ../../../tests/usertests-pi.c
+usertests.o: ../../../tests/usertests-arm32.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 _%: %.o $(ULIB)
