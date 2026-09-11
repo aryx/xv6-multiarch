@@ -1,1 +1,1 @@
-../../../kernel/pipe.c
+../../../kernel/legacy/pipe.c

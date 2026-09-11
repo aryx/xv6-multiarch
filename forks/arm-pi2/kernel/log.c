@@ -1,1 +1,1 @@
-../../../kernel/log.c
+../../../kernel/legacy/log.c

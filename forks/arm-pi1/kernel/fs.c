@@ -1,1 +1,1 @@
-../../../kernel/fs.c
+../../../kernel/legacy/fs.c
