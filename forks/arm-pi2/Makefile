@@ -17,6 +17,9 @@ endif
 # MMIO_SIZE : size of peripherals
 # PERIPHBASE: virtal address of PERIPHBASE[39:15]
 
+# claude: each hw= block's own CFLAGS carries "-I../../kernel" -
+# kernel/spinlock.h is shared there (kernel-only, so top-level kernel/
+# rather than include/kernel/).
 ifeq ($(hw), fvp)
 	PHYSTART  = 0x80000000
 	PHYSIZE   = 0x08000000
@@ -33,7 +36,7 @@ ifeq ($(hw), fvp)
 	# (found via QEMU/gdb; this fvp block's own bug is untested but
 	# shares the identical root cause). -fno-pic -fno-pie added for the
 	# same reason, also documented at length in the rpi2 block below.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O0 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../kernel
 	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
@@ -51,7 +54,7 @@ else ifeq ($(hw), rpi1)
 	# restored "-fno-pic" from the commented-out alternate CFLAGS line
 	# right above (plus "-fno-pie", same reason) - see the rpi2 block's
 	# own long comment below for why an active kernel build needs both.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../kernel
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -118,7 +121,7 @@ else ifeq ($(hw), rpi2)
 	# kernel, not a QEMU quirk - real hardware would behave identically
 	# (or worse: whatever happened to be in that unpopulated GOT-shaped
 	# memory on real silicon is not guaranteed to even be zero).
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -MP -ggdb -Wall -marm -fno-pic -fno-pie -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../kernel
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2
 else

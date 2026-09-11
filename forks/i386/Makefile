@@ -81,7 +81,9 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I. -I../../include -I../../include/kernel -I../../include/user
+# claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
+# so top-level kernel/ rather than include/kernel/).
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Ikernel -Iuser -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: GCC 10+'s -Warray-bounds (part of -Wall) misfires on mp.c's BIOS-
 # memory pointer casts (mpconfig()/mpinit() treat a small physical address
