@@ -834,11 +834,26 @@ verify any build rule writing into it guards with `mkdir -p`.**
     the above) behind a `SKIP_PREEMPT_TEST` flag only that fork's own
     `user/Makefile` recipe defines.
 
+  - `tests/usertests-x86.c` (`15935d9`) — `amd64`, `i386` (the "flat
+    MIT-classic pair", already sharing `tools/mkfs-nomagic.c`). One real,
+    irreducible difference kept behind `#ifndef __x86_64__`:
+    `validateint()`'s 32-bit-only inline asm syscall-trap probe, a no-op
+    on `amd64` already. Needed a genuine pointer-sized `uintp` type per
+    fork (`i386`'s own `uint64` is 8 bytes despite 4-byte pointers there,
+    so using it directly for pointer casts - safe on `amd64` only by
+    coincidence - tripped `-Werror=pointer-to-int-cast`) - added as a
+    direct per-fork typedef in each fork's own `kernel/types.h`, matching
+    `amd64-jserv`'s own pre-existing `uintp`. `amd64-jserv` itself (76-120
+    lines away) stayed out: missing two real test functions (`uio()`,
+    `argptest()`) entirely, not just style.
+
   `riscv32`/`riscv64` remain real outliers (thousands of lines apart from
-  every other fork, including each other); `amd64`/`i386` are close (48
-  lines) but not attempted this session. New tool:
+  every other fork, including each other) - not attempted. New tools:
   `scripts/debug_timing.py` (`95ceb85`) - per-checkpoint wall-clock timing
-  for a `usertests` run, for telling "hung" apart from "just slow".
+  for a `usertests` run, for telling "hung" apart from "just slow";
+  `scripts/pairwise_diff.sh` (later commit) - the diff-line-count matrix
+  generator used to find every cluster above, generalized from a
+  hand-retyped bash loop into a reusable tool.
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
