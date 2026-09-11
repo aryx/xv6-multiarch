@@ -80,8 +80,8 @@ _forktest: forktest.o $(ULIB)
 # "types.h"/"fs.h"/"stat.h"/"param.h" - the USERLAND header set, which it
 # always compiled against, having lived here. -iquote, not -I: mkfs is a
 # host program that also includes the system <fcntl.h> (gotcha 6).
-mkfs: ../../../tools/mkfs-margincheck.c ../../../include/kernel/fs.h ../kernel/conf.h
-	gcc -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs-margincheck.c -I../../../include -I../../../include/user
+mkfs: ../../../tools/mkfs.c ../../../include/kernel/fs.h ../kernel/conf.h
+	gcc -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs.c -I../../../include -I../../../include/user
 	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

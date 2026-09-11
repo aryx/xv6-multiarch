@@ -163,7 +163,7 @@ $T/_forktest: $T/forktest.o $(ULIB)
 # describes - a real CI regression this exact change caused.
 $O/mkfs: ../../tools/mkfs.c ../../include/kernel/fs.h $K/conf.h $K/param.h
 	@mkdir -p $O
-	gcc -Werror -Wall -I. -idirafter kernel -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/arm64
+	gcc -Werror -Wall -I. -idirafter kernel -idirafter ../../include/kernel -o $O/mkfs ../../tools/mkfs.c -I../../include -I../../include/user -I../../include/arch/arm64
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

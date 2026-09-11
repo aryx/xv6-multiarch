@@ -9,4 +9,15 @@
 #define ROOTDEV       1  // device number of file system root disk
 #define MAXARG       32  // max exec arguments
 #define LOGSIZE      10  // max data sectors in on-disk log
+// claude: was implicitly 1099 (tools/mkfs-fixedbudget.c's own hardcoded
+// nblocks (995 - LOGSIZE) plus the inode/bitmap region) until the
+// unified tools/mkfs.c's freeblock-margin check (promoted from
+// tools/mkfs-margincheck.c, which only ever ran for forks/arm-pi2/
+// forks/arm-pi3) failed the build here - this fork always ran this
+// thin, nothing enforced it before. Bumped to 1300 (not the more
+// generous round numbers used elsewhere): confirmed boot-tested at
+// this value, and a much bigger jump broke forks/arm's own boot
+// outright (see that fork's own param.h) - deliberately conservative
+// here until this fork's own headroom is verified the same way.
+#define FSSIZE       1300  // size of file system in blocks
 

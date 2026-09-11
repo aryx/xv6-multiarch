@@ -13,6 +13,20 @@
 #define ROOTDEV       1  // device number of file system root disk
 #define MAXARG       32  // max exec arguments
 #define LOGSIZE      10  // max data sectors in on-disk log
+// claude: was computed by tools/mkfs-fixedbudget.c's own hardcoded
+// nblocks (995 - LOGSIZE) plus whatever the inode/bitmap region worked
+// out to - 1099 total, unchanged, now that tools/mkfs.c computes
+// nblocks = FSSIZE - nmeta instead of the other way around. Already
+// clears the unified mkfs.c's own freeblock-margin check (promoted
+// from tools/mkfs-margincheck.c) with no bump needed - unlike
+// forks/arm-pi1/forks/arm-pi1-bis/forks/mips, don't raise this without
+// checking real hardware boot first: this fork's own kernel/start.c
+// embeds fs.img directly into the kernel ELF and has a hard, tight
+// physical-memory ceiling (`vectbl`, in the first 1MB) that a much
+// bigger FSSIZE (1500 was tried) silently blows through - the kernel
+// still builds, but panics ("empty mark in the list") in kpt_freerange
+// during boot, before any filesystem code runs at all.
+#define FSSIZE       1099  // size of file system in blocks
 
 #define HZ           10
 

@@ -209,8 +209,8 @@ tests/_forktest: tests/forktest.o $(ULIB)
 # and stat.h moved there (include/kernel/fcntl.h itself defines O_CREATE,
 # not POSIX's O_CREAT that this file's own <fcntl.h> use needs - a plain
 # -I here would reintroduce the exact shadowing this rule exists to avoid).
-tools/mkfs: ../../tools/mkfs-nomagic.c ../../include/kernel/fs.h kernel/conf.h
-	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/amd64 -o tools/mkfs ../../tools/mkfs-nomagic.c -I../../include -I../../include/user
+tools/mkfs: ../../tools/mkfs.c ../../include/kernel/fs.h kernel/conf.h
+	gcc -Werror -Wall -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/amd64 -o tools/mkfs ../../tools/mkfs.c -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

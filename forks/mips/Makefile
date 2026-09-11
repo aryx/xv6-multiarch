@@ -261,8 +261,8 @@ _forktest: tests/forktest.o $(ULIB) ulib/user.ld
 	$(LD) $(LDFLAGS) -N -e main -T ulib/user.ld -o _forktest tests/forktest.o ulib/ulib.o ulib/usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
-tools/mkfs: ../../tools/mkfs-fixedbudget.c ../../include/kernel/fs.h kernel/conf.h
-	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs ../../tools/mkfs-fixedbudget.c -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/mips -I../../include -I../../include/user
+tools/mkfs: ../../tools/mkfs.c ../../include/kernel/fs.h kernel/conf.h
+	gcc -g -Werror -Wall -std=gnu99 -o tools/mkfs ../../tools/mkfs.c -idirafter kernel -idirafter ../../include/kernel -idirafter ../../include/arch/mips -I../../include -I../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

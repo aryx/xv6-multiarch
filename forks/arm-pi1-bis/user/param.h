@@ -10,3 +10,10 @@
 #define MAXARG       32  // max exec arguments
 #define LOGSIZE      10  // max data sectors in on-disk log
 
+
+// claude: kept in lockstep with ../kernel/param.h - a SEPARATE, duplicate
+// copy of this file (mkfs's own bare #include "param.h" resolves via
+// -iquote . to this local copy, not the kernel's - see the Pi ports'
+// long-known duplicated-header set in plan_factorization.md). Update
+// both together, since mkfs and the kernel must agree on FSSIZE.
+#define FSSIZE       1250  // size of file system in blocks

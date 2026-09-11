@@ -88,8 +88,8 @@ _forktest: forktest.o $(ULIB)
 # fcntl.h shadow it and lose O_TRUNC (gotcha 6). -iquote is searched for
 # "..." includes only, never for <...>. The binary keeps being built here,
 # so ./mkfs below and .gitignore are unchanged.
-mkfs: ../../../tools/mkfs-fixedbudget.c ../../../include/kernel/fs.h ../kernel/conf.h
-	gcc -Werror -Wall -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs-fixedbudget.c -I../../../include -I../../../include/user
+mkfs: ../../../tools/mkfs.c ../../../include/kernel/fs.h ../kernel/conf.h
+	gcc -Werror -Wall -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

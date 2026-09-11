@@ -9,4 +9,10 @@
 #define ROOTDEV       1  // device number of file system root disk
 #define MAXARG       32  // max exec arguments
 #define LOGSIZE      10  // max data sectors in on-disk log
+// claude: was tools/mkfs-margincheck.c's own hardcoded nblocks (1285,
+// deliberately inflated for real headroom - see notes_arch_arm_pi2.txt)
+// plus whatever the inode/bitmap region worked out to - 1399 total,
+// unchanged, now that tools/mkfs.c computes nblocks = FSSIZE - nmeta
+// instead of the other way around.
+#define FSSIZE       1399  // size of file system in blocks
 
