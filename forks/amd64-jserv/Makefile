@@ -90,7 +90,7 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -I../../include -I../../include/user
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -I../../include -I../../include/kernel -I../../include/user
 CFLAGS += -g -Wall -MD -fno-omit-frame-pointer
 CFLAGS += -ffreestanding -fno-common -nostdlib -Ikernel -Iuser -gdwarf-2 $(XFLAGS) $(OPT)
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
