@@ -855,6 +855,41 @@ verify any build rule writing into it guards with `mkdir -p`.**
   generator used to find every cluster above, generalized from a
   hand-retyped bash loop into a reusable tool.
 
+- **Tier 2 (headers) started: `include/kernel/syscall.h`** (`abf3382`) -
+  eleven of fourteen forks, already byte-identical. First header merge
+  since `include/core/types.h`/`include/user/user.h` (done in an earlier,
+  undocumented session - see this file's own "Started" section above).
+  Placement convention settled with the user this session: `include/core/`
+  is for things that could be compiler builtins, independent of xv6 itself
+  (raw C types); `include/kernel/` is for xv6's own kernel-ABI concepts
+  used by *both* kernel and user code (syscall numbers, `open()` flags,
+  `stat`/file-type constants); a header used by kernel code only would go
+  in a top-level `kernel/` (matching `kernel/init/user/init.c`'s own
+  precedent) - not yet exercised, no kernel-only header merged yet.
+
+  **Gotcha 12: moving a header out of a directory it used to share with
+  its own includer silently breaks a same-directory quoted-include.**
+  Several forks' `kernel/initcode.S` did a bare `#include "syscall.h"`
+  that needed no `-I` flag at all before, because quoted includes check
+  the *including file's own directory* first and `syscall.h` used to sit
+  right there. Once the shared content moved out, every such file needed
+  the new `-I../../include/kernel` added to its own build flags too -
+  easy to miss since nothing else in that file changed. Caught by a real
+  build failure on `forks/arm`, then checked systematically (`grep -rl
+  syscall.h forks/<name>/kernel/` per fork) rather than found one at a
+  time. Combined with the already-known gotcha 9 (`ASFLAGS` is not
+  `CFLAGS`, and some forks split it across *two* files - a top-level
+  Makefile for kernel-side `.S` and a separate `user/Makefile` for the
+  vpath-style forks' own `ulib`), a header move touches more build-flag
+  surface than a `.c` file move does. **Before deleting a fork's last copy
+  of a shared header, `grep -rl` every directory that header lived
+  alongside for bare, same-directory includes of it - not just the files
+  that already show up via a search for the header's own name from the
+  repo root.**
+
+  Candidates fcntl.h (8-fork cluster) and stat.h (7-fork cluster) are
+  queued next, same eleven-ish forks, same include/kernel/ home.
+
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
 `umalloc.c` — 7 arches, one content. Within the riscv family: `ls.c`,
