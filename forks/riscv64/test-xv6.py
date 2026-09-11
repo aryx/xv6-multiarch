@@ -205,17 +205,21 @@ def test_boot():
     q.stop()
 
 def test_usertests(test=""):
-    # claude: lowered from 600 - every wired-up arch's own full usertests
-    # run finishes well under 300s when it's actually going to pass (see
-    # scripts/qemu_console.py's own TIMEOUT change for the measurements
-    # this is based on); a run still going at 300s is hung or
-    # crash-looping, not "almost done", so failing sooner here only saves
-    # CI time, it does not trade away real coverage.
-    timeout = 300
+    # claude: back to 600, NOT the 300s 647cc47 dropped every fork's own
+    # test-xv6.py to. That commit's own measurements didn't cover riscv64:
+    # its usertests.c is the one with real disk-stress subtests
+    # (diskfull/outofinodes) near the end, and a genuinely-passing run
+    # measured here takes ~570s wall-clock (9m29s for the whole `make
+    # test-riscv64`), matching CI's own ~8m12s job time - a run that had
+    # already finished manywrites/badwrite/execout and was still going,
+    # silently, on diskfull looked identical to a hang at 300s. Nothing in
+    # riscv64 changed; 600 is simply what this fork always needed, and
+    # 647cc47's blanket drop just happened to undercut it specifically.
+    timeout = 600
     opt = ""
     if args.q:
         opt = " -q"
-        timeout = 300
+        timeout = 600
     elif test != "":
         opt += " " + test
     q = QEMU(True)
