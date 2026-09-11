@@ -1197,6 +1197,77 @@ on-disk format unification, not a byte-identical merge).
 `string.c`, and the arch-independent half of `syscall.c`. Genuinely shared
 logic, but with real per-arch drift accumulated over a decade.
 
+**Started (2026-09-11/12).** `scripts/pairwise_diff.sh` against these six
+files immediately found a real 9-vs-5 split hiding under them: 9 forks
+(`amd64`, `i386`, `arm64`, `arm64-pi4`, `loongarch`, `riscv32`, `riscv64`,
+`mips`, `amd64-jserv`) use the newer `begin_op()`/`end_op()` concurrent-
+transaction log design; 5 (`arm`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`,
+`arm-pi3`) use the older `begin_trans()`/`commit_trans()` single-
+transaction one - the same shape as `kernel/spinlock.h`'s own pcs/nopcs
+split, just discovered a tier later than expected.
+
+- **Placement strategy change: symlinks, not deleted-file-plus-new--I-
+  flags.** For anything genuinely byte-identical (or made so by a small
+  fix), the user's own correction this session: move the canonical copy
+  to a shared location and replace each fork's own copy with a relative
+  symlink, rather than deleting it and threading `-idirafter`/`-Ikernel`/
+  `-iquote` through every consuming Makefile the way the fs.h/mkfs.c work
+  needed. A symlink keeps the file at the exact path each fork's own
+  build rules already look for it at, so zero Makefile lines change - the
+  fs.h-style flag surgery is only actually necessary when a file has
+  per-fork *content* variation (needing a `conf.h`-style per-fork
+  include) or is host-compiled (mkfs's own `-idirafter`-to-avoid-
+  shadowing-`<fcntl.h>` concern). Confirmed working through a real
+  `docker build` (symlinks survive `COPY` and resolve correctly there
+  too).
+- **`kernel/legacy/{string,pipe,file,bio,log,fs}.c`** - the 4-fork ARM32
+  Pi cluster (`arm-pi1`/`arm-pi1-bis`/`arm-pi2`/`arm-pi3`; `arm` itself
+  isn't byte-identical to its siblings for these, despite sharing the
+  same `begin_trans` log design) was byte-identical across all six
+  files. Named `legacy/` rather than the plain names, on the same
+  majority-gets-the-plain-name principle as `nopcs/spinlock.h`: this is
+  the 5-fork minority, and the plain `kernel/{string,...}.c` names are
+  worth keeping free for the 9-fork `begin_op` majority to grow into
+  rather than being squatted on by the smaller group first.
+- **`kernel/string.c`** - the x86 family (`amd64`, `i386`, `amd64-jserv`),
+  reconciled with one real one-line fix rather than a pure move: a
+  pointer-size cast in `memset()`'s alignment check was hardcoded per
+  fork (`(uint64)dst` / `(int)dst`); `amd64-jserv` already spelled it
+  `(uintp)dst` (this repo's own per-arch pointer-sized typedef, from the
+  `arch.h` work), which turned out to make all three byte-identical once
+  applied everywhere. Kept separate from the wider `begin_op` cluster:
+  all three `#include "x86.h"` for a `stosl`/`stosb` fast path the other
+  ISAs have no equivalent of.
+- **`kernel/pipe.c`** - `arm64`/`arm64-pi4`/`loongarch`, byte-identical
+  modulo one include (`"aarch64.h"`/`"loongarch.h"`) that looked dead
+  (no `cpuid()`/`mycpu()` calls) but wasn't - it was the only source of
+  `pagetable_t`/`pte_t` for `defs.h`'s own `copyin()`/`copyout()`
+  declarations. Dropping it as unused broke all three builds; caught by
+  actually building, not by trusting the diff. Fixed properly rather
+  than re-adding the per-fork include: new `kernel/arch/<arch>/kernel.h`,
+  one directory per ISA mirroring `include/arch/<arch>/arch.h`'s own
+  shape, but for kernel-only per-arch types - `arch.h` is for general
+  types a user program could conceivably need too (the user's own
+  correction: don't let kernel-internal VM types accumulate there).
+  Included as quoted `"kernel.h"`, not angled `<kernel.h>` like `arch.h`
+  - angle brackets stay for the more universal, could-apply-to-any-
+  project Plan9-`u.h` convention `arch.h` represents; this one is
+  specific to how this repo itself organizes its own kernel internals.
+  A fuller `vm.h` (portable VM interface) / `arch_vm.h` (arch-specific
+  VM internals) split, matching prior art in `~/principia/kernel/`, is
+  a bigger Tier 4 design question, deliberately deferred rather than
+  rushed here. `riscv32`/`riscv64` use the same `copyin`/`copyout` model
+  for `pipe.c` but have real control-flow differences (not just naming)
+  - left for a future pass.
+- Still open in the `begin_op` cluster: `file.c`, `bio.c`, `log.c` (the
+  actual transaction-log logic itself - the deepest, riskiest merge in
+  this tier) and the `amd64`/`i386` + `amd64-jserv`/`mips` sub-pairs of
+  `pipe.c`/`file.c`, which use a different, real memory-access model
+  (`addr` as an already-kernel-accessible pointer, vs `arm64`'s own
+  page-table-aware `copyin`/`copyout`) - a genuine per-arch semantic
+  split (CLAUDE.md's own "if a function body differs, it belongs in
+  arch/<name>/"), not a naming difference, and not yet reconciled.
+
 **Tier 4 — the irreducibly arch-specific.** `proc.c`, `vm.c`, `trap.c`,
 `swtch.S`, `entry.S`, `trapasm.S`, `mmu.h`. These stay in `arch/<name>/`.
 The work here is *defining the interface* they implement, not merging them.
