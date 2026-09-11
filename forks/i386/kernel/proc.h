@@ -1,3 +1,10 @@
+// claude: was relying on whichever caller happened to already include
+// mmu.h before this file, for struct taskstate/segdesc/NSEGS just
+// below - true of every caller until kernel/sleeplock.c's own merge
+// (docs/claude_notes/plan_factorization.md) needed this file
+// self-contained instead.
+#include "mmu.h"
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID

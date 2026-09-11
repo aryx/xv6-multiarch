@@ -1,3 +1,11 @@
+// claude: was relying on whichever caller happened to already include
+// spinlock.h/arch_vm.h before this file, for struct spinlock/
+// pagetable_t just below - true of every caller until
+// kernel/sleeplock.c's own merge (docs/claude_notes/
+// plan_factorization.md) needed this file self-contained instead.
+#include "spinlock.h"
+#include "arch_vm.h"
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 sp;

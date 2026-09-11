@@ -1,3 +1,10 @@
+// claude: was relying on whichever caller happened to already include
+// arch_vm.h before this file, for pagetable_t in its own declarations
+// below - true of every caller until kernel/sleeplock.c's own merge
+// (docs/claude_notes/plan_factorization.md) needed this file self-
+// contained instead.
+#include "arch_vm.h"
+
 struct buf;
 struct context;
 struct file;

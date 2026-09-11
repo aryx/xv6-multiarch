@@ -1,6 +1,16 @@
 // This file contains definitions for the
 // x86 memory management unit (MMU).
 
+// claude: was missing an include guard entirely - harmless as long as
+// nothing included this file twice in one translation unit, until
+// kernel/proc.h (also missing its own #include "mmu.h" for the
+// struct taskstate/segdesc/NSEGS its own struct cpu needs) started
+// needing one. Guarding here first keeps that fix from becoming a
+// double-inclusion hazard for any existing caller that already
+// includes both directly.
+#ifndef MMU_H
+#define MMU_H
+
 // Eflags register
 #define FL_TF           0x00000100      // Trap Flag
 #define FL_IF           0x00000200      // Interrupt Enable
@@ -158,3 +168,5 @@ struct desctr
 } __attribute__((packed, aligned(16)));   // important!
 
 #endif
+
+#endif /* MMU_H */

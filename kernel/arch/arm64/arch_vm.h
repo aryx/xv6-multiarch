@@ -1,3 +1,6 @@
+#ifndef ARCH_VM_H
+#define ARCH_VM_H
+
 // claude: arm64's own VM-only, arch-specific types - not general enough
 // for include/arch/arm64/arch.h (which is for types a user program
 // could conceivably need too; these are purely kernel-VM-internal).
@@ -12,3 +15,5 @@
 
 // A page table is 512 PTEs, uint64 each, on this 64-bit port.
 typedef uint64 *pagetable_t;
+
+#endif /* ARCH_VM_H */
