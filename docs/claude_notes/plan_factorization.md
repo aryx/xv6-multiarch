@@ -1055,6 +1055,80 @@ verify any build rule writing into it guards with `mkdir -p`.**
   correctly everywhere, matching Plan9's own `<u.h>`. `amd64-jserv` keeps
   its inline `uint64`/`uintp`, its usual dual-mode exception.
 
+  **Done: `include/kernel/fs.h`, all 14 forks** (`dcdfb3a`, `d09b3fb`,
+  `bff1e71`, `e0c3d5b`, `361bb58`) - the last Tier 2 header, and unlike
+  every other one it turned into a real format unification rather than
+  a byte-identical merge. Two independent axes of drift, found via
+  `scripts/pairwise_diff.sh kernel/fs.h`:
+
+  - **Stored vs. computed superblock.** 7 forks (`amd64`, `i386`,
+    `arm64`, `arm64-pi4`, `loongarch`, `riscv32`, `riscv64`) already
+    wrote `logstart`/`inodestart`/`bmapstart` into the on-disk
+    superblock and had the kernel read them back; the other 7
+    (`amd64-jserv`, `arm-pi2`, `arm-pi3`, `arm`, `arm-pi1`,
+    `arm-pi1-bis`, `mips`) stored only `size`/`nblocks`/`ninodes`/`nlog`
+    and hardcoded the layout offsets (`+2`, `+3`) directly into both
+    `IBLOCK`/`BBLOCK` and each fork's own `mkfs` - the exact fragility
+    (two copies of the same constant, nothing enforcing agreement, no
+    magic number to catch a mismatch) that `tools/mkfs-margincheck.c`'s
+    own freeblock-margin assert existed to paper over. Converted all 7
+    to the stored form: `IBLOCK`/`BBLOCK` switched to their 2-arg
+    (`sb`-taking) form, `iupdate()`/`ilock()` gained a local
+    `struct superblock sb; readsb(...)` (the only two call sites with
+    no superblock already in scope), `log.c`'s `log.start` now reads
+    `sb.logstart` instead of recomputing `sb.size - sb.nlog`, and their
+    own `mkfs` (`amd64-jserv`'s standalone copy,
+    `tools/mkfs-margincheck.c`, `tools/mkfs-fixedbudget.c`) gained the
+    matching writes. Each fork's own disk-budget *algorithm* - dynamic,
+    margincheck's inflated-`nblocks`-plus-assert, or fixedbudget's
+    hardcode-and-assert - was left untouched; only the format the
+    algorithm produces changed.
+  - **The dinode itself.** `amd64-jserv` was the only fork with
+    `ownerid`/`groupid`/`mode` fields (for its own `chmod()`/`chown()`).
+    Rather than keep it as fs.h's usual dual-mode exception, those
+    fields became universal - every other fork carries them zeroed and
+    unused (`mkfs` always `bzero()`s a fresh dinode first, so this cost
+    nothing) rather than forking the format over one feature. That
+    pushed the shared `dinode` to 256 bytes, which forced `NDIRECT`
+    from each fork's own tuned value (12, 28, 58, 60) down to a single
+    58 everywhere - the value that keeps `dinode` size a power of two
+    (required for `BSIZE % sizeof(dinode) == 0`) with the new field
+    layout, at both `BSIZE` values in the tree. Free side effect:
+    `arm` had never received the NDIRECT-bump fix its four siblings
+    got for the same "usertests binary barely fits in MAXFILE" bug
+    (`notes_arch_arm_pi3.txt` etc.) - unifying to 58 fixed it too,
+    without a separate investigation.
+
+  `BSIZE` itself stays genuinely per-fork (coupled to each fork's own
+  disk driver - `amd64-jserv/kernel/fs.h`'s own history already proved
+  changing it silently breaks `ide.c`'s `sector_per_block` assumption)
+  and, per the user's own correction mid-session, does NOT belong in
+  `arch.h` (general per-arch C types, not a filesystem tuning knob) -
+  it moved to a new one-line fork-local `kernel/conf.h` instead, which
+  the shared `fs.h` `#include`s bare. Two build-flag gotchas came up
+  applying this to headers for the first time: `-Ikernel` needed adding
+  to several forks' kernel CFLAGS (gotcha 12 pattern - the shared
+  header's own nested include needs the fork-local dir on the search
+  path) and `-idirafter kernel` (never plain `-I`) needed adding to
+  every fork's own `mkfs` recipe specifically, to avoid shadowing the
+  HOST's real `<fcntl.h>` (gotcha 13's exact lesson, hit fresh on a new
+  header). `amd64` and `i386` also needed `FSSIZE` doubled to 2000
+  (`dcdfb3a`) - the bigger dinode nearly quadrupled their inode-region
+  block cost (`IPB` 8 -> 2) and a real run hit "balloc: out of blocks"
+  during "big files test" at the old 1000, the identical regression
+  `amd64-jserv/kernel/param.h` had already diagnosed and fixed once
+  before.
+
+  Net effect: `tools/mkfs*.c` drops from four on-disk-format families to
+  one shared format produced by three sizing algorithms (`tools/mkfs.c`
+  dynamic, `tools/mkfs-margincheck.c`, `tools/mkfs-fixedbudget.c`) plus
+  two standalone forks (`amd64-jserv`, `riscv64`) that now write the
+  same fields by hand. Collapsing the sizing algorithms themselves
+  further is a separate, not-yet-started question - each currently
+  exists for a real, documented reason (a genuine disk-budget safety
+  margin, a deliberate log-size bump), not because nobody merged them
+  yet.
+
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
 `umalloc.c` — 7 arches, one content. Within the riscv family: `ls.c`,
@@ -1075,6 +1149,9 @@ a separate edit commit. Never mix a move with a change.
 **Tier 2 — headers.** `fcntl.h`, `stat.h`, `syscall.h`, `fs.h`, `user.h`,
 `elf.h`, `spinlock.h`. Higher coupling; these define the interface between
 common and arch code, so settle the boundary here before touching the kernel.
+**All done as of 2026-09-11** (`fs.h` last, see the "Started" section above
+for its own fuller writeup - it was the one header that turned into a real
+on-disk format unification, not a byte-identical merge).
 
 **Tier 3 — common kernel.** `fs.c`, `log.c`, `bio.c`, `pipe.c`, `file.c`,
 `string.c`, and the arch-independent half of `syscall.c`. Genuinely shared
