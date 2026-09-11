@@ -34,7 +34,12 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # and recurses over BOTH sides of pipes/lists/backgrounds, not itself
 # unconditionally) trips a GCC false positive, same one already seen
 # elsewhere in this repo's own sh.c ports.
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+# claude: "-MP" added alongside the pre-existing "-MD" - see this
+# directory's own "-include $(wildcard *.d)" near the bottom for why
+# both are needed together (notes_build_system.txt section 2: "-MD"
+# alone wedges the build solid the moment a listed header is ever
+# renamed or deleted, since Make then has no rule to "build" it).
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include -I../../../include/user   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
 
 all: mkfs initcode fs.img
 
@@ -124,3 +129,11 @@ fs.img: mkfs README $(UPROGS)
 
 clean:
 	rm -f *.o *.d *.asm *.sym fs.img mkfs initcode initcode.out $(UPROGS)
+
+# claude: real bug, not hypothetical - see forks/arm-pi1/user/Makefile's
+# own identical comment (this directory had the exact same gap: -MD
+# generated per-object .d files here all along, but nothing ever
+# -included them, so a shared header's content changing never
+# invalidated an already-built .o in this directory, and this fork's
+# own top-level "clean" target doesn't reach into user/ either).
+-include $(wildcard *.d)

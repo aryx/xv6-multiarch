@@ -69,6 +69,43 @@ forks/arm-pi1-bis route every compile through makefile.inc's
 `quiet-command` macro, which prints "  CC  build/proc.o" and no compiler
 name at all, so a grep for "gcc" reports zero and looks like success.
 
+claude: the table above is frozen as of 2026-09-09, the day it was
+written - read it as history, not current status. Its "generated but
+never read" row for arm-pi1/arm-pi2/arm-pi3/arm-pi1-bis was fixed for
+the KERNEL side of each of those four forks sometime after this note was
+written (their own top-level Makefiles now all carry a real "-include
+$(BUILD)*.d ..." line - check the current tree, not this table, before
+trusting which forks are still exposed).
+
+But this note predates 2026-09-10's Phase 0 layout move (plan_
+factorization.md), which split every fork's userland into its own
+user/ directory - a tree that did not exist when this note's table was
+written, so it was never covered by whatever fixed the kernel side. Its
+own user/Makefile inherited the identical "-MD -MP generated, nothing
+-included" gap (arm-pi2's user/Makefile also had "-MD" with no "-MP" at
+all, a second instance of section 2's bug below), independently of
+whatever fixed kernel/ - and unlike kernel/ (which every fork's own
+top-level "clean" already empties in full), none of these four forks'
+own top-level "clean" reached user/ either, so neither an incremental
+build nor a "clean" rebuild could recover from a stale user/*.o. This
+combination produced a real, reproduced regression 2026-09-11: after
+include/kernel/stat.h's struct stat was widened, arm-pi1's and
+arm-pi3's own "ls" kept printing a blank name and the same wrong
+stat() result for every directory entry - on both a plain "make
+run-arm-pi1"/"run-arm-pi3" and a "make clean-arm-pi1 && make
+build-arm-pi1" - because the stale, pre-merge user/ls.o survived both.
+Fixed the same session, the same way as the kernel side: "-include
+$(wildcard *.d)" added to all four forks' own user/Makefile, "-MP"
+added to arm-pi2's, and (belt-and-suspenders, since dependency tracking
+is the fix that actually matters per this section's own philosophy) all
+four forks' own top-level "clean" now also runs "$(MAKE) -C user
+clean" (arm-pi1-bis's already did). Also added: scripts/qemu_console.py's
+shared test_boot() (and riscv64's own separate test-xv6.py, which isn't
+built on it) now run "ls" and assert a real "sh" entry comes back after
+reaching the shell prompt, specifically so "make test-all" itself
+catches this class of regression - "boot to a shell" alone proved
+nothing about whether read()/fstat() on a directory actually worked.
+
 
 
 2. -MD alone is a loaded gun: pair it with -MP

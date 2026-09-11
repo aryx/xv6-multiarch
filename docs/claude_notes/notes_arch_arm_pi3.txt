@@ -1055,3 +1055,20 @@ the real, current reason; this fork boots with -smp 4. Left gated
 upstream's own original choice) until someone actually roots-causes
 it. mem() is a reasonable candidate to un-gate by default now that its
 own reason for skipping is fixed; preempt() is not.
+
+Bug 23 (real, fixed 2026-09-11): user-reported "ls" regression - a
+stale, pre-header-merge user/ls.o, not a code bug
+
+Same symptom, same root cause, and fixed the same session as
+arm-pi1's own Bug 12 (notes_arch_arm_pi1.txt) - see that entry and
+notes_build_system.txt section 1's own 2026-09-11 addendum for the
+full mechanism. Short version: this fork's own user/Makefile generated
+a per-object "ls.d" dependency file via "-MD -MP" but never
+`-include`d it, and this fork's own top-level "clean" target never
+reached user/ either, so a user/ls.o compiled against an older
+include/kernel/stat.h (before its struct stat was widened) survived
+both a plain "make run-arm-pi3" and a "make clean-arm-pi3 && make
+build-arm-pi3" - reproducing as "ls" printing a blank name and the
+same wrong stat() result for every directory entry. Fixed by
+`-include`ing the .d files here too, and (belt-and-suspenders) making
+"clean" reach user/.

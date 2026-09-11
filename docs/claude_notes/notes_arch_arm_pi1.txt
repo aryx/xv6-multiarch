@@ -764,3 +764,30 @@ command). Verified: "make test-arm-pi1" (full usertests) passes three
 times in a row after the fix, and __aeabi_uidivmod/__udivsi3 no longer
 appear in "_sh" at all. Full writeup: notes_arch_arm_pi1_bis.txt (where
 it was actually traced to ground truth).
+
+Bug 12 (real, fixed 2026-09-11): user-reported "ls" regression - a
+stale, pre-header-merge user/ls.o, not a code bug
+
+The user reported "make run-arm-pi1" showing "weird results with no
+filename listed" from "ls". Reproduced: every directory entry printed a
+blank name and the SAME (wrong) stat() result, repeated for every
+entry. Initial hypotheses (a real -O2 GCC miscompilation of the
+specific "%s %d %d %d\n" printf() call site in utilities/ls.c, on top
+of Bug 11's own local printf.c override) looked confirmed by
+disassembly and by bisecting the optimization level down to -O1/-O0 -
+both "fixed" it. That was a red herring: the actual cause was that
+`user/ls.o` on disk was compiled against an OLDER, pre-merge
+include/kernel/stat.h (before its struct stat was widened to a
+uint64 size), and every one of my "fixes" happened to force a
+recompile of ls.o as a side effect (deleting it, editing a pragma),
+which is what actually fixed it - not the optimization level. Ground
+truth, once found: this directory's own Makefile generates a `ls.d`
+dependency file via "-MD -MP" but never `-include`s it, and this fork's
+own top-level "clean" target never reached user/ either - so neither
+an incremental build nor a "clean" rebuild could recover from a stale
+object here. Full mechanism and the fix (now applied to all four
+"arm-pi1/arm-pi1-bis/arm-pi2/arm-pi3" forks that shared this exact
+gap, plus a new "ls" step added to the shared quick-test harness so
+"make test-all" itself would have caught this): see
+docs/claude_notes/notes_build_system.txt, section 1's own 2026-09-11
+addendum.

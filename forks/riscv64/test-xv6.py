@@ -196,12 +196,23 @@ def test_crash():
     test_dorphan()
 
 # claude: fast smoke check for "make quick-test-riscv64"/"make test-all" -
-# just asserts the kernel boots to an interactive shell, skipping the
-# (much slower) usertests run. "make stress-test-riscv64" still gets the
-# full check via test_usertests() below.
+# asserts the kernel boots to an interactive shell AND that "ls" actually
+# lists a real filename, skipping the (much slower) usertests run. "make
+# stress-test-riscv64" still gets the full check via test_usertests()
+# below.
+#
+# claude: the "ls" step was added after a real regression the old,
+# boot-only version of this check would have missed entirely - see the
+# same-shaped fix in scripts/qemu_console.py's own test_boot() docstring
+# for the full story (arm-pi1/arm-pi3 both reached a shell prompt fine
+# while "ls" printed corrupted output). "sh" is the sentinel because
+# every wired-up fork, riscv64 included, embeds a program by that exact
+# name - it's what "init: starting sh" itself just exec'd.
 def test_boot():
     q = QEMU(True)
     q.monitor(r'^\$', timeout=60)
+    q.cmd("ls\n")
+    q.monitor(r'^sh\s+\d', timeout=15)
     q.stop()
 
 def test_usertests(test=""):

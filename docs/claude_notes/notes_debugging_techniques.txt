@@ -1429,3 +1429,36 @@ ancestry. Replacing it changed nothing, and the "C versus assembly"
 explanation was wrong - it just sounded plausible because the name came
 from x86. Grep for the definition, in that port, before building a theory
 on what an identifier is called.
+
+
+49. In THIS repo specifically, suspect a stale build before a compiler
+    bug - it has a documented history of dependency-tracking gaps
+
+arm-pi1's "ls" printed a blank name and the same wrong stat() result for
+every directory entry. Disassembling the exact printf() call site,
+verifying the caller set up every register and the stack-passed
+argument correctly per AAPCS, and bisecting the optimization level down
+to -O1/-O0 (both "fixed" it) all pointed at a genuine GCC -O2
+miscompilation on this port's own rare target (arm1176jzf-s,
+soft-float) - a real, specific, well-evidenced theory, not a guess. It
+was still wrong. What actually made every "fix" work was that each one
+- deleting ls.o, editing a pragma - forced ls.o to recompile; the
+optimization level was never the variable. Ground truth: this
+directory's own Makefile generated a "ls.d" dependency file via "-MD
+-MP" but never `-include`d it (item 44 and notes_build_system.txt
+section 1 already document this exact gap, just for a different
+directory in the same fork - the kernel side was fixed, user/ was a
+Phase-0-era directory the fix never reached), and the fork's own
+top-level "clean" never touched user/ either - so a ls.o compiled
+against an older struct stat sat there, immune to both a plain rebuild
+and a "clean" one.
+
+The lesson is not "check dependency tracking before disassembling" in
+general - it is that THIS repo has already hit this exact class of bug
+four times independently (item 44's own original finding, plus the
+gotcha-13/14 mkfs-include and CI-regression entries in
+plan_factorization.md), so here specifically it is the higher-prior
+hypothesis, worth a `rm -f *.o *.d && rebuild` five-second check before
+spending an hour on the code-level theory - not because the code-level
+theory was unreasonable, but because this codebase's own build system
+has a track record of manufacturing symptoms that look exactly like it.

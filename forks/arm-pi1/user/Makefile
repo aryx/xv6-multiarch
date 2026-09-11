@@ -119,3 +119,23 @@ fs.img: mkfs README $(UPROGS)
 
 clean:
 	rm -f *.o *.d fs.img mkfs $(UPROGS)
+
+# claude: real bug, not a hypothetical - CFLAGS above has carried "-MD
+# -MP" all along, so every compile here already emits a per-object .d
+# file, but nothing ever read them back: this directory's own object
+# files (ls.o and every other UPROGS .o) were never invalidated by a
+# shared header's content changing (only by ls.c/etc. itself changing),
+# and this fork's own top-level Makefile's "clean" target only empties
+# $(BUILD) (the kernel side) - it never touches this directory either.
+# The two gaps compounded into a real, reproduced regression: after
+# include/kernel/stat.h's struct stat was widened, "ls" here kept
+# printing a blank name and the same wrong stat() result for every
+# directory entry, on both a plain "make run-arm-pi1" (incremental) and
+# a "make clean-arm-pi1 && make build-arm-pi1" (clean doesn't reach
+# here either) - only forcibly deleting ls.o by hand and recompiling
+# fixed it, which is what exposed this. See
+# docs/claude_notes/notes_build_system.txt section 1 - this fork was
+# already on its "generated but never read" list; this is that gap,
+# finally wired up the same way this fork's own kernel/ side already is
+# (../Makefile's own "-include $(BUILD)*.d ...").
+-include $(wildcard *.d)

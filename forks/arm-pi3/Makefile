@@ -357,6 +357,15 @@ install:
 	umount /media/$(USER)/*
 	
 # Rule to clean files.
+#
+# claude: real bug, not hypothetical - see forks/arm-pi1/Makefile's own
+# identical comment on its own "$(MAKE) -C user clean" line, added
+# alongside this one for the same reason. This is the confirmed cause of
+# a real "ls" regression here: a stale, pre-header-merge user/ls.o
+# survived both a plain "make run-arm-pi3" and a "make clean-arm-pi3 &&
+# make build-arm-pi3", because neither this clean nor user/Makefile's
+# own dependency tracking (now fixed alongside this - see its own
+# "-include $(wildcard *.d)") ever reached it.
 clean :
 	-rm -rf $(BUILD)
 	-rm -rf $(BUILD_QEMU)
@@ -365,3 +374,4 @@ clean :
 	-rm -f kernel.list
 	-rm -f kernel.map
 	-rm -f kernel-qemu.map
+	$(MAKE) -C user clean

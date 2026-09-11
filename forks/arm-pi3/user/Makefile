@@ -114,3 +114,15 @@ fs.img: mkfs README $(UPROGS)
 
 clean:
 	rm -f *.o *.d *.asm *.sym fs.img mkfs initcode initcode.out $(UPROGS)
+
+# claude: real bug, not hypothetical - see forks/arm-pi1/user/Makefile's
+# own identical comment (this directory had the exact same gap: -MD -MP
+# generated per-object .d files here all along, but nothing ever
+# -included them, so a shared header's content changing never
+# invalidated an already-built .o in this directory, and this fork's
+# own top-level "clean" target doesn't reach into user/ either). This is
+# the confirmed cause of a real "ls" regression here after
+# include/kernel/stat.h's struct stat was widened: a stale, pre-merge
+# ls.o kept sitting in this directory across both a plain "make
+# run-arm-pi3" and a "make clean-arm-pi3 && make build-arm-pi3".
+-include $(wildcard *.d)

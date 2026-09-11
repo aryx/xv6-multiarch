@@ -82,7 +82,18 @@ $(FS_IMAGE): $(MKFS)  $(UPROGS)
 	$(MKFS) $@  $(UPROGS) README
 	$(OBJDUMP) -S usys.o > usys.asm
 
-clean: 
+clean:
 	rm -f *.o *.d *.asm *.sym $(FS_IMAGE) \
 	.gdbinit \
 	$(UPROGS)
+
+# claude: real bug, not hypothetical - see forks/arm-pi1/user/Makefile's
+# own identical comment (this directory had the exact same gap: the
+# base CFLAGS this Makefile inherits via "include ../makefile.inc" has
+# carried "-MD -MP" all along, generating a per-object .d file here on
+# every compile, but nothing ever -included them, so a shared header's
+# content changing never invalidated an already-built .o in this
+# directory - and this fork's own top-level "clean" target, unlike its
+# three siblings', DOES already reach into user/ via "make -C user
+# clean", but that alone was never enough without this).
+-include $(wildcard *.d)

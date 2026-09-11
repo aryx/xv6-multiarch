@@ -309,6 +309,12 @@ install:
 	umount /media/$(USER)/*
 	
 # Rule to clean files.
+#
+# claude: real bug, not hypothetical - see forks/arm-pi1/Makefile's own
+# identical comment on its own "$(MAKE) -C user clean" line, added
+# alongside this one for the same reason (this fork's own user/ had the
+# exact same untracked-staleness gap - see user/Makefile's own
+# "-include $(wildcard *.d)").
 clean :
 	-rm -rf $(BUILD)
 	-rm -f *.img
@@ -316,3 +322,4 @@ clean :
 	-rm -f kernel.list
 	-rm -f kernel.map
 	-rm -f kernel-qemu.map
+	$(MAKE) -C user clean

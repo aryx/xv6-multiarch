@@ -265,9 +265,20 @@ $(BUILD):
 	mkdir $@
 
 # Rule to clean files.
+#
+# claude: real bug, not hypothetical - this used to stop at the kernel
+# side ($(BUILD) etc.), leaving every user/*.o and its ELF binaries
+# completely untouched by "make clean-arm-pi1", on the wrong assumption
+# that user/'s own "-MD"-generated .d files kept it self-tracking. They
+# didn't (nothing -included them - see user/Makefile's own comment on
+# its "-include $(wildcard *.d)" line, added alongside this), so a
+# shared header changing content could leave a stale, pre-change .o
+# sitting in user/ across "make clean-arm-pi1 && make build-arm-pi1" -
+# confirmed as the real cause of an "ls" regression here.
 clean :
 	-rm -rf $(BUILD)
 	-rm -f $(TARGET)
 	-rm -f $(LIST)
 	-rm -f $(MAP)
 	-rm -f kernel-qemu.img kernel-qemu.map
+	$(MAKE) -C user clean

@@ -115,18 +115,41 @@ class QEMU:
             self.proc.kill()
 
 
-def test_boot(make_qemu):
-    """Fast smoke check: boot to a shell prompt, no usertests.
+def test_boot(make_qemu, cmd_terminator="\n"):
+    """Fast smoke check: boot to a shell prompt, then run "ls" and assert
+    it actually lists a real filename, not just that the kernel boots.
 
     make_qemu: zero-arg callable returning a QEMU(reset=True) instance -
     see each fork's own test-xv6.py for its reset_cmds/qemu_argv.
+
+    claude: the "ls" step was added after a real regression this check
+    used to miss entirely - arm-pi1 and arm-pi3 both reached a shell
+    prompt fine (this function's old body would have reported them
+    green) while "ls" printed a blank name and a repeated, wrong stat()
+    result for every directory entry (a real -O2 GCC codegen bug on
+    arm-pi1's own target, and a stale/pre-merge build on arm-pi3's - see
+    notes_arch_arm_pi1.txt and the commit that added this check for the
+    full story). "boot to a shell" alone proves the kernel and scheduler
+    work; it says nothing about whether syscalls like read()/fstat() on
+    a directory are actually returning correct data. "sh" is the
+    sentinel because every wired-up fork embeds a program by that exact
+    name (it's what "init: starting sh" itself just exec'd), unlike
+    "README" (forks/arm has none) or any other single UPROGS entry.
+    cmd_terminator matches each fork's own shell input convention - see
+    main()'s own docstring below for why it's not always "\\n".
     """
     q = make_qemu()
     try:
         if not q.wait_for(r"init: starting sh", r"^\$", timeout=60):
             print("ERROR: xv6 did not boot to a shell within 60s")
             sys.exit(1)
-        print("boot: reached shell prompt")
+        q.cmd("ls" + cmd_terminator)
+        if not q.wait_for(r"^sh\s+\d", timeout=15):
+            print("ERROR: 'ls' did not list a real 'sh' entry within 15s "
+                  "(kernel booted, but read()/fstat() on a directory "
+                  "looks broken or the build is stale)")
+            sys.exit(1)
+        print("boot: reached shell prompt and 'ls' listed real filenames")
     finally:
         q.kill()
 
@@ -170,8 +193,15 @@ def main(make_qemu, usertests_cmd="usertests\n", timeout=300):
     "./test-xv6.py boot" runs the fast smoke check; anything else
     (including no argument at all) runs the full usertests check - same
     dispatch every fork's own test-xv6.py used before this factoring.
+
+    claude: test_boot()'s own "ls" step needs the same shell-input line
+    ending this fork's usertests_cmd already encodes (see
+    test_usertests()'s own docstring - a few ports only treat '\\r' as
+    Enter) - derived from usertests_cmd's own last character instead of
+    a separate parameter, so no fork's own test-xv6.py needs editing to
+    pick it up.
     """
     if len(sys.argv) > 1 and sys.argv[1] == "boot":
-        test_boot(make_qemu)
+        test_boot(make_qemu, cmd_terminator=usertests_cmd[-1])
     else:
         test_usertests(make_qemu, usertests_cmd=usertests_cmd, timeout=timeout)
