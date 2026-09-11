@@ -7,7 +7,7 @@
 
 #define stat xv6_stat  // avoid clash with host struct stat
 #include "../kernel/types.h"
-#include "../kernel/fs.h"
+#include "fs.h"
 #include "../kernel/stat.h"
 #include "../kernel/param.h"
 
@@ -92,10 +92,14 @@ main(int argc, char *argv[])
   nmeta = 2 + ninodeblocks + nbitmap;
   nblocks = FSSIZE - nlog - nmeta;
 
+  sb.magic = xint(FSMAGIC);
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks); // so whole disk is size sectors
   sb.ninodes = xint(NINODES);
   sb.nlog = xint(nlog);
+  sb.logstart = xint(FSSIZE - nlog);
+  sb.inodestart = xint(2);
+  sb.bmapstart = xint(2 + ninodeblocks);
 
   printf("nmeta %d (boot, super, inode blocks %u, bitmap blocks %u) blocks %d log %u total %d\n", nmeta, ninodeblocks, nbitmap, nblocks, nlog, FSSIZE);
 
@@ -179,7 +183,7 @@ winode(uint inum, struct dinode *ip)
   uint bn;
   struct dinode *dip;
 
-  bn = IBLOCK(inum);
+  bn = IBLOCK(inum, sb);
   rsect(bn, buf);
   dip = ((struct dinode*)buf) + (inum % IPB);
   *dip = *ip;
@@ -193,7 +197,7 @@ rinode(uint inum, struct dinode *ip)
   uint bn;
   struct dinode *dip;
 
-  bn = IBLOCK(inum);
+  bn = IBLOCK(inum, sb);
   rsect(bn, buf);
   dip = ((struct dinode*)buf) + (inum % IPB);
   *ip = *dip;

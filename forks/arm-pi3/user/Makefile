@@ -22,7 +22,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # class as forks/arm/makefile.inc's own -mfloat-abi comment.
 # -MP joins -MD so a vanished header is a rebuild, not a hard error;
 # -Wno-infinite-recursion is the GCC 12+ false positive on sh.c's runcmd().
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../kernel -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; -I../kernel so the shared include/kernel/fs.h's own bare #include "conf.h" resolves to this fork's own kernel/conf.h; -I../../../include/kernel so tests/usertests-arm32.c's own bare #include "fs.h" finds the shared header now that user/fs.h (this fork's old duplicate copy) is gone
 
 all: mkfs initcode fs.img
 
@@ -80,8 +80,8 @@ _forktest: forktest.o $(ULIB)
 # "types.h"/"fs.h"/"stat.h"/"param.h" - the USERLAND header set, which it
 # always compiled against, having lived here. -iquote, not -I: mkfs is a
 # host program that also includes the system <fcntl.h> (gotcha 6).
-mkfs: ../../../tools/mkfs-margincheck.c fs.h
-	gcc -iquote . -o mkfs ../../../tools/mkfs-margincheck.c -I../../../include -I../../../include/user
+mkfs: ../../../tools/mkfs-margincheck.c ../../../include/kernel/fs.h ../kernel/conf.h
+	gcc -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs-margincheck.c -I../../../include -I../../../include/user
 	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

@@ -39,7 +39,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # both are needed together (notes_build_system.txt section 2: "-MD"
 # alone wedges the build solid the moment a listed header is ever
 # renamed or deleted, since Make then has no rule to "build" it).
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../../../include -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../kernel -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; -I../kernel so the shared include/kernel/fs.h's own bare #include "conf.h" resolves to this fork's own kernel/conf.h; -I../../../include/kernel so tests/usertests-arm32.c's own bare #include "fs.h" finds the shared header now that user/fs.h (this fork's old duplicate copy) is gone
 
 all: mkfs initcode fs.img
 
@@ -97,8 +97,8 @@ _forktest: forktest.o $(ULIB)
 # is a host program that also includes the system <fcntl.h>, and -I would
 # let xv6's own fcntl.h shadow it (gotcha 6). The binary is still built
 # here, so ./mkfs below and .gitignore are unchanged.
-mkfs: ../../../tools/mkfs-margincheck.c fs.h
-	gcc -iquote . -o mkfs ../../../tools/mkfs-margincheck.c -I../../../include -I../../../include/user
+mkfs: ../../../tools/mkfs-margincheck.c ../../../include/kernel/fs.h ../kernel/conf.h
+	gcc -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs-margincheck.c -I../../../include -I../../../include/user
 	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

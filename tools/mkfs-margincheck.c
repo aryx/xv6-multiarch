@@ -2,11 +2,13 @@
 //
 // claude: shared by forks/arm-pi2 and forks/arm-pi3 - their own copies
 // differed only in comment wording (forks/arm-pi3's comment already named
-// this pairing as a factorization candidate). Same no-magic,
-// nothing-stored-on-disk superblock as tools/mkfs-fixedbudget.c's four
-// forks, but a different mkfs algorithm: `nblocks` here is a deliberately
-// inflated 1285 (not the minimal value the budget would allow), because
-// this fork already hit a real bug from cutting it close - see the
+// this pairing as a factorization candidate). Since include/kernel/fs.h
+// unified the on-disk superblock (magic, stored logstart/inodestart/
+// bmapstart) across every fork, this file now writes the same fields
+// tools/mkfs.c does; what still keeps it a separate file is its own
+// disk-budget algorithm - `nblocks` here is a deliberately inflated
+// 1285 (not the minimal value the budget would allow), because this
+// fork already hit a real bug from cutting it close - see the
 // freeblock-margin check below, added after growth in the shared userland
 // library silently ate into the disk budget and the kernel's own balloc()
 // ran out mid-usertests ("iderw: sector out of range"), several minutes
@@ -118,10 +120,14 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  sb.magic = xint(FSMAGIC);
   sb.size = xint(size);
   sb.nblocks = xint(nblocks); // so whole disk is size sectors
   sb.ninodes = xint(ninodes);
   sb.nlog = xint(nlog);
+  sb.inodestart = xint(2);
+  sb.bmapstart = xint(ninodes / IPB + 3);
+  sb.logstart = xint(size - nlog);
 
   bitblocks = size/(512*8) + 1;
   usedblocks = ninodes / IPB + 3 + bitblocks;
@@ -239,7 +245,7 @@ wsect(uint sec, void *buf)
 uint
 i2b(uint inum)
 {
-  return (inum / IPB) + 2;
+  return (inum / IPB) + xint(sb.inodestart);
 }
 
 void
@@ -308,8 +314,8 @@ balloc(int used)
   for(i = 0; i < used; i++){
     buf[i/8] = buf[i/8] | (0x1 << (i%8));
   }
-  printf("balloc: write bitmap block at sector %zu\n", ninodes/IPB + 3);
-  wsect(ninodes / IPB + 3, buf);
+  printf("balloc: write bitmap block at sector %u\n", xint(sb.bmapstart));
+  wsect(xint(sb.bmapstart), buf);
 }
 
 #define min(a, b) ((a) < (b) ? (a) : (b))

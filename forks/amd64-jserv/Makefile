@@ -270,9 +270,9 @@ $(FS_DIR)/forktest: $(UOBJ_DIR)/forktest.o $(ULIB)
 		$(UOBJ_DIR)/usys.o
 	$(OBJDUMP) -S $(FS_DIR)/forktest > $(OUT)/forktest.asm
 
-$(OUT)/mkfs: tools/mkfs.c kernel/fs.h
+$(OUT)/mkfs: tools/mkfs.c ../../include/kernel/fs.h kernel/conf.h
 	@mkdir -p $(OUT)
-	$(HOST_CC) -Werror -Wall -o $@ tools/mkfs.c -I../../include -I../../include/user
+	$(HOST_CC) -Werror -Wall -idirafter ../../include/kernel -idirafter kernel -o $@ tools/mkfs.c -I../../include -I../../include/user
 
 out/opfs: tools/opfs.c tools/libfs.c
 	@mkdir -p $(OUT)
