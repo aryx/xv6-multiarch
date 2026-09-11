@@ -68,7 +68,9 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # Deterministic builds.
 DETFLAGS = -ffile-prefix-map=$(CURDIR)=.
 
-CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -I. -I../../include -I../../include/kernel -I../../include/user
+# claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
+# (kernel-only, so top-level kernel/ rather than include/kernel/).
+CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs
 CFLAGS += $(DETFLAGS)
 CFLAGS += -march=rv64gc
 CFLAGS += -std=gnu99

@@ -65,7 +65,9 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 ASFLAGS = -march=loongarch64 -mabi=lp64s
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user
+# claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
+# (kernel-only, so top-level kernel/ rather than include/kernel/).
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs
 CFLAGS += -MD -MP
 CFLAGS += -march=loongarch64 -mabi=lp64s
 CFLAGS += -ffreestanding -fno-common -nostdlib
