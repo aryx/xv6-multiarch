@@ -94,7 +94,7 @@ exec(char *path, char **argv)
   curr_proc->tf->sp = sp;
   curr_proc->tf->r0 = ustack[1];
   curr_proc->tf->r1 = ustack[2];
-  switchuvm(curr_proc, old_sz);
+  switchuvm(curr_proc, old_sz, 1);
   freevm(oldpgdir);
   return 0;
 

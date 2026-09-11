@@ -194,14 +194,36 @@ switchkvm_new(void)
 }
 
 // Switch TSS and h/w page table to correspond to process p.
+//
+// claude: writeback_old gates the "writeback the OLD process' cached
+// data" step below - real, necessary cache-coherency work when p is
+// genuinely a DIFFERENT process/image than what the CPU last ran
+// (scheduler()'s process switch, exec()'s image replacement), since
+// every xv6 process shares the same VA range starting at 0 and could
+// otherwise read a predecessor's stale cached data there. growproc()
+// (sbrk()'s caller) calls this on the SAME process just to reload its
+// own updated page table after allocuvm()/deallocuvm() - there is no
+// "old process" in that case, so the writeback was pure waste, and
+// scaling with the CURRENT process size on every single sbrk() call
+// made a sustained-allocation workload (usertests' own mem()) quadratic
+// in heap size: measured at 420s for a 50MB-capped run under QEMU
+// before this fix, ~1s after - next to forks/arm-pi2's ~4s for its own
+// FULL ~960MB run (that port's switchuvm() has no such flush at all).
+// Same bug shape forks/arm64-pi4 already found and fixed with its own
+// p->cachesync flag (that one gates I-cache sync for newly-written
+// code, a related but distinct concern from this D-cache writeback) -
+// ported the same principle: only do the expensive part where it is
+// actually needed. Full writeup, including why this is a real fix and
+// not a QEMU-timing or test-tuned artifact: notes_arch_arm_pi3.txt's
+// own Bug 22.
 void
-switchuvm(struct proc *p, u32 old_sz)
+switchuvm(struct proc *p, u32 old_sz, int writeback_old)
 {
   #ifndef RPI1
   // Writeback the old process' cached data. The exception is
   // on the switch to the first user process, when there is
   // no valid old user mapping.
-  if (old_sz > 0) {
+  if (writeback_old && old_sz > 0) {
     if (old_sz < p->sz) {
       flush_dcache_range((void*) 0x0, old_sz);
       } else {

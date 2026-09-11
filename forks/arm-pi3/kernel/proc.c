@@ -135,7 +135,11 @@ growproc(int n)
       return -1;
   }
   curr_proc->sz = sz;
-  switchuvm(curr_proc, old_sz);
+  // claude: writeback_old=0 - growproc() reloads curr_proc's OWN page
+  // table after resizing it, not a switch to a different process/image,
+  // so there is no "old process" cached data to write back. See
+  // switchuvm()'s own comment.
+  switchuvm(curr_proc, old_sz, 0);
   return 0;
 }
 
@@ -294,7 +298,7 @@ scheduler(void)
       }
       curr_proc = p;
 //cprintf("before switching page table\n");
-      switchuvm(p, old_sz);
+      switchuvm(p, old_sz, 1);
       p->state = RUNNING;
 //cprintf("after switching page table\n");
 

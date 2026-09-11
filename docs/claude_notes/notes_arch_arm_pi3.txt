@@ -950,3 +950,108 @@ interesting range.
 
 Verified: "make test-arm-pi3" reaches ALL TESTS PASSED in ~49s (was:
 a kernel panic partway into every CI run).
+
+Bug 22 (real, fixed 2026-09-11): usertests' own mem() sub-test looked
+hung - it was quadratic, same bug shape forks/arm64-pi4 already fixed
+----------------------------------------------------------------------------------------------------------------------
+Found while trying to share tests/usertests.c across the four Pi ports
+(docs/claude_notes/plan_factorization.md) - this fork's own copy skips
+mem() and preempt() by default (opt-in via "usertests m"/"usertests p",
+which forks/arm-pi3/test-xv6.py never passes), which turned out to
+trace via git blame straight to H Paterson's original 2019 upstream
+commit (0ed5518c) - not a regression from any factorization work, and
+not something the recent printf(1,...) -> printf(...) API-migration
+commit (b796fcd) touched beyond the message text. That raised the
+question of whether the gating is still needed, or just stale.
+
+Evidence first (see scripts/debug_timing.py, written for exactly this
+question - "how long does each stage take", not just pass/fail):
+ - Ran "usertests p m" directly. It did NOT hang: left running for the
+   repo's own 300s CI budget (docs/claude_notes/notes_debugging_
+   techniques.txt's own "measure, don't guess" rule) it progressed past
+   mem() at 420s, printing "Tested first 50MB. Breaking early for fast
+   testing." (this fork's own mem() already caps the allocation loop at
+   0x147A blocks/~50MB, unlike forks/arm-pi2's fully uncapped version -
+   also inherited from the 2019 upstream, also not itself the problem).
+ - For comparison, forks/arm-pi2 runs mem() unconditionally and
+   finishes its own FULL ~960MB run in ~4s (see that fork's own
+   notes_arch_arm_pi2.txt Bug 12) - both forks share the identical,
+   already-fixed lib_core/libc/ulib/umalloc.c, so the fragmentation bug
+   Bug 12 fixed there is not the explanation for a 100x-worse result on
+   a SMALLER (50MB vs 960MB) workload here.
+ - gdb (QEMU's own gdbstub) was tried first, matching forks/arm-pi2's
+   own successful technique for its Bug 12 - unlike there, it was not
+   usable here: "info registers" returned identical pc=0x8003c/sp=0/
+   lr=0 on all four CPU threads, and "x/8i $pc" could not even read
+   memory at that address. Whether that is this board's own AArch64-
+   EL-stub boot chain (armstub64.S dropping into AArch32 EL1, unlike
+   arm-pi2's much simpler direct 32-bit boot) or a QEMU raspi3b
+   gdbstub limitation was not chased further - the timing approach
+   above answered the actual question without it.
+ - -smp 1 was tried to isolate whether this is SMP-specific: QEMU
+   refuses it outright ("Invalid SMP CPUs 1. The min CPUs supported by
+   machine 'raspi3b' is 4"), so that comparison is not available on
+   this board.
+
+Cause: kernel/vm.c's switchuvm(p, old_sz) unconditionally does a full
+"writeback the old process' cached data" flush_dcache_range(0x0,
+min(old_sz, p->sz)) - real, necessary work when p is genuinely a
+DIFFERENT process/image than what the CPU last ran (every xv6 process
+shares the same VA range starting at 0, so an incoming process really
+could read a predecessor's stale cached data there without it). But
+kernel/proc.c's growproc() - sbrk()'s caller, and so mem()'s own
+malloc(10001) loop's real hot path - calls switchuvm(curr_proc, old_sz)
+on ITSELF, just to reload its own page table after allocuvm()/
+deallocuvm() changed it. There is no "old process" in that call at all;
+the flush ran anyway, scaled to the CURRENT (and growing) process size,
+on every single sbrk() call. A heap that grows to N bytes via repeated
+small sbrk()s pays that flush O(N) times at up to O(N) cost each - the
+same O(n^2) shape forks/arm64-pi4 already found and fixed (that port's
+own p->cachesync flag gates I-cache sync for newly-written code, a
+related but distinct concern from this D-cache writeback-of-a-
+predecessor; see that fork's own proc.c). forks/arm-pi2's own
+switchuvm() has no such flush at all, which is why it was never exposed
+there regardless of workload size.
+
+Fix: kernel/vm.c's switchuvm() gained a third parameter, writeback_old
+- the three call sites are scheduler() and exec() (genuine process/
+image switches, pass 1, behaviour unchanged) and growproc() (pass 0 -
+there is no old process to write back). No change to the "reload this
+process' own page table" half of switchuvm() (the memmove of pgdir into
+kpgdir, TLB flush, and new-region cache invalidate for growth) - that
+part is real, structural work every one of the three call sites still
+needs, since allocuvm()/deallocuvm() really did just change which
+physical pages p->pgdir points at.
+
+Not a QEMU artifact and not a test-tuned hack: flush_dcache_range()
+loops per cache line issuing a real ARM cache-maintenance instruction
+each time (see kernel/exception.S's own loop_flush_dcache_range) -
+QEMU does not model cache timing, but it still executes that many real
+loop iterations, the same instruction count real silicon would. Real
+Pi 3 hardware would hit the identical O(n^2) wall on the identical
+sustained-sbrk() workload, just later (faster CPU, bigger constant
+before it becomes painful) - this removes provably unnecessary work
+in one specific call path, it does not weaken the cache-coherency
+guarantee anywhere a real switch actually happens.
+
+Result: mem() (still capped at 50MB by this fork's own upstream-
+inherited early break) now finishes in ~1s, down from 420s - see
+scripts/debug_timing.py's own timestamped output. "make test-arm-pi3"
+(default args, mem()/preempt() both still skipped) re-verified green
+after the change: ALL TESTS PASSED, no regression in the normal path.
+
+What it does NOT do: fix preempt(). Tried in the same investigation,
+also via scripts/debug_timing.py, in complete isolation (confirmed no
+other QEMU instance running) and given the same 300s budget: preempt()
+alone did not reach "ALL TESTS PASSED" - not a contention artifact
+from other diagnostic runs (an earlier attempt was contaminated by a
+leftover QEMU process and gave a false hang reading; re-run clean, the
+result held). preempt() does not share mem()'s "sbrk() in a growing
+loop" shape at all, so this fix does not apply to it, and the failure
+was not chased further this session. The original upstream skip
+message - "Test is designed for two or less cores" - may well still be
+the real, current reason; this fork boots with -smp 4. Left gated
+(usertests' own default "usertests" command still skips it, matching
+upstream's own original choice) until someone actually roots-causes
+it. mem() is a reasonable candidate to un-gate by default now that its
+own reason for skipping is fixed; preempt() is not.
