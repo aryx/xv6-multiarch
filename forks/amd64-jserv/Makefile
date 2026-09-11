@@ -156,17 +156,22 @@ $(UOBJ_DIR)/%.o: ../../kernel/init/user/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<
 
-# claude: the portable test programs, shared at the repo root. usertests.c is
-# NOT among them - it stays in this fork's own tests/.
+# claude: the portable test programs, shared at the repo root.
 $(UOBJ_DIR)/%.o: ../../tests/%.c
 	@mkdir -p $(UOBJ_DIR)
 	$(CC) $(CFLAGS_user) -c -o $@ $<
 
-# claude: the portable test programs, shared at the repo root. usertests.c
-# is NOT among them - it is genuinely per-port (twelve variants, each with its
-# own skipped sub-tests) and stays in each fork's own tests/.
 tests/%.o: ../../tests/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# claude: usertests.c itself is shared too now, with forks/mips - see
+# tests/usertests-jserv-mips.c's own header comment. Explicit rule,
+# not covered by the pattern rule above (the shared file's name doesn't
+# match what "$(UOBJ_DIR)/usertests.o: ../../tests/usertests.c" would
+# look for) - this fork runs every sub-test, so no -D flags needed here.
+$(UOBJ_DIR)/usertests.o: ../../tests/usertests-jserv-mips.c
+	@mkdir -p $(UOBJ_DIR)
+	$(CC) $(CFLAGS_user) -c -o $@ $<
 
 $(UOBJ_DIR)/%.o: ../../lib_core/libc/ulib/%.c
 	@mkdir -p $(UOBJ_DIR)

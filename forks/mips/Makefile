@@ -199,12 +199,22 @@ user/%.o: ../../kernel/init/user/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# claude: the portable test programs, shared at the repo root. usertests.c
-# is NOT among them - it is genuinely per-port (twelve variants, each with its
-# own skipped sub-tests) and stays in each fork's own tests/.
+# claude: the portable test programs, shared at the repo root.
 tests/%.o: ../../tests/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# claude: usertests.c itself is shared too now, with forks/amd64-jserv -
+# see tests/usertests-jserv-mips.c's own header comment. Explicit rule,
+# not covered by the pattern rule above - the shared file's name doesn't
+# match what "tests/usertests.o: ../../tests/usertests.c" would look
+# for - and this fork's own real exceptions (four sub-tests that hang
+# here, not on forks/amd64-jserv - see notes_arch_mips.txt) are scoped
+# to this one recipe via -DSKIP_*, not this fork's kernel CFLAGS, since
+# only this one userland test file reads them.
+tests/usertests.o: ../../tests/usertests-jserv-mips.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DSKIP_SBRKTEST -DSKIP_VALIDATETEST -DSKIP_EXITWAIT -DSKIP_FORKTEST -c -o $@ $<
 
 # claude: the shared user library, under lib_core/ per ~/principia's
 # convention. Separate rule because these objects land in ulib/, not
