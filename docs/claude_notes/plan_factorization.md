@@ -1207,7 +1207,7 @@ simplest or most modern/canonical implementation, not necessarily the
 current majority - as the shared file's target content; (3) migrate
 other forks toward that baseline deliberately, editing their real
 differences away (a rename, a control-flow reshape, a missing type
-factored out to `kernel/arch/<arch>/kernel.h`) rather than only merging
+factored out to `kernel/arch/<arch>/arch_vm.h`) rather than only merging
 the forks that were already identical. This is slower and touches more
 real code per file than the pure byte-identical merges below, but is
 the actual point of Tier 3 - "genuinely shared logic... with real
@@ -1243,6 +1243,34 @@ interface everyone else already calls. **Before accepting a split as
 implementation instead** - the fork lacking the interface is usually
 the trivial case, not the hard one, since it means that fork's own
 hardware/memory model doesn't need to do the real work at all.
+
+**Naming settled, same conversation: `kernel/vm.h` (portable interface,
+not written yet) / `kernel/arch/<arch>/arch_vm.h` (per-arch types
+implementing it) - xv6-style names, not `~/principia/kernel`'s own
+`portfns_`/`portdat_`/`dat_` prefixes (that repo's own equivalent
+convention, considered and explicitly not copied verbatim: same idea,
+adapted naming).** `kernel/arch/arm64/kernel.h` (this session's first
+name for the `pagetable_t`/`pte_t` file) got renamed to `arch_vm.h`
+before anything else consumed the old name, for a real reason: a bare
+`#include "vm.h"` from a fork whose own build has *both*
+`kernel/`-the-portable-directory and `kernel/arch/<arch>/`-the-per-arch-
+one on its `-I` list would be genuinely ambiguous, resolved by search
+order rather than intent - not a hypothetical, exactly the kind of
+subtle include-resolution bug this same session already chased for
+`pipe.c`'s own `pagetable_t`. `arch_vm.h` can't collide with a future
+portable `vm.h` no matter the search order.
+
+**Scope discipline for `arch_vm.h`, stated explicitly so it doesn't
+drift: it holds types that implement a genuine cross-arch interface
+(something a *portable* `kernel/*.c` file depends on, like
+`copyin()`/`copyout()`'s own `pagetable_t` parameter) - not "any type
+this fork happens to need that's arch-specific."** Plenty of real Tier
+4 code (MMU walk internals, boot sequences, interrupt controllers) is
+irreducibly arch-specific with no counterpart in any other fork at all
+- that stays in the fork's own local header (`aarch64.h`, `riscv.h`,
+`loongarch.h`, ...) exactly as before. `arch_vm.h` is for the specific
+case where multiple forks *do* implement the same conceptual operation
+differently, not a promotion path for arbitrary per-fork content.
 
 **Started (2026-09-11/12).** `scripts/pairwise_diff.sh` against these six
 files immediately found a real 9-vs-5 split hiding under them: 9 forks
@@ -1291,21 +1319,26 @@ split, just discovered a tier later than expected.
   `pagetable_t`/`pte_t` for `defs.h`'s own `copyin()`/`copyout()`
   declarations. Dropping it as unused broke all three builds; caught by
   actually building, not by trusting the diff. Fixed properly rather
-  than re-adding the per-fork include: new `kernel/arch/<arch>/kernel.h`,
-  one directory per ISA mirroring `include/arch/<arch>/arch.h`'s own
-  shape, but for kernel-only per-arch types - `arch.h` is for general
-  types a user program could conceivably need too (the user's own
-  correction: don't let kernel-internal VM types accumulate there).
-  Included as quoted `"kernel.h"`, not angled `<kernel.h>` like `arch.h`
-  - angle brackets stay for the more universal, could-apply-to-any-
-  project Plan9-`u.h` convention `arch.h` represents; this one is
-  specific to how this repo itself organizes its own kernel internals.
-  A fuller `vm.h` (portable VM interface) / `arch_vm.h` (arch-specific
-  VM internals) split, matching prior art in `~/principia/kernel/`, is
-  a bigger Tier 4 design question, deliberately deferred rather than
-  rushed here. `riscv32`/`riscv64` use the same `copyin`/`copyout` model
-  for `pipe.c` but have real control-flow differences (not just naming)
-  - left for a future pass.
+  than re-adding the per-fork include: new
+  `kernel/arch/<arch>/arch_vm.h`, one directory per ISA mirroring
+  `include/arch/<arch>/arch.h`'s own shape, but for kernel-only,
+  VM-specific per-arch types - `arch.h` is for general types a user
+  program could conceivably need too (the user's own correction: don't
+  let kernel-internal VM types accumulate there). Named `arch_vm.h`,
+  not the session's first try `kernel.h` (too generic - a different
+  subsystem needing the same treatment gets its own file, not a
+  shared catch-all) or plain `vm.h` (would collide with a future
+  portable `kernel/vm.h` on the same fork's own `-I` list - see the
+  "Naming settled" note above). Included as quoted `"arch_vm.h"`, not
+  angled `<arch_vm.h>` like `arch.h` - angle brackets stay for the more
+  universal, could-apply-to-any-project Plan9-`u.h` convention `arch.h`
+  represents; this one is specific to how this repo itself organizes
+  its own kernel internals. Scope discipline: only types genuinely
+  implementing a cross-arch interface belong here (see the "Scope
+  discipline" note above) - not a promotion path for arbitrary
+  per-fork content. `riscv32`/`riscv64` use the same `copyin`/`copyout`
+  model for `pipe.c` but have real control-flow differences (not just
+  naming) - left for a future pass.
 - Still open in the `begin_op` cluster: `file.c`, `bio.c`, `log.c` (the
   actual transaction-log logic itself - the deepest, riskiest merge in
   this tier) and the `amd64`/`i386` + `amd64-jserv`/`mips` sub-pairs of

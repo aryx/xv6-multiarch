@@ -1,5 +1,5 @@
 #include "types.h"
-#include "kernel.h"  // claude: pagetable_t, for defs.h's own copyin()/copyout() declarations
+#include "arch_vm.h"  // claude: pagetable_t, for defs.h's own copyin()/copyout() declarations
 #include "defs.h"
 #include "param.h"
 #include "spinlock.h"
