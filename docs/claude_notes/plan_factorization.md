@@ -1033,8 +1033,13 @@ verify any build rule writing into it guards with `mkdir -p`.**
   `stat.h` has one exception too: it's genuinely dual-mode (32/64-bit via
   its own `uintp` typedef and `#if X64`), not an oversight.
 
-  Next candidate: `spinlock.h` is still fully per-fork (14 copies) and
-  unexamined.
+  **Done: `spinlock.h`, all 14 forks, as two files** (`d2d4759`,
+  `91c9300`) — a genuine two-way split, not per-fork drift: 9 forks keep
+  a debug `pcs[10]` call-stack array (`kernel/spinlock.h`, using `uintp`
+  for the array width like `elf.h`/`usertests-x86.c` already do), 5 drop
+  it entirely in the newer MIT layout (`kernel/nopcs/spinlock.h` - the
+  first kernel-only header, placed at top-level `kernel/` rather than
+  `include/kernel/`).
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
