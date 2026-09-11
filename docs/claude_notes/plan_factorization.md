@@ -1119,15 +1119,55 @@ verify any build rule writing into it guards with `mkdir -p`.**
   `amd64-jserv/kernel/param.h` had already diagnosed and fixed once
   before.
 
-  Net effect: `tools/mkfs*.c` drops from four on-disk-format families to
-  one shared format produced by three sizing algorithms (`tools/mkfs.c`
-  dynamic, `tools/mkfs-margincheck.c`, `tools/mkfs-fixedbudget.c`) plus
-  two standalone forks (`amd64-jserv`, `riscv64`) that now write the
-  same fields by hand. Collapsing the sizing algorithms themselves
-  further is a separate, not-yet-started question - each currently
-  exists for a real, documented reason (a genuine disk-budget safety
-  margin, a deliberate log-size bump), not because nobody merged them
-  yet.
+  **Done: `tools/mkfs*.c` collapsed to one shared file, 12 of 14 forks**
+  (`4e5c15a`) - the very next session, at the user's prompting ("can
+  probably factorize those mkfs-xxx.c to a single one?"). The four
+  on-disk-format families turned out to differ, once fs.h was unified,
+  only in whether `nblocks` was computed top-down from FSSIZE
+  (`tools/mkfs.c`'s own approach) or hardcoded bottom-up with `size`
+  derived afterward (`mkfs-margincheck.c`/`mkfs-fixedbudget.c`) -  the
+  six forks using the second style had no FSSIZE in their own
+  `kernel/param.h` at all. Verified algebraically before touching
+  anything that `nblocks = FSSIZE - nmeta` reproduces the exact same
+  `nblocks` these forks already shipped (their own hardcoded formulas
+  all reduce to a fixed total independent of each fork's own LOGSIZE),
+  then added an explicit FSSIZE to each using that total.
+
+  `mkfs-margincheck.c`'s own freeblock-margin safety assert (fail the
+  BUILD if packing an image leaves under 2×MAXFILE data blocks free -
+  see this file's own `arm-pi2` writeup above) was promoted to run for
+  every fork sharing the file, not just the two that first hit that
+  bug. Running it for the first time on ten more forks immediately
+  found two more real, previously invisible thin margins - `amd64`/
+  `i386` (fixed in the fs.h commit itself) and `arm64`/`arm64-pi4`/
+  `loongarch`/`riscv32`/`arm-pi1`/`arm-pi1-bis`/`mips` here, each
+  needing `FSSIZE` raised.
+
+  **Gotcha 17, a real boot-time regression the build never caught:**
+  `forks/arm`'s own `kernel/start.c` embeds `fs.img` directly into the
+  kernel ELF (`-b binary`-style) and has a genuine, tight physical-
+  memory ceiling in the first 1MB (`vectbl`) that a too-large `FSSIZE`
+  silently overruns - the kernel still *builds* fine, but panics
+  ("empty mark in the list" in `kpt_freerange`) before any filesystem
+  code runs, on every boot, not flakily. A first attempt raised `arm`
+  to 1500 (matching the arm64 family, which has far more headroom) and
+  broke it outright; `arm` itself needed no raise at all (already
+  comfortable at its implicit 1099), and `arm-pi1-bis` - the other fork
+  with this same fs.img-in-kernel-ELF construction - was raised by
+  much less (1250) and boot-tested at that exact value rather than
+  trusted from a successful build alone. **A margin-check or FSSIZE
+  change is not verified by `make build-<arch>` succeeding - it must
+  actually boot**, exactly the lesson gotcha 13 already taught about
+  host-header shadowing, now recurring one layer up at the disk-image
+  level.
+
+  Net effect: two standalone copies left (`amd64-jserv`'s real, used
+  `ownerid`/`groupid`/`mode` dinode fields with its own `ialloc()`
+  default-assignment logic; `riscv64`'s deliberate `nlog = LOGBLOCKS +
+  1` headroom bump), one shared `tools/mkfs.c` for the other twelve.
+  Verified with `build-all`, `test-all`, a full `stress-test-all`, and
+  `docker build --build-arg ARCH=<name>` for every fork with CI
+  coverage.
 
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
