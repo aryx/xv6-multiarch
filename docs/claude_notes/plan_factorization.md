@@ -815,6 +815,31 @@ verify any build rule writing into it guards with `mkdir -p`.**
   `tools/`-only change, and not started yet. Until then, these five files
   are the documented intermediate state, not a permanent design.
 
+- **`tests/usertests*.c`** — the plan's own long-standing assumption that
+  this file is "genuinely per-port" turned out to be only mostly true.
+  Pairwise-diffing all fourteen forks' copies found two real clusters:
+  - `tests/usertests-arm64.c` (`486dcbb`) — `arm64`, `arm64-pi4`,
+    `loongarch`. Along the way, re-enabled `writebig` (previously disabled
+    on `arm64`/`arm64-pi4` with a now-stale "disk almost full" comment -
+    stale because `5d8aab0` had already unified their disk budget) and
+    dropped `loongarch`'s own leftover debug `printf()`s.
+  - `tests/usertests-pi.c` (`6cfaa72`) — `arm-pi1`, `arm-pi1-bis`,
+    `arm-pi2`, `arm-pi3`. Investigating why `arm-pi3` skips `mem()`/
+    `preempt()` by default led to a real, standalone kernel bug fix
+    (`2e00f82` — `kernel/vm.c`'s `switchuvm()` did an O(n) cache flush on
+    every `sbrk()` via `growproc()`, not a real process switch; see
+    `notes_arch_arm_pi3.txt`'s own Bug 22). `mem()` is now shared
+    unconditionally across all four; `preempt()` stays gated for
+    `arm-pi3` alone (a real, still-unresolved 4-core issue, not fixed by
+    the above) behind a `SKIP_PREEMPT_TEST` flag only that fork's own
+    `user/Makefile` recipe defines.
+
+  `riscv32`/`riscv64` remain real outliers (thousands of lines apart from
+  every other fork, including each other); `amd64`/`i386` are close (48
+  lines) but not attempted this session. New tool:
+  `scripts/debug_timing.py` (`95ceb85`) - per-checkpoint wall-clock timing
+  for a `usertests` run, for telling "hung" apart from "just slow".
+
 **Tier 0 — free wins (byte-identical, no edit needed).**
 Within the x86 family: `echo.c`, `ln.c`, `mkdir.c`, `rm.c`, `wc.c`,
 `umalloc.c` — 7 arches, one content. Within the riscv family: `ls.c`,
