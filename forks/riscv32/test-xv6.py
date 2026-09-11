@@ -36,11 +36,21 @@ TIMEOUT = 300
 
 
 def make_qemu(reset=True):
+    # claude: TOOLPREFIX must be passed as a make COMMAND-LINE argument, not
+    # just inherited via the environment - this fork's own Makefile sets it
+    # with a plain "=" (not "?="), which overrides an inherited environment
+    # value, so a rebuild triggered from here (e.g. a shared header's mtime
+    # changing) would silently fall back to the Makefile's own hardcoded
+    # "riscv32-unknown-elf-" default instead of the real installed
+    # "riscv64-unknown-elf-" this host uses (see Makefile.config). Caught
+    # when a stat.h header merge touched a dependency and this rebuilt with
+    # the wrong, nonexistent compiler.
+    toolprefix = [f"TOOLPREFIX={os.environ['TOOLPREFIX']}"] if "TOOLPREFIX" in os.environ else []
     return QEMU(
         reset_cmds=[
-            ["make", "kernel/kernel"],
+            ["make", "kernel/kernel"] + toolprefix,
             ["rm", "-f", "fs.img"],
-            ["make", "fs.img"],
+            ["make", "fs.img"] + toolprefix,
         ],
         qemu_argv=["make", "qemu"],
         reset=reset,
