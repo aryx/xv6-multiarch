@@ -1,3 +1,28 @@
+// claude: shared by forks/arm64, forks/arm64-pi4 and forks/loongarch - the
+// closest usertests.c cluster of the fourteen forks (18 lines apart
+// pairwise; every other fork is 48+ lines from its own closest match, and
+// most are in the hundreds - see plan_factorization.md's "Started" section
+// for the full pairwise-diff table). Base taken from forks/arm64 (identical
+// to forks/arm64-pi4's own copy already). Two real per-arch differences,
+// both selected below by the compiler's own predefined __loongarch__
+// macro rather than a repo-specific one: r_sp() lives in a different,
+// arch-specific header on each (aarch64.h vs loongarch.h - same function
+// signature, genuinely different implementation, exactly the "arch-specific
+// behind a common interface" case CLAUDE.md's own factorization rules call
+// for keeping separate), and sbrkmuch()'s memory-pressure test needs a much
+// smaller ceiling on forks/loongarch (512KB vs 100MB) - presumably less
+// usable RAM under its QEMU "virt" machine's own memory map.
+//
+// Two things that looked like real differences were not: forks/loongarch's
+// own copy had writebig disabled where forks/arm64/forks/arm64-pi4 had it
+// enabled with a stale "system already almost filled to capacity" comment -
+// stale because tools/mkfs.c's own factorization already unified all three
+// forks' disk budget (same FSSIZE, same NDIRECT); with that already done,
+// writebig passes on all three and stays enabled here, verified by each
+// fork's own full usertests run. forks/loongarch also carried three
+// leftover debug printf() calls (stray "YESYES1"/"jibajiba"/"gougoubaba"
+// output) with no comment explaining them - dropped as forgotten debugging,
+// not a real behavioral difference.
 #include "kernel/param.h"
 #include "kernel/types.h"
 #include "kernel/stat.h"
@@ -6,7 +31,13 @@
 #include "kernel/fcntl.h"
 #include "kernel/syscall.h"
 #include "kernel/memlayout.h"
+#if defined(__loongarch__)
 #include "kernel/loongarch.h"
+#define SBRKMUCH_BIG (512*1024)
+#else
+#include "kernel/aarch64.h"
+#define SBRKMUCH_BIG (100*1024*1024)
+#endif
 
 //
 // Tests xv6 system calls.  usertests without arguments runs them all
@@ -568,6 +599,7 @@ writetest(char *s)
     exit(1);
   }
 }
+
 
 void
 writebig(char *s)
@@ -2147,7 +2179,7 @@ sbrkbasic(char *s)
 void
 sbrkmuch(char *s)
 {
-  enum { BIG=512*1024 };
+  enum { BIG=SBRKMUCH_BIG };
   char *c, *oldbrk, *a, *lastaddr, *p;
   uint64 amt;
 
@@ -2211,7 +2243,7 @@ kernmem(char *s)
   char *a;
   int pid;
 
-  for(a = (char*)(RAMBASE); a < (char*) (RAMBASE+2000000); a += 50000){
+  for(a = (char*)(KERNBASE); a < (char*) (KERNBASE+2000000); a += 50000){
     pid = fork();
     if(pid < 0){
       printf("%s: fork failed\n", s);
@@ -2734,7 +2766,6 @@ countfree()
     
     while(1){
       uint64 a = (uint64) sbrk(4096);
-//  printf("YESYES1::%d\n\n",a);
       if(a == 0xffffffffffffffff){
         break;
       }
@@ -2803,6 +2834,7 @@ main(int argc, char *argv[])
 {
   int continuous = 0;
   char *justone = 0;
+
   if(argc == 2 && strcmp(argv[1], "-c") == 0){
     continuous = 1;
   } else if(argc == 2 && strcmp(argv[1], "-C") == 0){
@@ -2813,6 +2845,7 @@ main(int argc, char *argv[])
     printf("Usage: usertests [-c] [testname]\n");
     exit(1);
   }
+  
   struct test {
     void (*f)(char *);
     char *s;
@@ -2882,8 +2915,7 @@ main(int argc, char *argv[])
     {bigdir, "bigdir"}, // slow
     { 0, 0},
   };
-  printf("jibajiba:%p\n",r_sp());
-  printf("gougoubaba:%p",&continuous);
+
   if(continuous){
     printf("continuous usertests starting\n");
     while(1){
@@ -2911,7 +2943,6 @@ main(int argc, char *argv[])
 
   printf("usertests starting\n");
   int free0 = countfree();
-
   int free1 = 0;
   int fail = 0;
   for (struct test *t = tests; t->s != 0; t++) {

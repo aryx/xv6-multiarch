@@ -29,6 +29,12 @@
 #define RAMBASE (0x90000000UL | DMWIN_MASK)
 #define RAMSTOP (RAMBASE + 128*1024*1024)
 
+// claude: alias so tests/usertests-arm64.c (shared with forks/arm64 and
+// forks/arm64-pi4, which name this same address KERNBASE) can use one name
+// for it - added, not renamed, so nothing that already says RAMBASE here
+// needs to change.
+#define KERNBASE RAMBASE
+
 // map kernel stacks beneath the trampframe,
 // each surrounded by invalid guard pages.
 #define KSTACK(p) (TRAPFRAME - ((p)+1)* 2*PGSIZE)

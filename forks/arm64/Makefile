@@ -110,9 +110,16 @@ $U/%.o: ../../kernel/init/user/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # claude: the portable test programs, shared at the repo root. usertests.c
-# is NOT among them - it is genuinely per-port (twelve variants, each with its
-# own skipped sub-tests) and stays in each fork's own tests/.
+# is only partly among them - most forks' own copy is genuinely per-port
+# (each with its own skipped sub-tests) and stays local, but this fork's
+# copy was close enough to some others to share - see the explicit rule
+# below and tests/usertests-arm64.c's own header comment for which ones.
 tests/%.o: ../../tests/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# claude: explicit rule, not covered by the generic pattern above - the
+# shared file's name doesn't match usertests.o's expected usertests.c.
+tests/usertests.o: ../../tests/usertests-arm64.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # claude: the shared user library, under lib_core/ per ~/principia's
