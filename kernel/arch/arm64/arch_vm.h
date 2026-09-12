@@ -15,5 +15,16 @@
 
 // A page table is 512 PTEs, uint64 each, on this 64-bit port.
 typedef uint64 *pagetable_t;
+typedef uint64 pte_t;
+
+// claude: duplicated from this fork's own kernel/aarch64.h (same lines
+// exist there too, for the same "keep the shared file from pulling in
+// a whole per-arch register/CSR header" reason as pte_t/pagetable_t
+// above) - needed by the shared kernel/kalloc.c.
+#define PGSIZE 4096 // bytes per page
+#define PGSHIFT 12  // bits of offset within a page
+
+#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
+#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
 #endif /* ARCH_VM_H */

@@ -47,6 +47,15 @@
 #define KERNBASE 0x80000000L
 #define PHYSTOP (KERNBASE + 128*1024*1024)
 
+// claude: this port's kernel is identity-mapped (VA == PA), unlike
+// arm64/arm64-pi4's own higher-half kernel - so kalloc.c's shared
+// P2V(PHYSTOP)/V2P(v) calls (needed there to cross the KERNBASE
+// offset) are a no-op here. A trivial identity backend, not a missing
+// feature - same pattern as this repo's copyin()/copyout() on the
+// forks with no separate user/kernel address space.
+#define P2V(a) (a)
+#define V2P(a) (a)
+
 // map the trampoline page to the highest address,
 // in both user and kernel space.
 #define TRAMPOLINE (MAXVA - PGSIZE + 1) // HACK FOR 32 BIT

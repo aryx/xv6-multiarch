@@ -70,7 +70,7 @@ DETFLAGS = -ffile-prefix-map=$(CURDIR)=.
 
 # claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
 # (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../include/arch/riscv64
+CFLAGS = -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../kernel/arch/riscv64 -I../../include/arch/riscv64
 CFLAGS += $(DETFLAGS)
 CFLAGS += -march=rv64gc
 CFLAGS += -std=gnu99

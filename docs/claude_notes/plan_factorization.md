@@ -1439,16 +1439,87 @@ split, just discovered a tier later than expected.
   another header twice in the same translation unit. All four now
   guarded. `riscv32` gained its own `kernel/arch/riscv32/arch_vm.h` -
   the first fork outside the `pipe.c`/`file.c` cluster to need one.
-- **Queued next: `kernel/kalloc.c`.** Free-list physical page
-  allocator - spinlock-protected, no register/trapframe access, no
-  `copyin`/`copyout` coupling, a strong "mostly portable" candidate by
-  criterion 1. Its own per-arch pieces split cleanly in two: `P2V`/
-  `PHYSTOP`/`KERNBASE` (genuinely different real board addresses,
-  already correctly isolated in each fork's own `memlayout.h`, no
-  interface needed) vs. `PGSIZE`/`PGROUNDUP`/`PGROUNDDOWN` (not
-  actually board-specific at all, just currently misfiled inside each
-  fork's other arch-specific header - see criterion 4's own `PGSIZE`
-  discussion above for where these should move). Not started yet.
+- **`kernel/kalloc.c`** (2026-09-12) - 4 of the 5 candidate forks
+  (`arm64`, `arm64-pi4`, `riscv32`, `riscv64`); `loongarch` deliberately
+  left out, see its own finding below. Confirmed criterion 1 "mostly
+  portable": free-list allocator, spinlock-protected, no register/
+  trapframe access. Two real per-arch splits, both resolved as
+  interfaces rather than left as forks, per criterion 4:
+  - `P2V`/`V2P`: `arm64`/`arm64-pi4` have a genuine higher-half kernel
+    (`KERNBASE = 0xffffff8000000000`), so `kfree()`'s bounds check
+    needs `P2V(PHYSTOP)`, not bare `PHYSTOP`. `riscv64`/`riscv32` are
+    identity-mapped (`KERNBASE = 0x80000000`, the real physical base)
+    and had no `P2V`/`V2P` macros at all - given a trivial `#define
+    P2V(a) (a)` / `#define V2P(a) (a)` identity backend in their own
+    `memlayout.h` (same pattern as this repo's `copyin()`/`copyout()`
+    on the forks with no separate address space), so the shared file's
+    `P2V(PHYSTOP)` call works unchanged on both kernel-address models.
+  - `PGSIZE`/`PGSHIFT`/`PGROUNDUP`/`PGROUNDDOWN`: moved into each
+    fork's own `kernel/arch/<arch>/arch_vm.h`, exactly as this plan's
+    own criterion 4 discussion anticipated - `riscv64` needed a new
+    `arch_vm.h` (the first of the three riscv64/riscv32/arm64-pi4-
+    sharing-arm64 forks in this cluster to get one; `riscv32`/`arm64`
+    already had one from the `pipe.c`/`file.c` work and just gained
+    these four macros). Left duplicated in each fork's own big
+    per-arch register header (`riscv.h`/`aarch64.h`) rather than
+    migrated out of it - same already-accepted pattern as `pagetable_t`/
+    `pte_t` there (identical-type re-typedefs and identical macro
+    redefinitions in *different* translation units are not conflicts;
+    kalloc.c only ever includes `arch_vm.h`, never the big header, so
+    nothing is doubly defined in any one file). `uintp` (already
+    established for the amd64/i386/mips/arm x86-ish cluster) added to
+    `riscv64`/`riscv32`/`arm64`'s own `include/arch/<arch>/arch.h` for
+    the same `PGROUNDUP((uintp)pa)` cast this file needs; `riscv64`'s
+    Makefile gained the matching `-I../../kernel/arch/riscv64` (gotcha
+    12's own lesson - a new shared-header consumer needs the same `-I`
+    every existing one already has).
+
+  One real behavior migrated to the baseline, not just moved:
+  `arm64-pi4`'s own `kalloc()` filled freed-then-reallocated pages with
+  `0` instead of the `5` every other fork in this cluster (including
+  its own sibling `arm64`) uses - `5` is deliberately non-zero junk, to
+  make a bug that reads memory it should have initialized itself crash
+  loudly instead of silently seeing zeros; `0` defeats that purpose.
+  Converged to `5` (the baseline every other fork already agreed on),
+  per criterion 2.
+
+  kinit()-family entry points (the fork's own boot sequence: `riscv64`/
+  `riscv32` call a single no-arg `kinit()`, `arm64`/`arm64-pi4` call
+  `kinit1(vstart,vend)` then `kinit2(vstart,vend)` as more of physical
+  RAM becomes mapped) are genuinely per-arch, but all three are cheap,
+  thin wrappers around the same shared `freerange()`/`kfree()`/
+  `kalloc()` - so all three now live in the one shared file rather than
+  splitting the file along that boundary; whichever ones a given fork's
+  own `main.c` doesn't call simply go unused (harmless for a non-static
+  extern-linkage function).
+
+  **Finding, not fixed: `loongarch`'s own `kinit()` frees from
+  `RAMBASE`, not from `end` (the first address after the kernel's own
+  image) - every other fork in every cluster checked frees only
+  `[end, PHYSTOP)`.** `RAMBASE` here is a DMW-mapped virtual alias for
+  physical `0x90000000`, and the kernel itself loads at `RAMBASE +
+  0x200000` - so `freerange(RAMBASE, RAMSTOP)` walks straight through
+  the kernel's own text/data/bss and `kfree()`s them, since its bounds
+  check (`pa < RAMBASE || pa >= RAMSTOP`) has no case that excludes the
+  kernel's own image in between. Likely survives today only because
+  `kalloc()`'s free list is LIFO over an ascending `freerange()` walk,
+  so the highest addresses (near `RAMSTOP`, well above the kernel) are
+  served first - a `usertests` run that never exhausts memory down to
+  the kernel's own reused pages would never observe corruption. Not
+  touched here: this is a real, pre-existing bug candidate, not a
+  factorization concern, and unifying `loongarch` into this cluster
+  would have meant silently changing its behavior (from `RAMBASE` to
+  `end`) inside what should have been a pure move - exactly what this
+  plan's own "do not clean up while you're in there" rule forbids.
+  Worth its own investigation and fix, separately.
+
+- **Queued next: `kernel/bio.c`.** Previously postponed once already
+  (criterion 6 - "prefer the easier file when a candidate reveals deep,
+  costly work": `bio.c` needs a `struct buf` unification and a new
+  `disk_rw()` shim before it can move, unlike `file.c`, which reused
+  existing infrastructure) in favor of `file.c` -> `sleeplock.c` ->
+  `kalloc.c`. Still on the Tier 3 list (`fs.c`, `log.c`, `bio.c`, the
+  arch-independent half of `syscall.c`); not re-scoped yet.
 
 **Housekeeping, same conversation: `stress-test-all` moves to CI, not
 every local iteration.** GitHub Actions CI is confirmed working now, so
