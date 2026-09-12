@@ -354,3 +354,14 @@ riscv32 being bootstrapped from the riscv64 port (same project,
 `docs/provenance.md`'s "RV32" lineage): copies of the 64-bit sources
 kept around during the 32-bit port and never pruned once the real
 32-bit versions existed.
+
+Two more dead leftovers removed (2026-09-12), both inherited from
+upstream xv6-riscv (Robert Morris, 2019) and never wired into this
+fork's own tests/UPROGS: tests/alarmtest.c (the xv6-riscv lab
+assignment's own alarm() test - "so we can use the original version to
+test, to make it harder to cheat", per its own original commit
+message; this port doesn't implement the alarm() syscall) and
+kernel/ramdisk.c (MIT's optional in-memory ramdisk storage backend;
+this fork uses virtio_disk.o instead, like arm64/arm64-pi4). Confirmed
+via `make -Bn build-riscv32` and a repo-wide grep - neither name
+appears anywhere in this fork's Makefile.

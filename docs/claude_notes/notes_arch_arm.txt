@@ -667,3 +667,11 @@ of it, with more tests enabled than before.)
 Worth generalising: "this port passes the test" was not the same as
 "this port does not have the bug". Twelve other forks still carry the
 unmodified morecore(); they pass mem() for the same reason this one did.
+
+Dead leftover file removed (2026-09-12): kernel/kalloc.c - the classic
+xv6 free-list allocator, from the original MIT 2006 import. This port
+uses its own buddy allocator (kernel/buddy.c) instead - not in OBJS
+at all, and kalloc()/kfree(char*)'s own declarations are already
+commented out in defs.h (kfree(void*,int), the buddy allocator's real
+signature, is what's actually declared and used). Confirmed via
+`make -Bn build-arm` - kalloc.o never appears on the final link line.

@@ -272,3 +272,12 @@ Known flaky test (not yet root-caused)
   whoever hits this next should start from `notes_debugging_techniques.
   txt`'s own methodology (count interrupts/scheduling events before
   guessing) rather than assuming the most recent change is at fault.
+
+Dead leftover file removed (2026-09-12): kernel/ramdisk.c (Robert
+Morris, 2019 xv6-riscv) - the same optional in-memory ramdisk storage
+backend as riscv32's own copy (see notes_arch_riscv32.txt). This fork
+uses virtio_disk.o for storage; ramdisk.c/.o never appears anywhere in
+the Makefile or a `make -Bn build-arm64` trace. Its sibling
+loongarch, by contrast, genuinely built and wired this feature in
+(kernel/ramdisk.h generated from fs.img via xxd) - worth knowing this
+one file's presence differs in meaning across MIT-2019-sibling forks.

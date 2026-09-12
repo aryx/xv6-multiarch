@@ -136,3 +136,14 @@ Still open (not done this session)
 - The Docker `ARCH=amd64` build was verified locally with the exact
   `--build-arg ARCH=amd64` before committing (per
   notes_debugging_techniques.txt item 6), same as every other arch here.
+
+Dead leftover files removed (2026-09-12): kernel/bootmain.c and
+kernel/memide.c, both from the original MIT import/2011 addition.
+This fork's Makefile has no `bootblock:` rule (unlike i386/mips, which
+kept it) and no `kernelmemfs:` rule either - only a stale reference to
+`kernel/kernelmemfs` survived in the `clean:` target, targeting a file
+nothing builds. QEMU boots this fork's kernel directly via -kernel, so
+neither the legacy BIOS bootblock (bootmain.c, paired with bootasm.S)
+nor the in-memory-IDE `kernelmemfs` variant (memide.c) were ever wired
+up here. Confirmed via `make -Bn build-amd64` - neither file appears
+in any command.
