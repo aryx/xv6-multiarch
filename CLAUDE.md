@@ -408,3 +408,4 @@ behave.
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
 - `docs/claude_notes/notes_debugging_techniques.txt` - general debugging methodology, grown from real investigations in this repo
 - `docs/claude_notes/notes_build_system.txt` - how the ports' Makefiles behave as builds: header dependency tracking (and why `make depend` is the wrong fix), order-only vs normal prerequisites, and what `test-<arch>` legitimately needs to redo
+- `docs/claude_notes/notes_new_kernel_organization.md` - the `include/arch/<arch>/arch.h` / `kernel/arch/<arch>/arch_vm.h` / `arch_proc.h` layering and the "interface, not permanent fork" method behind Tier 3's per-file merges
