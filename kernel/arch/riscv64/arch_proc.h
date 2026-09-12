@@ -12,10 +12,10 @@
 // gap between releasing the caller's lock and the process actually
 // going to sleep. This port's own proc.c/pipe.c/console.c/etc. all
 // call the two-step form directly and are unaffected; this wrapper
-// exists only so kernel/log.c can call the same sleep_release(chan, lk)
+// exists only so kernel/log.c can call the same arch_sleep_release(chan, lk)
 // either way.
 static inline void
-sleep_release(void *chan, struct spinlock *lk)
+arch_sleep_release(void *chan, struct spinlock *lk)
 {
   sleep_prepare(chan);
   release(lk);

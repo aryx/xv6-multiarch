@@ -1249,7 +1249,7 @@ version):**
    a promotion path for arbitrary per-fork content.
 6. **Prefer the easier file when a candidate reveals deep, costly
    work.** Postpone rather than force it - this is how the session
-   went `bio.c` (needs a `struct buf` unification + a new `disk_rw()`
+   went `bio.c` (needs a `struct buf` unification + a new `arch_disk_rw()`
    shim + a `log.c` edit) -> `file.c` (quick, reused existing
    infrastructure) -> `sleeplock.c` (turned out to be the biggest win
    yet, once actually checked).
@@ -1545,12 +1545,12 @@ split, just discovered a tier later than expected.
   unlocked read). `riscv64` (79-97 lines from the other four - the
   biggest gap in the cluster) turned out to be a *further* advance on
   top of `arm64`'s baseline, once actually read rather than assumed to
-  be a bigger fork: a lost-wakeup fix (see the `sleep_release()`
+  be a bigger fork: a lost-wakeup fix (see the `arch_sleep_release()`
   interface below) plus a tested `sys_sync()` syscall - both kept.
 
   Two real per-arch gaps resolved as interfaces, matching this file's
   own established method:
-  - **`sleep_release(chan, lk)`** (new, `kernel/arch/<arch>/arch_proc.h`)
+  - **`arch_sleep_release(chan, lk)`** (new, `kernel/arch/<arch>/arch_proc.h`)
     - `arm64`/`arm64-pi4`/`loongarch`/`riscv32` all have a single
     `sleep(chan, lk)` that does register+release+block+reacquire
     atomically; `riscv64`'s own `sleep()` is deliberately split into
@@ -1562,7 +1562,7 @@ split, just discovered a tier later than expected.
     same split `kernel/sleeplock.c`'s own merge hit and deferred
     (`riscv64` was left out of that 6-fork cluster for precisely this
     reason - see that entry above). Rather than defer it again,
-    `sleep_release()` gives every fork in this cluster the same call:
+    `arch_sleep_release()` gives every fork in this cluster the same call:
     a plain pass-through to `sleep(chan, lk)` for the four with the
     atomic version, and the real `sleep_prepare`/release/`sleep`/
     acquire sequence for `riscv64` - so `kernel/log.c` (and, if
@@ -1644,7 +1644,7 @@ split, just discovered a tier later than expected.
   and whitespace differ. Joining needs `stosl`/`stosb` exposed under
   one arch-neutral header name first (the same `kernel/arch/<arch>/
   arch_*.h` shape as `kalloc.c`'s `PGSIZE`/`PGROUNDUP` or `log.c`'s
-  `sleep_release()` - see `docs/claude_notes/
+  `arch_sleep_release()` - see `docs/claude_notes/
   notes_new_kernel_organization.md`), not a drive-by inside this
   commit.
 
@@ -1692,7 +1692,7 @@ split, just discovered a tier later than expected.
   page-fault-on-demand feature, `fork()`/`wait()`/`kill()`/`exit()`
   renamed to `kfork()`/`kwait()`/`kkill()`/`kexit()`, and a `killed()`
   accessor replacing direct `->killed` reads (it would also need
-  `sleep_release()` in its own `sys_pause()` - already built for
+  `arch_sleep_release()` in its own `sys_pause()` - already built for
   `log.c`, so at least that part is ready whenever this is revisited).
   `amd64-jserv`'s own `sys_sbrk()` uses `uintp`/a `arguintp()` argument
   parser instead of plain `int`/`argint()` - a real fix avoiding
@@ -1713,7 +1713,7 @@ split, just discovered a tier later than expected.
 - **Queued next: `kernel/bio.c`.** Previously postponed once already
   (criterion 6 - "prefer the easier file when a candidate reveals deep,
   costly work": `bio.c` needs a `struct buf` unification and a new
-  `disk_rw()` shim before it can move, unlike `file.c`, which reused
+  `arch_disk_rw()` shim before it can move, unlike `file.c`, which reused
   existing infrastructure) in favor of `file.c` -> `sleeplock.c` ->
   `kalloc.c` -> `log.c`. The `bpin()`/`bunpin()` gap found while doing
   `log.c` (above) is exactly this same prerequisite - `amd64`/`i386`/
@@ -1721,12 +1721,12 @@ split, just discovered a tier later than expected.
   `arm64`/`arm64-pi4`/`loongarch`/`riscv32`/`riscv64` use a dedicated
   `int valid`/`int disk` pair plus real pin/unpin refcounting, and
   `bread()`/`bwrite()` call the disk driver by different names
-  (`iderw(b)` vs `virtio_disk_rw(b, write)`) - a `disk_rw()` interface,
-  the same shape as `sleep_release()` above, would close that second
+  (`iderw(b)` vs `virtio_disk_rw(b, write)`) - an `arch_disk_rw()` interface,
+  the same shape as `arch_sleep_release()` above, would close that second
   gap. Still on the Tier 3 list (`fs.c`, `log.c`, `bio.c`, the
   arch-independent half of `syscall.c`); not re-scoped yet.
 
-  **Re-scoped (2026-09-12): the `disk_rw()`/`struct buf` prerequisite
+  **Re-scoped (2026-09-12): the `arch_disk_rw()`/`struct buf` prerequisite
   above turns out to block only one of three real clusters, not all of
   `bio.c`.** Re-running `pairwise_diff.sh kernel/bio.c` found:
   1. **`arm64`/`arm64-pi4`/`loongarch`/`riscv32`/`riscv64` (5 forks)
@@ -1738,11 +1738,11 @@ split, just discovered a tier later than expected.
      `arm64-pi4`/`loongarch` call `ramdiskrw(b, write)` (real Pi 4 and
      QEMU-loongarch boards, no virtio device), not `virtio_disk_rw(b,
      write)` like the other three - same `(struct buf*, int)` shape, so
-     a `disk_rw(b, write)` interface closes it, same as `sleep_release`.
+     an `arch_disk_rw(b, write)` interface closes it, same as `arch_sleep_release`.
      **This one is genuinely board-scoped, not ISA-scoped** - `arm64`
      and `arm64-pi4` share one ISA directory (`kernel/arch/arm64/`) for
      `arch_vm.h`/`arch_proc.h` (those really are per-ISA), but need
-     *different* `disk_rw()` backends. Solved with a new
+     *different* `arch_disk_rw()` backends. Solved with a new
      `kernel/arch/arm64-pi4/arch_disk.h` (ramdisk backend) added to
      that fork's own `-I` list *before* the shared `kernel/arch/arm64`
      one, so its file shadows the ISA-level one there (virtio backend)
@@ -1762,7 +1762,7 @@ split, just discovered a tier later than expected.
      between themselves) - a genuinely more advanced locking primitive
      (real `sleeplock`/`acquiresleep()`, not `B_BUSY` polling) but
      still `iderw()`, not `virtio_disk_rw()`. Fits neither existing
-     file; the `disk_rw()` interface only matters for bridging *this*
+     file; the `arch_disk_rw()` interface only matters for bridging *this*
      pair into the fully modern `kernel/bio.c` eventually - not a
      blocker for (1) or (2). Not started.
 
@@ -1777,13 +1777,13 @@ split, just discovered a tier later than expected.
   seen as a real `docker build --build-arg ARCH=arm64` failure while
   verifying this commit; reproduced twice more on a truly clean local
   rebuild before being cleared as pre-existing - the deciding test was
-  a bisection: `disk_rw(b, N)` preprocesses to byte-identical text as a
+  a bisection: `arch_disk_rw(b, N)` preprocesses to byte-identical text as a
   direct `virtio_disk_rw(b, N)` call (checked with `gcc -E`), yet one
   run failed and a same-binary rerun passed, which is only possible if
   the failure is genuine QEMU/SMP-scheduling non-determinism, not a
   logic difference from this merge - confirmed with 5 further clean
   runs (3 on the reverted-to-direct-call binary, 2 more on the real
-  `disk_rw` one), all "ALL TESTS PASSED". Rate looked like roughly 2 in
+  `arch_disk_rw` one), all "ALL TESTS PASSED". Rate looked like roughly 2 in
   7 runs failing this session, high enough to occasionally break CI on
   an unrelated commit. Not investigated further here (out of scope,
   pre-existing, not introduced by this merge) - worth a dedicated
