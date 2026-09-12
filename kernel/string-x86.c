@@ -1,13 +1,14 @@
 #include "types.h"
+#include "x86.h"
 
 void*
 memset(void *dst, int c, uint n)
 {
-  char *cdst = (char *) dst;
-  int i;
-  for(i = 0; i < n; i++){
-    cdst[i] = c;
-  }
+  if ((uintp)dst%4 == 0 && n%4 == 0){
+    c &= 0xFF;
+    stosl(dst, (c<<24)|(c<<16)|(c<<8)|c, n/4);
+  } else
+    stosb(dst, c, n);
   return dst;
 }
 
@@ -33,9 +34,6 @@ memmove(void *dst, const void *src, uint n)
   const char *s;
   char *d;
 
-  if(n == 0)
-    return dst;
-  
   s = src;
   d = dst;
   if(s < d && s + n > d){

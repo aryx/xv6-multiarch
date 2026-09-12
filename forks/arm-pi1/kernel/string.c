@@ -1,1 +1,1 @@
-../../../kernel/legacy/string.c
+../../../kernel/string-arm.c

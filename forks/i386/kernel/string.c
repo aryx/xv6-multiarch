@@ -1,1 +1,1 @@
-../../../kernel/string.c
+../../../kernel/string-x86.c
