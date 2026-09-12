@@ -1780,13 +1780,33 @@ split, just discovered a tier later than expected.
      original `bio.c` already had before joining. Rebuilt and re-ran
      all six forks' own full `usertests` after this fix, not just
      `amd64-jserv`'s.
-  3. **`amd64`/`i386` are their own third cluster** (already 0-diff
-     between themselves) - a genuinely more advanced locking primitive
-     (real `sleeplock`/`acquiresleep()`, not `B_BUSY` polling) but
-     still `iderw()`, not `virtio_disk_rw()`. Fits neither existing
-     file; the `arch_disk_rw()` interface only matters for bridging *this*
-     pair into the fully modern `kernel/bio.c` eventually - not a
-     blocker for (1) or (2). Not started.
+  3. **`amd64`/`i386` merged into a new `kernel/bio-x86.c`
+     (2026-09-12)** - a genuinely more advanced locking primitive (real
+     `sleeplock`/`acquiresleep()`, not `B_BUSY` polling) but still
+     `iderw()`, not `virtio_disk_rw()` - fits neither `kernel/bio.c` nor
+     `kernel/bio-legacy.c`, so it gets its own file, matching
+     `string-x86.c`'s own naming precedent (a real, permanent hardware
+     difference - `iderw()` vs `virtio_disk_rw()`/`ramdiskrw()` - not a
+     design-generation gap, so `-x86` not `-legacy`). Already byte-
+     identical between the two forks and needed no per-arch include
+     removed either - a pure `git mv`, no content edit at all. Bridging
+     this into the fully modern `kernel/bio.c` eventually still needs
+     the `arch_disk_rw()` interface extended to cover `iderw()`; not
+     started, and no longer blocks anything now that this pair has its
+     own home.
+
+     Verified: build + full `usertests` ("ALL TESTS PASSED") for both
+     forks, `make test-all`, `docker build --build-arg ARCH=<name>` for
+     both, `git blame -C -C` on `kernel/bio-x86.c` (100% Russ Cox/
+     Robert Morris/Frans Kaashoek, 0 lines to the merge commit - a pure
+     move).
+
+  **`kernel/bio.c`'s three-way split is now done**: `kernel/bio.c`
+  (5 forks), `kernel/bio-legacy.c` (6 forks), `kernel/bio-x86.c` (2
+  forks) - only `arm` keeps its own standalone `bio.c` (177+ lines from
+  every other fork on every file checked this session, consistent with
+  its own buddy allocator and general outlier status - not investigated
+  further, matches this plan's own "do not chase 100%" rule).
 
   Verified: build + full `usertests` ("ALL TESTS PASSED") for all five
   forks in (1), `make test-all`, `docker build --build-arg ARCH=<name>`
