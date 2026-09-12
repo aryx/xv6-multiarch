@@ -394,7 +394,7 @@ wait(uint64 addr)
         if(np->state == ZOMBIE){
           // Found one.
           pid = np->pid;
-          if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
+          if(addr != 0 && arch_copyout(p->pagetable, addr, (char *)&np->xstate,
                                   sizeof(np->xstate)) < 0) {
             release(&np->lock);
             release(&wait_lock);
@@ -598,7 +598,7 @@ either_copyout(int user_dst, uint64 dst, void *src, uint64 len)  //todo
 {
   struct proc *p = myproc();
   if(user_dst){
-    return copyout(p->pagetable, dst, src, len);
+    return arch_copyout(p->pagetable, dst, src, len);
   } else {
     memmove((char *)dst, src, len);
     return 0;
@@ -613,7 +613,7 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)  //todo
 {
   struct proc *p = myproc();
   if(user_src){
-    return copyin(p->pagetable, dst, src, len);
+    return arch_copyin(p->pagetable, dst, src, len);
   } else {
     memmove(dst, (char*)src, len);
     return 0;

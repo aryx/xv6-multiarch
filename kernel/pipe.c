@@ -1,5 +1,5 @@
 #include "types.h"
-#include "arch_vm.h"  // claude: pagetable_t, for defs.h's own copyin()/copyout() declarations
+#include "arch_vm.h"  // claude: pagetable_t, for defs.h's own arch_copyin()/arch_copyout() declarations
 #include "defs.h"
 #include "param.h"
 #include "spinlock.h"
@@ -90,7 +90,7 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
       sleep(&pi->nwrite, &pi->lock);
     } else {
       char ch;
-      if(copyin(pr->pagetable, &ch, addr + i, 1) == -1)
+      if(arch_copyin(pr->pagetable, &ch, addr + i, 1) == -1)
         break;
       pi->data[pi->nwrite++ % PIPESIZE] = ch;
       i++;
@@ -121,7 +121,7 @@ piperead(struct pipe *pi, uint64 addr, int n)
     if(pi->nread == pi->nwrite)
       break;
     ch = pi->data[pi->nread++ % PIPESIZE];
-    if(copyout(pr->pagetable, addr + i, &ch, 1) == -1)
+    if(arch_copyout(pr->pagetable, addr + i, &ch, 1) == -1)
       break;
   }
   wakeup(&pi->nwrite);  //DOC: piperead-wakeup

@@ -169,8 +169,8 @@ void            uvmfree(pagetable_t, uint32);
 void            uvmunmap(pagetable_t, uint32, uint32, int);
 void            uvmclear(pagetable_t, uint32);
 uint32          walkaddr(pagetable_t, uint32);
-int             copyout(pagetable_t, uint32, char *, uint32);
-int             copyin(pagetable_t, char *, uint32, uint32);
+int             arch_copyout(pagetable_t, uint32, char *, uint32);
+int             arch_copyin(pagetable_t, char *, uint32, uint32);
 int             copyinstr(pagetable_t, char *, uint32, uint32);
 
 // plic.c

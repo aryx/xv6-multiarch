@@ -377,7 +377,7 @@ uvmclear(pagetable_t pagetable, uint32 va)
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
 int
-copyout(pagetable_t pagetable, uint32 dstva, char *src, uint32 len)
+arch_copyout(pagetable_t pagetable, uint32 dstva, char *src, uint32 len)
 {
   uint32 n, va0, pa0;
 
@@ -402,7 +402,7 @@ copyout(pagetable_t pagetable, uint32 dstva, char *src, uint32 len)
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int
-copyin(pagetable_t pagetable, char *dst, uint32 srcva, uint32 len)
+arch_copyin(pagetable_t pagetable, char *dst, uint32 srcva, uint32 len)
 {
   uint32 n, va0, pa0;
 

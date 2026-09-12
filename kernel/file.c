@@ -3,7 +3,7 @@
 //
 
 #include "types.h"
-#include "arch_vm.h"  // claude: pagetable_t, for defs.h's own copyout() declaration
+#include "arch_vm.h"  // claude: pagetable_t, for defs.h's own arch_copyout() declaration
 #include "defs.h"
 #include "param.h"
 #include "fs.h"
@@ -94,7 +94,7 @@ filestat(struct file *f, uint64 addr)
     ilock(f->ip);
     stati(f->ip, &st);
     iunlock(f->ip);
-    if(copyout(p->pagetable, addr, (char *)&st, sizeof(st)) < 0)
+    if(arch_copyout(p->pagetable, addr, (char *)&st, sizeof(st)) < 0)
       return -1;
     return 0;
   }
