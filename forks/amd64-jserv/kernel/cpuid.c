@@ -143,14 +143,14 @@ cpuinfo(void)
   /* ... and many more ... */
 }
 
-static int cpuid_read(struct inode* i, char* buf, int count)
+static int cpuid_read(int user_dst, uint64 dst, int count)
 {
    cpu_printfeatures();
 
    return 0;
 }
 
-static int cpuid_write(struct inode* i, char* buf, int count)
+static int cpuid_write(int user_src, uint64 src, int count)
 {
    cprintf("cpuid_write\n");
    return 0;

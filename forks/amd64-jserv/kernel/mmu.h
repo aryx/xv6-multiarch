@@ -1,5 +1,12 @@
-// This file contains definitions for the 
+// This file contains definitions for the
 // x86 memory management unit (MMU).
+
+// claude: include guard - needed now that proc.h #includes this header
+// itself (for struct taskstate/segdesc, used by struct cpu), so any
+// file that already included both mmu.h and proc.h directly (in either
+// order) doesn't get this file's structs/macros defined twice.
+#ifndef MMU_H
+#define MMU_H
 
 // Eflags register
 #define FL_CF           0x00000001      // Carry Flag
@@ -238,3 +245,5 @@ struct gatedesc {
 }
 
 #endif
+
+#endif /* MMU_H */

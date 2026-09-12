@@ -1,3 +1,5 @@
+#include "mmu.h"  // claude: struct taskstate, struct segdesc - see mmu.h's own include-guard comment
+
 // Segments in proc->gdt.
 #define NSEGS     7
 
@@ -40,6 +42,10 @@ extern struct cpu *cpu asm("%gs:0");       // &cpus[cpunum()]
 extern struct proc *proc asm("%gs:4");     // cpus[cpunum()].proc
 #endif
 
+// claude: this port has no real myproc() function, just this raw
+// global - same shape as mips's own (see that fork's proc.h).
+#define myproc() (proc)
+
 //PAGEBREAK: 17
 // Saved registers for kernel context switches.
 // Don't need to save all the segment registers (%cs, etc),
@@ -77,7 +83,7 @@ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 // Per-process state
 struct proc {
   uintp sz;                     // Size of process memory (bytes)
-  pde_t* pgdir;                // Page table
+  pde_t* pagetable;             // Page table
   char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
   int pid;                     // Process ID

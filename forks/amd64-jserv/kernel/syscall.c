@@ -96,6 +96,19 @@ arguintp(int n, uintp *ip)
 }
 #endif
 
+// Fetch the nth pointer-sized system call argument as a raw address.
+// Doesn't check for legality, since arch_copyin/arch_copyout will do
+// that - matching every other fork on this interface.
+int
+argaddr(int n, uint64 *ip)
+{
+  uintp i;
+  if(arguintp(n, &i) < 0)
+    return -1;
+  *ip = i;
+  return 0;
+}
+
 // Fetch the nth word-sized system call argument as a pointer
 // to a block of memory of size n bytes.  Check that the pointer
 // lies within the process address space.
