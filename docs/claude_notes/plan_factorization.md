@@ -1830,7 +1830,46 @@ split, just discovered a tier later than expected.
   an unrelated commit. Not investigated further here (out of scope,
   pre-existing, not introduced by this merge) - worth a dedicated
   session with `notes_debugging_techniques.txt`'s own methodology if it
-  recurs; not yet in any `notes_arch_arm64.txt`.
+  recurs; now recorded in `notes_arch_arm64.txt`'s own "Known flaky
+  test" section.
+
+- **`kernel/sysfile.c`** (2026-09-12) - the modern cluster's own 4-fork
+  subset (`arm64`, `arm64-pi4`, `loongarch`, `riscv32`), same shape as
+  `kalloc.c`: `arm64`/`arm64-pi4`/`loongarch` were 0-2 lines apart
+  already; `riscv32` differed only by `uint64` -> `uintp` (the
+  established pointer-sized-integer interface, already defined for all
+  four - no new interface needed). One per-arch include wasn't dead
+  this time: `PGSIZE` is used directly (`sys_exec()`'s `fetchstr(uarg,
+  argv[i], PGSIZE)`), so the dropped `#include "aarch64.h"` became
+  `#include "arch_vm.h"` instead of just vanishing - and `loongarch`'s
+  own `arch_vm.h` had never gained `PGSIZE`/`PGSHIFT`/`PGROUNDUP`/
+  `PGROUNDDOWN` (it joined `log.c`'s cluster earlier, which didn't need
+  them, not `kalloc.c`'s), so it gained them here, same duplicated-not-
+  migrated pattern as always.
+
+  `riscv64` deliberately left out, and for once the reason is worth
+  fixing eventually rather than just accepting: reading its own real
+  ~200-line-plus gap (confirmed with `diff -b -w`, not noise) found
+  genuine correctness hardening missing from the other four -
+  `NLINK_MAX` overflow guards in `create()`/`link()` before
+  incrementing a directory's link count, and a guard against linking
+  into an already-unlinked directory (`dp->nlink == 0`, which would
+  otherwise leak - `itrunc()` discards the record without dropping
+  `nlink`). Also a real `argint()`/`argaddr()` API change (call sites
+  lost their `< 0` return checks), a bigger, separate redesign not
+  scoped here. Worth a dedicated pass porting the `NLINK_MAX`/orphaned-
+  directory guards to the other four independently of merging the
+  whole file - a real bug class (inode reference-count overflow), not
+  just a style gap.
+
+  Verified: build + full `usertests` ("ALL TESTS PASSED", `arm64` run
+  twice given its own known flakiness) for all four forks, `make
+  test-all`, `docker build --build-arg ARCH=<name>` for
+  `arm64`/`loongarch`/`riscv32`, `ARCH=all` for `arm64-pi4`, `git blame
+  -C -C` on `kernel/sysfile.c` (mostly Russ Cox/Robert Morris/Frans
+  Kaashoek/Austin Clements/Nickolai Zeldovich/Peter H. Froehlich/Dan
+  Cross; the ~35 lines to this commit are exactly the `uintp`
+  substitutions).
 
 **Housekeeping, same conversation: `stress-test-all` moves to CI, not
 every local iteration.** GitHub Actions CI is confirmed working now, so

@@ -15,4 +15,14 @@
 typedef uint64 *pagetable_t;
 typedef uint64 pte_t;
 
+// claude: duplicated from this fork's own kernel/loongarch.h (same
+// lines exist there too, for the same "keep the shared file from
+// pulling in a whole per-arch register/CSR header" reason as
+// pagetable_t/pte_t above) - needed by the shared kernel/sysfile.c.
+#define PGSIZE 4096 // bytes per page
+#define PGSHIFT 12  // bits of offset within a page
+
+#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
+#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
+
 #endif /* ARCH_VM_H */
