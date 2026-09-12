@@ -1,4 +1,6 @@
 // clang-format off
+#include "arch_vm.h"
+
 struct buf;
 struct context;
 struct file;

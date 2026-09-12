@@ -1513,12 +1513,104 @@ split, just discovered a tier later than expected.
   plan's own "do not clean up while you're in there" rule forbids.
   Worth its own investigation and fix, separately.
 
+- **`kernel/log.c`** (2026-09-12) - 5 forks (`arm64`, `arm64-pi4`,
+  `loongarch`, `riscv32`, `riscv64`). Baseline picked by criterion 2, not
+  by which forks already matched: `arm64` (`amd64`/`i386` were the
+  larger already-0-diff pair, but diffing them against `arm64` found
+  `arm64` fixes two real things `amd64`/`i386` don't - `bpin()`/
+  `bunpin()` refcount-based buffer pinning instead of a `B_DIRTY` flag
+  (needs `bio.c`'s own `bpin`/`bunpin`, which `amd64`/`i386`/
+  `amd64-jserv`/`mips` don't have - the same "struct buf differs by
+  family" gap that still blocks `bio.c` itself, see below), and
+  `log_write()` acquiring `log.lock` *before* reading `log.outstanding`/
+  `log.lh.n` rather than after - the latter is a real data race on the
+  unlocked read). `riscv64` (79-97 lines from the other four - the
+  biggest gap in the cluster) turned out to be a *further* advance on
+  top of `arm64`'s baseline, once actually read rather than assumed to
+  be a bigger fork: a lost-wakeup fix (see the `sleep_release()`
+  interface below) plus a tested `sys_sync()` syscall - both kept.
+
+  Two real per-arch gaps resolved as interfaces, matching this file's
+  own established method:
+  - **`sleep_release(chan, lk)`** (new, `kernel/arch/<arch>/arch_proc.h`)
+    - `arm64`/`arm64-pi4`/`loongarch`/`riscv32` all have a single
+    `sleep(chan, lk)` that does register+release+block+reacquire
+    atomically; `riscv64`'s own `sleep()` is deliberately split into
+    `sleep_prepare(chan)` (register, while still holding the caller's
+    lock) and a separate zero-arg `sleep()` (only actually block if the
+    channel wasn't already woken up meanwhile) - a real fix for a
+    narrow lost-wakeup race in the gap between releasing the caller's
+    lock and the process actually going to sleep. This is the exact
+    same split `kernel/sleeplock.c`'s own merge hit and deferred
+    (`riscv64` was left out of that 6-fork cluster for precisely this
+    reason - see that entry above). Rather than defer it again,
+    `sleep_release()` gives every fork in this cluster the same call:
+    a plain pass-through to `sleep(chan, lk)` for the four with the
+    atomic version, and the real `sleep_prepare`/release/`sleep`/
+    acquire sequence for `riscv64` - so `kernel/log.c` (and, if
+    revisited, `sleeplock.c`) never needs to know which. `riscv64`'s
+    own other callers of `sleep_prepare()`/`sleep()` (console.c,
+    pipe.c, sysproc.c, proc.c, uart.c, virtio_disk.c) are untouched -
+    they keep calling the fine-grained pair directly.
+  - **`LOGSIZE`/`LOGBLOCKS`**: `riscv64`'s own `param.h` spells this
+    constant `LOGBLOCKS` (`riscv64` also has its own separate
+    `tools/mkfs.c`, one log block bigger than the four-fork shared
+    family's - see this plan's own `mkfs*.c` entry - so its actual
+    on-disk `nlog` genuinely differs at runtime, which is fine: the
+    shared file reads `sb->nlog` into `log.size` regardless of arch,
+    it never hardcodes either constant). Given `#define LOGSIZE
+    LOGBLOCKS` as an alias in `riscv64`'s own `param.h` - same
+    already-established pattern as `loongarch`'s own `KERNBASE ==
+    RAMBASE` alias - rather than a rename, so nothing that already
+    says `LOGBLOCKS` there needs to change.
+
+  One real gap fixed in passing: `riscv64`'s own `kernel/defs.h` was
+  the one fork in this cluster whose declarations (`pagetable_t` used
+  in `proc_pagetable()` etc.) still relied on whichever `.c` file
+  happened to `#include "riscv.h"` before `defs.h` - the same
+  self-containment gap `sleeplock.c`'s own merge already fixed for
+  `arm64`/`arm64-pi4`/`loongarch`/`riscv32`. Given the same fix:
+  `#include "arch_vm.h"` at the top of `riscv64`'s own `defs.h` too.
+
+  Verified: build + full `usertests` ("ALL TESTS PASSED") for all five
+  forks, `make test-all`, `docker build --build-arg ARCH=<name>` for
+  `arm64`/`loongarch`/`riscv32`/`riscv64` and `ARCH=all` for
+  `arm64-pi4`. `riscv64`'s own `sys_sync()` has no coverage in its
+  `test-xv6.py` harness at all (built into `fs.img` but never invoked)
+  - checked by hand instead: booted interactively, ran `sync` at the
+  shell, confirmed it returns and the shell keeps working afterward.
+
+  **Still not merged: `amd64`, `i386`, `amd64-jserv`, `mips`.** All four
+  use the *same* concurrent `begin_op()`/`end_op()` design as this
+  cluster (not `kernel/legacy/log.c`'s older single-transaction one -
+  confirmed by reading, not just line counts: `amd64-jserv`/`mips` are
+  only 20-25 lines from `amd64`/`i386`, a difference of missing
+  generalizations - `ROOTDEV` hardcoded instead of a `dev` param, no
+  `bpin`/`bunpin` - not a different algorithm). But converging them
+  onto *this* baseline means giving `amd64`/`i386`/`amd64-jserv`/`mips`'s
+  own `bio.c` a `bpin()`/`bunpin()` pair and switching their `bget()`
+  eviction check off `B_DIRTY`, which is the same `struct buf`
+  unification `bio.c` itself has been waiting on. Left as their own
+  future cluster (baseline `amd64`/`i386`, already 0-diff) rather than
+  forced onto the `bpin`/`bunpin` design now - a real "give this file
+  the more advanced design" case, but one that reaches into `bio.c`,
+  so it should land together with (or after) that file, not as a
+  drive-by inside `log.c`.
+
 - **Queued next: `kernel/bio.c`.** Previously postponed once already
   (criterion 6 - "prefer the easier file when a candidate reveals deep,
   costly work": `bio.c` needs a `struct buf` unification and a new
   `disk_rw()` shim before it can move, unlike `file.c`, which reused
   existing infrastructure) in favor of `file.c` -> `sleeplock.c` ->
-  `kalloc.c`. Still on the Tier 3 list (`fs.c`, `log.c`, `bio.c`, the
+  `kalloc.c` -> `log.c`. The `bpin()`/`bunpin()` gap found while doing
+  `log.c` (above) is exactly this same prerequisite - `amd64`/`i386`/
+  `amd64-jserv`/`mips`'s own `struct buf` uses a `B_DIRTY` flag where
+  `arm64`/`arm64-pi4`/`loongarch`/`riscv32`/`riscv64` use a dedicated
+  `int valid`/`int disk` pair plus real pin/unpin refcounting, and
+  `bread()`/`bwrite()` call the disk driver by different names
+  (`iderw(b)` vs `virtio_disk_rw(b, write)`) - a `disk_rw()` interface,
+  the same shape as `sleep_release()` above, would close that second
+  gap. Still on the Tier 3 list (`fs.c`, `log.c`, `bio.c`, the
   arch-independent half of `syscall.c`); not re-scoped yet.
 
 **Housekeeping, same conversation: `stress-test-all` moves to CI, not
