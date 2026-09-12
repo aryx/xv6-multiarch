@@ -1729,21 +1729,35 @@ split, just discovered a tier later than expected.
   **Re-scoped (2026-09-12): the `disk_rw()`/`struct buf` prerequisite
   above turns out to block only one of three real clusters, not all of
   `bio.c`.** Re-running `pairwise_diff.sh kernel/bio.c` found:
-  1. **`arm64`/`arm64-pi4`/`loongarch`/`riscv32`/`riscv64` (5 forks) are
-     free to merge right now**, no interface work needed - all five
-     already use `bpin`/`bunpin` and `virtio_disk_rw()` uniformly.
-     `riscv64`'s apparent 34-40 line gap is pure brace-style/whitespace
-     noise (`diff -b -w`: a dead `#include "riscv.h"`, one stray
-     comment, K&R-vs-Allman braces - no real difference), the same
-     false-outlier trap hit repeatedly this session. Same shape as
-     `kalloc.c`; this is the actual next candidate, not the
-     `disk_rw()` work.
+  1. **`arm64`/`arm64-pi4`/`loongarch`/`riscv32`/`riscv64` (5 forks)
+     merged into a new `kernel/bio.c`.** `riscv64`'s apparent 34-40 line
+     gap was pure brace-style/whitespace noise (`diff -b -w`: a dead
+     `#include "riscv.h"`, one stray comment, K&R-vs-Allman braces - no
+     real difference), the same false-outlier trap hit repeatedly this
+     session. One real gap turned up once actually merging, though:
+     `arm64-pi4`/`loongarch` call `ramdiskrw(b, write)` (real Pi 4 and
+     QEMU-loongarch boards, no virtio device), not `virtio_disk_rw(b,
+     write)` like the other three - same `(struct buf*, int)` shape, so
+     a `disk_rw(b, write)` interface closes it, same as `sleep_release`.
+     **This one is genuinely board-scoped, not ISA-scoped** - `arm64`
+     and `arm64-pi4` share one ISA directory (`kernel/arch/arm64/`) for
+     `arch_vm.h`/`arch_proc.h` (those really are per-ISA), but need
+     *different* `disk_rw()` backends. Solved with a new
+     `kernel/arch/arm64-pi4/arch_disk.h` (ramdisk backend) added to
+     that fork's own `-I` list *before* the shared `kernel/arch/arm64`
+     one, so its file shadows the ISA-level one there (virtio backend)
+     - the same "quoted-include search order" mechanism as gotcha 12,
+     used deliberately this time rather than hit by accident. Verified
+     past the source level: `objdump -dr kernel/bio.o` on both forks
+     confirms each calls the right symbol (`ramdiskrw` for `arm64-pi4`,
+     `virtio_disk_rw` for plain `arm64`). See `docs/claude_notes/
+     notes_new_kernel_organization.md`'s own updated write-up.
   2. **`kernel/bio-legacy.c` can likely grow**, and isn't ARM-specific
      at all (further confirming the naming rationale above) - `mips`'s
      own `bio.c` is only ~14 lines from it (comment/whitespace noise,
      already calls the same `iderw()`); `amd64-jserv` is ~50 lines away
      but the same `B_BUSY`-flag-polling design (no real sleeplock),
-     worth a closer read before merging.
+     worth a closer read before merging. Not started.
   3. **`amd64`/`i386` are their own third cluster** (already 0-diff
      between themselves) - a genuinely more advanced locking primitive
      (real `sleeplock`/`acquiresleep()`, not `B_BUSY` polling) but
@@ -1751,6 +1765,30 @@ split, just discovered a tier later than expected.
      file; the `disk_rw()` interface only matters for bridging *this*
      pair into the fully modern `kernel/bio.c` eventually - not a
      blocker for (1) or (2). Not started.
+
+  Verified: build + full `usertests` ("ALL TESTS PASSED") for all five
+  forks in (1), `make test-all`, `docker build --build-arg ARCH=<name>`
+  for `arm64`/`loongarch`/`riscv32`/`riscv64`, `ARCH=all` for
+  `arm64-pi4`, and `git blame -C -C` on `kernel/bio.c`.
+
+  **Finding, not fixed: `arm64`'s own `test-arm64` panics
+  non-deterministically in `twochildren` (`kerneltrap`, a translation
+  fault at a high kernel address), independent of this merge.** First
+  seen as a real `docker build --build-arg ARCH=arm64` failure while
+  verifying this commit; reproduced twice more on a truly clean local
+  rebuild before being cleared as pre-existing - the deciding test was
+  a bisection: `disk_rw(b, N)` preprocesses to byte-identical text as a
+  direct `virtio_disk_rw(b, N)` call (checked with `gcc -E`), yet one
+  run failed and a same-binary rerun passed, which is only possible if
+  the failure is genuine QEMU/SMP-scheduling non-determinism, not a
+  logic difference from this merge - confirmed with 5 further clean
+  runs (3 on the reverted-to-direct-call binary, 2 more on the real
+  `disk_rw` one), all "ALL TESTS PASSED". Rate looked like roughly 2 in
+  7 runs failing this session, high enough to occasionally break CI on
+  an unrelated commit. Not investigated further here (out of scope,
+  pre-existing, not introduced by this merge) - worth a dedicated
+  session with `notes_debugging_techniques.txt`'s own methodology if it
+  recurs; not yet in any `notes_arch_arm64.txt`.
 
 **Housekeeping, same conversation: `stress-test-all` moves to CI, not
 every local iteration.** GitHub Actions CI is confirmed working now, so

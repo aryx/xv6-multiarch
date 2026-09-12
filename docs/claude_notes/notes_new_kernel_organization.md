@@ -2,7 +2,8 @@
 
 This is a reference note for a convention that grew out of
 `docs/claude_notes/plan_factorization.md`'s Tier 3 work (`file.c`,
-`pipe.c`, `sleeplock.c`, `kalloc.c`, `log.c`, session of 2026-09-12), not
+`pipe.c`, `sleeplock.c`, `kalloc.c`, `log.c`, `sysproc.c`, `bio.c`,
+session of 2026-09-12), not
 a plan of its own - it exists so the *shape* of the convention is
 findable in one place instead of scattered across that file's own
 blow-by-blow entries. Read `plan_factorization.md` for the history and
@@ -25,7 +26,10 @@ kernel/*.h, kernel/init/...     kernel-only headers, no user-side need
 kernel/arch/<arch>/arch_vm.h    VM-only per-arch interface: pagetable_t,
                                pte_t, PGSIZE/PGSHIFT/PGROUNDUP(DOWN)
 kernel/arch/<arch>/arch_proc.h  process/scheduling-only per-arch
-                               interface: sleep_release() so far
+                               interface: sleep_release()
+kernel/arch/<arch>/arch_disk.h  block-device-only per-arch interface:
+                               disk_rw() - board-scoped, not ISA-scoped
+                               (see its own section below)
 ```
 
 Each `include/arch/<arch>/` or `kernel/arch/<arch>/` directory is one
@@ -44,10 +48,13 @@ Both `kernel/vm.h` (the eventual portable VM interface) and
 build (both directories sit on its own `-I` list), so a bare
 `#include "vm.h"` would be genuinely ambiguous - resolved by search
 order, not by intent. The `arch_` prefix can't collide with anything
-portable-named. Same reasoning for `arch_proc.h`. Follow this pattern
-for any future scoped interface header (a plausible next one:
-`arch_string.h` for `stosb()`/`stosl()`, see `plan_factorization.md`'s
-own `string.c` entry).
+portable-named. Same reasoning for `arch_proc.h`/`arch_disk.h`. Follow
+this pattern for any future scoped interface header (a plausible next
+one: `arch_string.h` for `stosb()`/`stosl()`, see
+`plan_factorization.md`'s own `string.c` entry) - but check the new
+"board-scoped, not ISA-scoped" section below first, since not every
+one of these can just reuse the existing per-ISA directory the way
+`arch_vm.h`/`arch_proc.h` do.
 
 ## The "interface, not permanent fork" method
 
@@ -85,8 +92,8 @@ Concrete precedents so far, each a template for the next one:
   forks without one (`amd64`, `i386`, `mips`, `amd64-jserv`) - not yet
   turned into a literal shared-header interface, but already identified
   as the same shape in `plan_factorization.md`'s own `pipe.c` writeup.
-- **`sleep_release(chan, lk)`** (`kernel/arch/<arch>/arch_proc.h`, new
-  this session) - most forks' own `sleep(chan, lk)` already does
+- **`sleep_release(chan, lk)`** (`kernel/arch/<arch>/arch_proc.h`) -
+  most forks' own `sleep(chan, lk)` already does
   register+release+block+reacquire atomically, so `sleep_release()` is
   a plain pass-through there; `riscv64`'s own `sleep()` is deliberately
   split into `sleep_prepare()` + a separate zero-arg `sleep()` instead,
@@ -95,6 +102,20 @@ Concrete precedents so far, each a template for the next one:
   lets `kernel/log.c` call the same thing either way, without
   `riscv64`'s other callers (console.c, pipe.c, proc.c, ...) changing
   at all - they keep calling the fine-grained pair directly.
+- **`myproc()`** (each fork's own `proc.h`) - `amd64`/`i386` already
+  have a real `myproc()` function; `mips` and the `arm-pi` cluster use
+  a raw global (`proc`, `curr_proc`) instead. `#define myproc() (proc)`
+  / `#define myproc() (curr_proc)` closed the gap for
+  `kernel/sysproc-legacy.c` - the same "trivial backend" shape as
+  `copyin`/`copyout`, just confirmed in practice instead of only
+  predicted.
+- **`disk_rw(b, write)`** (`kernel/arch/<arch>/arch_disk.h`) - most of
+  the `kernel/bio.c` cluster (`arm64`, `riscv32`, `riscv64`) calls
+  `virtio_disk_rw(b, write)`; `arm64-pi4`/`loongarch` call
+  `ramdiskrw(b, write)` instead (no virtio device on those boards) -
+  identical `(struct buf*, int)` shape either way. See its own section
+  below for why this one needed a different directory shape than the
+  others.
 
 ## The check before accepting "real difference, not naming"
 
@@ -109,6 +130,37 @@ This reframing is what turned `pipe.c`'s "two irreconcilable memory
 models" into "one missing interface", and what let `riscv64` join
 `log.c`'s cluster instead of being deferred a second time (it was
 deferred exactly this way once already, for `sleeplock.c`).
+
+## Not every interface is ISA-scoped - some are board-scoped
+
+`arch_vm.h`/`arch_proc.h` are shared per-*ISA*: `arm64` and `arm64-pi4`
+are different boards but the same ISA, so they share one
+`kernel/arch/arm64/` directory for both, and that's correct - page
+table shape and the lost-wakeup race are properties of the CPU, not
+the board. `disk_rw()` broke that assumption the first time: `arm64`
+(QEMU `virt`) has a virtio block device, `arm64-pi4` (real Raspberry Pi
+4 hardware) doesn't, so the two need genuinely different backends
+despite sharing an ISA directory for everything else.
+
+Fix: give the board that needs to differ its *own* directory
+(`kernel/arch/arm64-pi4/`), holding only the one file that actually
+diverges (`arch_disk.h`), and list it in that fork's own `-I` flags
+*before* the shared ISA directory - a quoted `#include "arch_disk.h"`
+then resolves to the board-specific one first, falling through to the
+ISA-level one for any fork that doesn't override it. This is the same
+search-order mechanism gotcha 12 (`plan_factorization.md`) warns about
+being bitten by accidentally; here it's used deliberately. Verified past
+the source level too: `objdump -dr kernel/bio.o` on both forks confirms
+each calls the symbol it should (`ramdiskrw` vs `virtio_disk_rw`), not
+just "it compiled."
+
+**Before assuming a new interface is ISA-scoped, ask whether every
+fork sharing that ISA directory would actually agree on the answer.**
+`pagetable_t`/`PGSIZE`/`sleep_release` all happened to pass that check
+without anyone verifying it explicitly; `disk_rw` is the first one
+that didn't, and won't be the last - anything hardware-attached
+(disks, interrupt controllers, UARTs) is a board property first, an
+ISA property only incidentally.
 
 ## Not everything gets an interface
 
@@ -125,9 +177,9 @@ contract. See `plan_factorization.md`'s own "what not to do" section.
 Long term, the bet is that most of `kernel/proc.c`, `kernel/vm.c`,
 `kernel/trap.c` (today's Tier 4) become mostly-portable Tier 3 files
 once enough of their own real differences are named as `arch_*.h`
-interfaces this same way - `myproc()` (a function call vs. a raw global
-on `amd64-jserv`/`mips`) is flagged in `plan_factorization.md` as the
-next likely case after `copyin`/`copyout`. `arch/<arch>/` trees would
-then hold only what's left once that's done: register/CSR access,
-context-switch asm, entry/trap asm, interrupt controller drivers - the
-genuinely irreducible per-ISA, per-board code.
+interfaces this same way - `copyin`/`copyout` (real page-table walk vs.
+a trivial `memmove()`) is the next likely case still open.
+`arch/<arch>/` trees would then hold only what's left once that's
+done: register/CSR access, context-switch asm, entry/trap asm,
+interrupt controller drivers - the genuinely irreducible per-ISA,
+per-board code.

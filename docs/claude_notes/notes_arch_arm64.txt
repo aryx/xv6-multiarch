@@ -254,3 +254,21 @@ Fully wired up
   example for why) and a matching entry in
   .github/workflows/docker.yml's matrix, verified locally with
   `docker build --build-arg ARCH=arm64` before touching CI.
+
+Known flaky test (not yet root-caused)
+------------------------------------------------------------------------------
+- `twochildren` (in usertests-arm64.c) occasionally panics with
+  `kerneltrap` - a translation fault at a high kernel virtual address,
+  seen mid-suite, well past the benign-trap tests earlier in the run.
+  First surfaced 2026-09-12 as a `docker build --build-arg ARCH=arm64`
+  failure while verifying the kernel/bio.c Tier 3 merge
+  (plan_factorization.md) - bisected and confirmed genuinely
+  non-deterministic, not caused by that merge: the same binary passed
+  cleanly on some runs and failed on others with no source change at
+  all (identical preprocessed output either way, checked with `gcc
+  -E`). Roughly 2 failures in 7 runs this session - infrequent, but
+  frequent enough to occasionally break CI/Docker on an unrelated
+  commit and be mistaken for that commit's fault. Not root-caused -
+  whoever hits this next should start from `notes_debugging_techniques.
+  txt`'s own methodology (count interrupts/scheduling events before
+  guessing) rather than assuming the most recent change is at fault.
