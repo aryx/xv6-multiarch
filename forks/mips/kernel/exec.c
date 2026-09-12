@@ -27,7 +27,7 @@ exec(char *path, char **argv)
   pgdir = 0;
 
   // Check ELF header
-  if(readi(ip, (char*)&elf, 0, sizeof(elf)) < sizeof(elf))
+  if(readi(ip, 0, (uint64)(uintp)&elf, 0, sizeof(elf)) < sizeof(elf))
     goto bad;
   if(elf.magic != ELF_MAGIC)
     goto bad;
@@ -39,7 +39,7 @@ exec(char *path, char **argv)
   proc->asid = nextasid();
   sz = 0;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
-    if(readi(ip, (char*)&ph, off, sizeof(ph)) != sizeof(ph))
+    if(readi(ip, 0, (uint64)(uintp)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
     if(ph.type != ELF_PROG_LOAD)
       continue;
@@ -68,7 +68,7 @@ exec(char *path, char **argv)
     if(argc >= MAXARG)
       goto bad;
     sp = (sp - (strlen(argv[argc]) + 1)) & ~3;
-    if(copyout(pgdir, sp, argv[argc], strlen(argv[argc]) + 1) < 0)
+    if(arch_copyout(pgdir, sp, argv[argc], strlen(argv[argc]) + 1) < 0)
       goto bad;
     ustack[argc] = sp;
   }
@@ -78,7 +78,7 @@ exec(char *path, char **argv)
   proc->tf->a1 = sp - (argc+1)*4;  // argv pointer
 
   sp -= (argc+1) * 4;
-  if(copyout(pgdir, sp, ustack, (argc+1)*4) < 0)
+  if(arch_copyout(pgdir, sp, (char *)ustack, (argc+1)*4) < 0)
     goto bad;
   sp -= 4 * 4;  // leave first four words undefined for o32 calling convention.
 
@@ -89,8 +89,8 @@ exec(char *path, char **argv)
   safestrcpy(proc->name, last, sizeof(proc->name));
 
   // Commit to the user image.
-  oldpgdir = proc->pgdir;
-  proc->pgdir = pgdir;
+  oldpgdir = proc->pagetable;
+  proc->pagetable = pgdir;
   proc->sz = sz;
   proc->tf->epc = elf.entry;  // main
   proc->tf->sp = sp;
