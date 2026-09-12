@@ -1548,7 +1548,13 @@ linkunlink(char *s)
 void
 bigdir(char *s)
 {
-  enum { N = 500 };
+  // claude: N temporarily lowered 500 -> 200 for developer velocity while
+  // the kernel-tree factorization is in flight - bigdir()'s link()/unlink()
+  // loop is O(N^2) (dirlookup() linear-scans a growing directory), so this
+  // cuts this test's wall time ~6x while still spanning several directory
+  // blocks (200 entries / 64 dirents-per-block ~ 3 blocks). Restore to 500
+  // once iteration speed matters less. See docs/claude_notes/plan_test_speed.md.
+  enum { N = 200 };
   int i, fd;
   char name[10];
 

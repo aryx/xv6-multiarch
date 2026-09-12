@@ -1,7 +1,9 @@
 # Plan: cut testing time
 
-**Status:** proposed, not started. Written 2026-09-12, after measuring where
-`stress-test-all`'s wall time actually goes.
+**Status:** in progress. Written 2026-09-12, after measuring where
+`stress-test-all`'s wall time actually goes. Option 3 (`bigdir`'s `N`) is
+done as of the same day - see "Results after option 3" below. Options 1-2
+and 4-8 remain proposals, not started.
 
 ## The measurement
 
@@ -40,6 +42,11 @@ wait
 ```
 
 ## Results (2026-09-12, this host)
+
+**This is the original "before" baseline.** `riscv64`/`arm64`/`riscv32`'s
+own numbers are superseded by "Results after option 3" further down,
+once `bigdir`'s `N` was cut - kept here unchanged as the historical
+starting point the rest of this file's analysis was built from.
 
 | arch | build (`make build-<arch>`) | test (`make test-<arch>`, boot+usertests) | total |
 |---|---|---|---|
@@ -140,9 +147,13 @@ partly hidden inside that same number.
 
 ### `arm64` (245s total)
 
-Shared `tests/usertests-arm64.c` (also used by `riscv64` for these three
-functions - see below). Order differs from `riscv64`'s: `manywrites`/
-`execout` run early, interleaved with the fast tests; `bigdir` is last.
+Shared `tests/usertests-arm64.c` (also used by `arm64-pi4` and
+`loongarch` - **not** `riscv64`, which has its own separate,
+independently-maintained copy with identical `bigdir`/`manywrites`/
+`execout` code - corrected here after first writing this as one shared
+file; it's two duplicate files, not one). Order differs from `riscv64`'s:
+`manywrites`/`execout` run early, interleaved with the fast tests;
+`bigdir` is last.
 
 | test | duration | what it does |
 |---|---|---|
@@ -188,9 +199,10 @@ iteration against an ever-growing directory - so its total work is
 the cost, it roughly quarters it. That makes `bigdir`'s `N=500` the
 single highest-leverage constant of everything found in this session,
 *if* any constant is to be tuned - it's the one test that's both (a) the
-most expensive single item in all three top-3 arches and (b) shared,
-byte-identical code across at least `riscv64`/`arm64` already (so one
-change helps both at once), and (c) quadratic, so a modest cut goes
+most expensive single item in all three top-3 arches and (b) byte-identical
+code duplicated across `riscv64`'s own file and the `arm64`/`arm64-pi4`/
+`loongarch` shared file (so each needs its own edit, but the edit is the
+same three lines each time), and (c) quadratic, so a modest cut goes
 further than in any of the linear tests.
 
 ### What this changes about the earlier constant-by-constant notes
@@ -227,6 +239,40 @@ to one test: it would apply to every filesystem-heavy test on every
 arch. Worth measuring before touching any usertests.c constant. Not yet
 tried.
 
+## Results after option 3: `bigdir` N=500 -> 200 (DONE 2026-09-12)
+
+Applied the same three-line change (with the same `claude:` comment) to
+all three duplicated copies: `tests/usertests-arm64.c` (also picked up by
+`arm64-pi4`/`loongarch`, not separately measured here),
+`forks/riscv64/tests/usertests.c`, `forks/riscv32/tests/usertests.c`.
+Rebuilt and ran the full `docker build --build-arg ARCH=<arch>` (build +
+`test-<arch>`) for all three top-3 arches to confirm `ALL TESTS PASSED`
+still holds and to measure the real effect:
+
+| arch | `bigdir` before -> after | full test step before -> after |
+|---|---|---|
+| `riscv64` | ~69-73s -> **17.0s** (~4.1x) | 552-565s -> **419.1s** (-24 to -26%) |
+| `arm64` | 59.2s -> **14.8s** (~4.0x) | 244.5-245.4s -> **201.9s** (-17 to -18%) |
+| `riscv32` | ~116s -> **28.6s** (~4.1x) | 207.1-207.8s -> **120.9s** (-42%) |
+
+All three still print `ALL TESTS PASSED`. The ~4x reduction (not the
+naive 6.25x from `(500/200)²`) matches expectations once you account for
+`bigdir`'s non-quadratic parts (`fork`/`open`/`close`/the final
+`unlink()`-cleanup loop are O(N), not O(N²)) diluting the pure quadratic
+term - still a large, real win. `riscv32`'s disproportionate per-entry
+cost for the identical workload **persists at the new N** (28.6s vs.
+14.8-17s for the other two, still ~1.7-2x) - this confirms it's a real
+property of that fork/QEMU target, not an artifact that was specific to
+N=500, so option 6 (root-cause it) is still open and still worth doing.
+
+`riscv64` remains the slowest arch by a wide margin (419.1s vs. `arm64`'s
+202s), since `bigdir` was only one of six slow tests in its suite -
+`badwrite`/`outofinodes`/`execout`/`manywrites` (options 4-5) are
+untouched by this change and now make up a *larger* share of its
+remaining time than before. `riscv32` saw the largest relative win (42%)
+because `bigdir` was effectively its *only* slow test, so cutting it cut
+almost all of the fat this fork had.
+
 ## Options, cheapest/safest first
 
 1. **Do nothing - the matrix already parallelizes this.** CI wall time is
@@ -238,18 +284,18 @@ tried.
    all three top-3 forks at once. Free (no coverage change), applies to
    every filesystem-heavy test in every arch, not just one - do this
    before anything else on this list.
-3. **Shrink `bigdir`'s `N=500`** (e.g. to ~150-200), in whichever of
-   `tests/usertests-arm64.c` / `forks/riscv64/tests/usertests.c` /
-   `forks/riscv32/tests/usertests.c` actually needs editing. Highest
-   single-constant leverage found: it's the most expensive test in *all
-   three* top-3 arches, and its cost is quadratic in `N` (linear-scan
-   `dirlookup()` on an ever-growing directory), so a modest cut goes
-   further than in any of the linear tests below. Changing the shared
-   `tests/usertests-arm64.c` copy helps `riscv64` and `arm64` in one edit;
-   `riscv32`'s own copy (not yet folded into that shared cluster) needs
-   its own, identical edit. Needs a floor check first: `N` must stay large
-   enough to still force the directory past however many entries fit in
-   one block, or the test stops meaningfully exercising "big directory".
+3. **DONE 2026-09-12: shrunk `bigdir`'s `N` from 500 to 200** in all
+   three places it's duplicated - `tests/usertests-arm64.c` (also used by
+   `arm64-pi4`/`loongarch`), `forks/riscv64/tests/usertests.c`, and
+   `forks/riscv32/tests/usertests.c` - each with the same `claude:`
+   comment explaining the tradeoff and pointing back at this file. 200
+   still spans several directory blocks (200/64 dirents-per-block ≈ 3
+   blocks, vs. 500's ≈ 8), so "big directory" is still genuinely
+   exercised, just not padded past what that requires. Deliberately a
+   temporary tuning knob, not a permanent coverage cut: the plan is to
+   restore `N=500` once the in-flight kernel-tree factorization settles
+   and raw iteration speed matters less than it does today - see each
+   comment's own wording. Results below.
 4. **Split `riscv64`'s own usertests into two parallel CI steps/jobs**: one
    running the bulk of `usertests` (excluding `diskfull`/`outofinodes`),
    one running just the disk-stress tail, each in its own QEMU boot. This
