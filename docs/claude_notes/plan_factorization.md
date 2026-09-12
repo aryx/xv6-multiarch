@@ -1197,6 +1197,74 @@ on-disk format unification, not a byte-identical merge).
 `string.c`, and the arch-independent half of `syscall.c`. Genuinely shared
 logic, but with real per-arch drift accumulated over a decade.
 
+**Checklist for picking and executing the next Tier 3 file (the user's
+own criteria, 2026-09-12 - the sections right below spell out the full
+reasoning and the real bugs each one caught; this is the fast-reference
+version):**
+
+1. **Mostly portable first.** Before committing to a file, check how
+   much of it is genuinely arch-independent vs. really arch-coupled.
+   `pipe.c`/`file.c` only touched `copyin()`/`copyout()`/`pagetable_t`;
+   `syscall.c` touches trapframe registers directly in nearly every
+   function (`p->trapframe->x0`..`x7` on arm64) - too coupled, skipped
+   for now.
+2. **Baseline = the most advanced implementation, not just the
+   biggest existing cluster.** Don't merge whichever forks already
+   happen to match each other - check whether some other fork (even a
+   singleton, even outside the cluster) already does it better, and
+   converge toward *that*. Diffing `file.c`'s own arm64-based merge
+   against `riscv64` (not in that cluster) found two real gaps this
+   way: a missing `n<0` guard, and a `copyout()` missing bounds/write-
+   protection checks.
+3. **Simplest or most modern implementation as the tiebreaker** when
+   there is no clearly "most advanced" one.
+4. **Real arch differences become portable interfaces, not permanent
+   forks.** A named type/function (`pagetable_t`, `uintp`, eventually
+   `copyin`/`copyout`/`myproc`) goes in a `kernel/arch/<arch>/arch_vm.h`-
+   style file, implemented differently per arch, so portable code in
+   `kernel/` calls it uniformly - matching the user's own
+   `~/principia/kernel/` (its `portfns_`/`portdat_`/`dat_` convention,
+   same idea, different names here). **A constant that happens to be
+   identical across every current fork can still be a genuine
+   "interface" worth keeping per-arch, not a candidate for hoisting
+   into one shared literal** - the user's own example: `PGSIZE` is 4096
+   on the 13 forks that define it at all, but that is a fact about
+   today's hardware choices, not a portability guarantee; a future port
+   with a different native page size would need to redefine it, the
+   same way `uintp` already varies by word size. (`arm` is the 14th -
+   checked, and it turns out to have no `PGSIZE` anywhere in its own
+   tree at all: it uses a completely different buddy allocator,
+   `kernel/buddy.c`, not the classic free-list `kalloc.c` this
+   candidate file is about - a real, separate reason it won't join this
+   particular merge, not an oversight.) Define `PGSIZE` per-arch in
+   `kernel/arch/<arch>/arch_vm.h` (VM-scoped, alongside `pagetable_t`/
+   `pte_t` - not the general `arch.h`) even where every arch's current
+   definition is the literal same line - the point of an interface is
+   the named contract, not
+   whether today's implementations happen to agree.
+5. **But not everything gets an interface.** Code with no counterpart
+   in any other fork (real Tier 4 stuff - MMU walk internals, boot
+   sequences, interrupt controllers) stays local; `arch_vm.h` is only
+   for types/functions implementing a genuine cross-arch contract, not
+   a promotion path for arbitrary per-fork content.
+6. **Prefer the easier file when a candidate reveals deep, costly
+   work.** Postpone rather than force it - this is how the session
+   went `bio.c` (needs a `struct buf` unification + a new `disk_rw()`
+   shim + a `log.c` edit) -> `file.c` (quick, reused existing
+   infrastructure) -> `sleeplock.c` (turned out to be the biggest win
+   yet, once actually checked).
+7. **Verify by building, not by trusting a diff.** Concretely: check a
+   file actually *exists* in a fork before trusting a "0 lines
+   different" (`diff` against a missing file with stderr suppressed
+   produces empty stdout, which `wc -l` happily reports as 0 - this
+   produced a false 13-fork match for `sleeplock.c` that was really 6);
+   check whether an include is *actually* dead by looking for every
+   symbol it might provide, not just the ones the file's own body
+   references directly (`pagetable_t`/`pte_t`/`struct spinlock` were
+   each pulled in transitively through `defs.h`/`proc.h`, not used
+   directly by the file being merged - grep-for-direct-use missed all
+   three); and always build + boot-test before trusting either check.
+
 **Working method, settled with the user 2026-09-12 (apply to every
 remaining Tier 3 file):** don't just look for forks that already happen
 to match. For each file: (1) read it in a few candidate forks and judge
@@ -1347,6 +1415,53 @@ split, just discovered a tier later than expected.
   page-table-aware `copyin`/`copyout`) - a genuine per-arch semantic
   split (CLAUDE.md's own "if a function body differs, it belongs in
   arch/<name>/"), not a naming difference, and not yet reconciled.
+- **`kernel/sleeplock.c`** (`8627b0c`) - the biggest win in this tier so
+  far, and found by applying the checklist above rather than starting
+  from a pairwise-diff cluster: `sleeplock.c` only exists in 7 of the
+  14 forks at all (the other 7 use plain spinlocks for buffers, no
+  sleeplock concept), and 6 of those 7 (`amd64`, `i386`, `arm64`,
+  `arm64-pi4`, `loongarch`, `riscv32`) reduce to the exact same code
+  once each fork's own dead per-arch include is dropped - `riscv64`
+  (the 7th) has one real difference, a `sleep_prepare()`/`sleep()`
+  split instead of a single `sleep()` call, left out for a future pass.
+  Two real gotchas, both already folded into the checklist above:
+  (1) an early pairwise check reported a false "0 lines different" for
+  the 7 forks that don't have the file at all - `diff` against a
+  missing path produces empty stdout, and a stray `2>/dev/null` hid the
+  real error, so `wc -l` happily reported 0; (2) dropping the "looked
+  dead" per-arch include broke `defs.h`/`proc.h`'s own transitive
+  reliance on `pagetable_t` and `struct spinlock` (never checked before,
+  because it always worked) - fixed by making both files self-contained
+  rather than restoring the per-fork include, which in turn surfaced a
+  *third*, adjacent bug: `kernel/spinlock.h`, `kernel/nopcs/spinlock.h`,
+  the `arch_vm.h` files, and `amd64`/`i386`'s own `kernel/mmu.h` had no
+  include guards at all, harmless until a header started including
+  another header twice in the same translation unit. All four now
+  guarded. `riscv32` gained its own `kernel/arch/riscv32/arch_vm.h` -
+  the first fork outside the `pipe.c`/`file.c` cluster to need one.
+- **Queued next: `kernel/kalloc.c`.** Free-list physical page
+  allocator - spinlock-protected, no register/trapframe access, no
+  `copyin`/`copyout` coupling, a strong "mostly portable" candidate by
+  criterion 1. Its own per-arch pieces split cleanly in two: `P2V`/
+  `PHYSTOP`/`KERNBASE` (genuinely different real board addresses,
+  already correctly isolated in each fork's own `memlayout.h`, no
+  interface needed) vs. `PGSIZE`/`PGROUNDUP`/`PGROUNDDOWN` (not
+  actually board-specific at all, just currently misfiled inside each
+  fork's other arch-specific header - see criterion 4's own `PGSIZE`
+  discussion above for where these should move). Not started yet.
+
+**Housekeeping, same conversation: `stress-test-all` moves to CI, not
+every local iteration.** GitHub Actions CI is confirmed working now, so
+the full ~25-minute `stress-test-all` sweep across every boot-testable
+fork is the right thing to delegate there (on push) rather than
+running locally after every single-file merge. `test-all` (the quick
+boot-to-shell-prompt check, ~1 min for all 14) stays a mandatory local
+gate - fast enough to run every time, and catches real breakage before
+it ever reaches CI. Still run a targeted full `test-<arch>` and
+`docker build --build-arg ARCH=<name>` locally for whichever forks a
+given commit actually touches - both stay cheap at that scope, and
+CI's own coverage is for confirming nothing *else* broke, not a
+substitute for verifying the actual change.
 
 **Tier 4 — the irreducibly arch-specific.** `proc.c`, `vm.c`, `trap.c`,
 `swtch.S`, `entry.S`, `trapasm.S`, `mmu.h`. These stay in `arch/<name>/`.
