@@ -1372,6 +1372,24 @@ split, just discovered a tier later than expected.
   the 5-fork minority, and the plain `kernel/{string,...}.c` names are
   worth keeping free for the 9-fork `begin_op` majority to grow into
   rather than being squatted on by the smaller group first.
+
+  **Later (2026-09-12): the `legacy/` directory itself was retired**,
+  each file flattened to a `kernel/<name>-legacy.c` sibling instead
+  (`string.c` first, as part of its own three-way split above; then
+  `bio`/`file`/`fs`/`log`/`pipe` together, pure `git mv`, no content
+  change, `git blame -C -C` reverified on all five). Reason: `-legacy`
+  turned out to be a *design-generation* label, not an ARM-specific
+  one - confirmed while investigating `bio.c`'s own next-candidate
+  split, where `mips`'s own `bio.c` turned out to be only ~14 lines
+  from this cluster's `iderw()`/`B_BUSY`-polling design (no relation to
+  ARM at all). A `kernel/legacy/` *directory* implies a fixed member
+  set; a flat `-legacy` suffix says "this design generation" and stays
+  accurate as more non-ARM forks join it later - matching
+  `kernel/sysproc-legacy.c`'s own naming, which prompted the question.
+  `kernel/string-arm.c`/`string-x86.c` were deliberately NOT touched by
+  this same reasoning: those really are permanent, ISA-specific
+  hardware optimizations (`memsetw`/`memsetb` vs `stosl`/`stosb`), not
+  a generation gap, so the ISA-named suffix stays correct forever.
 - **`kernel/string.c`** - the x86 family (`amd64`, `i386`, `amd64-jserv`),
   reconciled with one real one-line fix rather than a pure move: a
   pointer-size cast in `memset()`'s alignment check was hardcoded per
@@ -1582,7 +1600,7 @@ split, just discovered a tier later than expected.
 
   **Still not merged: `amd64`, `i386`, `amd64-jserv`, `mips`.** All four
   use the *same* concurrent `begin_op()`/`end_op()` design as this
-  cluster (not `kernel/legacy/log.c`'s older single-transaction one -
+  cluster (not `kernel/log-legacy.c`'s older single-transaction one -
   confirmed by reading, not just line counts: `amd64-jserv`/`mips` are
   only 20-25 lines from `amd64`/`i386`, a difference of missing
   generalizations - `ROOTDEV` hardcoded instead of a `dev` param, no
@@ -1707,6 +1725,32 @@ split, just discovered a tier later than expected.
   the same shape as `sleep_release()` above, would close that second
   gap. Still on the Tier 3 list (`fs.c`, `log.c`, `bio.c`, the
   arch-independent half of `syscall.c`); not re-scoped yet.
+
+  **Re-scoped (2026-09-12): the `disk_rw()`/`struct buf` prerequisite
+  above turns out to block only one of three real clusters, not all of
+  `bio.c`.** Re-running `pairwise_diff.sh kernel/bio.c` found:
+  1. **`arm64`/`arm64-pi4`/`loongarch`/`riscv32`/`riscv64` (5 forks) are
+     free to merge right now**, no interface work needed - all five
+     already use `bpin`/`bunpin` and `virtio_disk_rw()` uniformly.
+     `riscv64`'s apparent 34-40 line gap is pure brace-style/whitespace
+     noise (`diff -b -w`: a dead `#include "riscv.h"`, one stray
+     comment, K&R-vs-Allman braces - no real difference), the same
+     false-outlier trap hit repeatedly this session. Same shape as
+     `kalloc.c`; this is the actual next candidate, not the
+     `disk_rw()` work.
+  2. **`kernel/bio-legacy.c` can likely grow**, and isn't ARM-specific
+     at all (further confirming the naming rationale above) - `mips`'s
+     own `bio.c` is only ~14 lines from it (comment/whitespace noise,
+     already calls the same `iderw()`); `amd64-jserv` is ~50 lines away
+     but the same `B_BUSY`-flag-polling design (no real sleeplock),
+     worth a closer read before merging.
+  3. **`amd64`/`i386` are their own third cluster** (already 0-diff
+     between themselves) - a genuinely more advanced locking primitive
+     (real `sleeplock`/`acquiresleep()`, not `B_BUSY` polling) but
+     still `iderw()`, not `virtio_disk_rw()`. Fits neither existing
+     file; the `disk_rw()` interface only matters for bridging *this*
+     pair into the fully modern `kernel/bio.c` eventually - not a
+     blocker for (1) or (2). Not started.
 
 **Housekeeping, same conversation: `stress-test-all` moves to CI, not
 every local iteration.** GitHub Actions CI is confirmed working now, so
