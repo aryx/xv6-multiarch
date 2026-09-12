@@ -102,6 +102,13 @@ class QEMU:
             self.read()
             for line in self.lines():
                 print(line)
+                # claude: without this, stdout is block-buffered (not a
+                # tty under "docker build"/CI), so every line prints at
+                # once at process exit instead of as it actually
+                # arrives - making a real per-test timing breakdown from
+                # the build log impossible. See
+                # docs/claude_notes/plan_test_speed.md.
+                sys.stdout.flush()
                 if any(re.search(r, line) for r in regexps):
                     return True
             time.sleep(0.2)
