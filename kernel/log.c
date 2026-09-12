@@ -44,6 +44,7 @@ struct log {
   int outstanding; // how many FS sys calls are executing.
   int committing;  // in commit(), please wait.
   int dev;
+  int ncommit; // how many commits have completed - see sys_sync() below.
   struct logheader lh;
 };
 struct log log;
@@ -169,9 +170,29 @@ end_op(void)
     commit();
     acquire(&log.lock);
     log.committing = 0;
+    log.ncommit += 1;
     wakeup(&log);
     release(&log.lock);
   }
+}
+
+// claude: only riscv64 currently exposes this as a syscall (see its own
+// kernel/syscall.c/tests/sync.c) - kept in the shared file rather than
+// split out, since it needs direct access to this file's own static
+// "log" global; harmless for every other fork here, which simply never
+// wires it into their own syscall table.
+uint64
+sys_sync(void)
+{
+  acquire(&log.lock);
+  if (log.committing || log.outstanding > 0) {
+    int n = log.ncommit + 1;
+    while (log.ncommit < n) {
+      sleep_release(&log, &log.lock);
+    }
+  }
+  release(&log.lock);
+  return 0;
 }
 
 // Copy modified blocks from cache to log.

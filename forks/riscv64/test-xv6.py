@@ -114,6 +114,12 @@ class QEMU(object):
         for line in self.output[self.reported:end].splitlines():
             if re.match(regexp, line):
                 print(line)
+        # claude: without this, stdout is block-buffered (not a tty
+        # under "docker build"/CI), so printed lines don't reach the
+        # build log until process exit or a buffer-size flush, making a
+        # real per-test timing breakdown from the build log unreliable.
+        # See docs/claude_notes/plan_test_speed.md.
+        sys.stdout.flush()
         self.reported = end
 
     def monitor(self, *regexps, progress="", timeout):
