@@ -258,3 +258,24 @@ Still open (not done this session)
   exercised at all this session - out of scope for Phase 4 (x86_64
   specifically), but worth knowing it exists if a future need for a
   second, independent i386-family build ever comes up.
+
+kernel/entry.S, initcode.S, swtch.S, trapasm.S are NOT dead leftovers
+(2026-09-12 finding, corrected same day): a first pass mistook them for
+unreferenced duplicates of the entry64.S/initcode64.S/swtch64.S/
+trapasm64.S this fork actually links by default (X64=1) - a plain grep
+for their bare names found nothing because the real reference is
+`kernel/initcode$(BITS).S`-style, a make-variable interpolation no
+static grep sees. Building with `make X64=` (the 32-bit path this
+file's own "Still open" note above already flagged as never exercised)
+genuinely compiles all four - confirmed with `make -n X64= out/
+kernel.elf`. Left in place, unmoved, pending a decision on whether to
+also gather the 32-bit variant into kernel/init|processes|interrupts/
+amd64-jserv/ alongside the 64-bit ones already there.
+
+Separately, a real mistake from the earlier kernel/init/<arch>/entry.S
+gather (2026-09-12): it moved the dead 32-bit entry.S instead of the
+real entry64.S (ENTRYCODE = $(KOBJ_DIR)/entry$(BITS).o, BITS=64) -
+harmless because entry64.S was left untouched and the build still read
+it directly, but the symlink pointed at the wrong (dead) file. Fixed
+by moving entry64.S properly to kernel/init/amd64-jserv/entry64.S and
+restoring the real entry.S in place.

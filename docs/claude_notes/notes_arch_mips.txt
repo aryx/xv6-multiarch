@@ -674,3 +674,10 @@ which is the point of the test) while cutting the work more than 2x.
 Verified: "make test-mips" (the full, unmodified usertests suite,
 apart from this one loop bound) now reaches ALL TESTS PASSED in about
 10 seconds, down from timing out at 300s.
+
+Dead leftover file removed (2026-09-12): kernel/asm.h - x86 segment-
+descriptor macros (SEG_ASM, STA_X, etc.), meaningless on MIPS (no
+segmentation), unreferenced by any #include anywhere in this fork.
+Inherited from this port's own fork point in `docs/provenance.md`
+(nullpo-head/xv6-mips, forked from the original x86 xv6 at
+i386@41f16c2, 2014-10-03) and never pruned once ported.

@@ -535,3 +535,11 @@ also applied to forks/arm-pi1 (same CPU/float-ABI pair, same shared
 sh.c/umalloc.c - its own CI failures on "usertests" are the same bug,
 just never reproduced locally there the way it did here) - see
 notes_arch_arm_pi1.txt.
+
+Dead leftover file removed (2026-09-12): user/initcode.S, byte-identical
+to kernel/initcode.S (the one this fork's Makefile actually builds from,
+`build/initcode.o: kernel/initcode.S`). Confirmed unreferenced via
+`make -n kernel.elf` - the trace only ever touches the built `initcode`
+blob (copied to the fork root), never the user/ source. Same
+Phase-0-era duplication as arm-pi1/arm-pi2/arm-pi3's own doubled
+header sets (source/+uprogs/ both surviving the move to kernel/+user/).

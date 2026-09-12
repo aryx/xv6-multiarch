@@ -1072,3 +1072,16 @@ build-arm-pi3" - reproducing as "ls" printing a blank name and the
 same wrong stat() result for every directory entry. Fixed by
 `-include`ing the .d files here too, and (belt-and-suspenders) making
 "clean" reach user/.
+
+Near-miss (2026-09-12): kernel/initcode.S looked like an unreferenced
+duplicate of the real user/initcode.S (the one embedded via `.incbin`
+in entry.S) - a plain grep for its path found nothing. It is not dead:
+ASM_OBJECTS_QEMU = $(patsubst $(SOURCE)%.S,$(BUILD_QEMU)%.o,$(wildcard
+$(SOURCE)*.S)) wildcards over kernel/*.S, so kernel/initcode.S gets
+compiled to build-qemu/initcode.o and genuinely linked into the kernel
+ELF - confirmed via `make -n kernel7-qemu.bin`. Same wildcard-enlists-
+a-file gotcha `docs/claude_notes/plan_factorization.md` already
+documents for this fork's own loader.S/armstub64.S (kept at the fork
+root for exactly this reason) - caught here only because a build trace
+was checked before deleting, not because the grep-based check flagged
+anything. Left in place, unmoved and undeleted.
