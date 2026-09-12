@@ -1597,6 +1597,101 @@ split, just discovered a tier later than expected.
   so it should land together with (or after) that file, not as a
   drive-by inside `log.c`.
 
+- **`kernel/string.c`** (2026-09-12, later same conversation) - split into
+  three files, following the same "free the plain name" move as
+  `kernel/legacy/` before it (`60352a9`):
+  - `kernel/string.c` (new, from `arm64`'s own copy, `git mv`'d not
+    recreated) - 5 forks (`arm64`, `arm64-pi4`, `loongarch`, `riscv32`,
+    `riscv64`): a plain portable byte-loop `memset()`. `riscv64` looked
+    like the furthest outlier by raw line count (42-49 lines) but that
+    was pure whitespace/brace-style noise, caught with `diff -b -w` -
+    the same false-outlier trap `arm`'s own `usertests.c` hit earlier.
+    `riscv32` was the one real gap - missing the `n==0` early return in
+    `memmove()` every other fork here already had; gained via the
+    merge (baseline = most complete, not most common, per criterion 2).
+  - `kernel/string-x86.c` (renamed from the old `kernel/string.c`) -
+    `amd64`, `i386`, `amd64-jserv`: `memset()` via inline-asm
+    `stosl()`/`stosb()`, a real hardware optimization, not a rename.
+  - `kernel/string-arm.c` (renamed from `kernel/legacy/string.c`) - the
+    four ARM32 Pi forks: `memset()` via a hand-rolled portable
+    `memsetw()`/`memsetb()` word-at-a-time optimization, a different
+    real optimization again - not the same code as `string-x86.c`'s,
+    despite both being "an optimized memset".
+
+  **`mips` deliberately not folded into `string-x86.c` yet**, despite
+  its own `memset()` calling `stosl()`/`stosb()` with the exact same
+  call shape (via its own `mips.h`, not `x86.h`) - confirmed by diffing
+  directly against the shared file: only the include name, one
+  `(int)dst` cast that should already be the established `(uintp)dst`,
+  and whitespace differ. Joining needs `stosl`/`stosb` exposed under
+  one arch-neutral header name first (the same `kernel/arch/<arch>/
+  arch_*.h` shape as `kalloc.c`'s `PGSIZE`/`PGROUNDUP` or `log.c`'s
+  `sleep_release()` - see `docs/claude_notes/
+  notes_new_kernel_organization.md`), not a drive-by inside this
+  commit.
+
+  Verified: build + full `usertests` ("ALL TESTS PASSED") for all
+  twelve touched forks (every fork except `mips` and `arm`), `make
+  test-all`, and `git blame -C -C` on all three new/renamed files -
+  confirmed tracing back to the real original authors (Russ Cox, Frans
+  Kaashoek, Robert Morris, Austin Clements, Zhiyi Huang), not flattened
+  to the move commit.
+
+- **`kernel/sysproc.c`** (2026-09-12, later same conversation) - split
+  into two files by design generation, the same shape as `kalloc.c`'s
+  `use_lock` split and `log.c`'s `begin_op`/`end_op` split:
+  - `kernel/sysproc.c` (new, from `arm64`'s own copy) - 4 forks
+    (`arm64`, `arm64-pi4`, `loongarch`, `riscv32`): the newer design -
+    `exit(status)`/`wait(&status)` (exit-status propagation), `uintp`
+    return type (was `uint64`, converged to the established
+    pointer-sized-integer interface so `riscv32`'s own `uint32` return
+    just works). Picked over the larger `amd64`/`i386`/`amd64-jserv`/
+    `mips`/arm-pi-cluster pool specifically because it's the more
+    advanced design (criterion 2), confirmed by reading the diff, not
+    just counting lines - the "58 lines apart" gap between the two
+    pools is a real, later-xv6 feature addition, not noise. `loongarch`
+    gained `uintp` in its own `include/arch/loongarch/arch.h` (the one
+    fork in this cluster that didn't already have it from earlier
+    work).
+  - `kernel/sysproc-legacy.c` (renamed from `amd64`'s own copy) - 7
+    forks (`amd64`, `i386`, `mips`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`,
+    `arm-pi3`): the older design, `int` return, no exit status. The one
+    real gap: `myproc()` isn't consistently a function - `amd64`/`i386`
+    already call it, but `mips` uses a raw global `proc` and the
+    (already-shared) `arm-pi` cluster uses a raw global `curr_proc`.
+    Exactly the "missing interface, not a real difference" case this
+    plan already flagged as likely (see the `copyin`/`copyout` write-up
+    above) - closed with a trivial `#define myproc() (proc)` /
+    `#define myproc() (curr_proc)` in each fork's own `proc.h`, not a
+    real function anywhere but `amd64`/`i386`. Everything else was a
+    dead per-arch include (`x86.h`/`mmu.h`/`arm.h`/`date.h` - none of
+    which `sysproc.c` itself needs) plus whitespace.
+
+  **`riscv64` and `amd64-jserv` both deliberately left out, for
+  symmetric reasons** - each turned out to be a genuine further
+  advance on its own family's baseline, not just a bigger diff:
+  `riscv64`'s own `sysproc.c` has a whole extra lazy-`sbrk()`/
+  page-fault-on-demand feature, `fork()`/`wait()`/`kill()`/`exit()`
+  renamed to `kfork()`/`kwait()`/`kkill()`/`kexit()`, and a `killed()`
+  accessor replacing direct `->killed` reads (it would also need
+  `sleep_release()` in its own `sys_pause()` - already built for
+  `log.c`, so at least that part is ready whenever this is revisited).
+  `amd64-jserv`'s own `sys_sbrk()` uses `uintp`/a `arguintp()` argument
+  parser instead of plain `int`/`argint()` - a real fix avoiding
+  int-truncation of large growth amounts, but `arguintp()` doesn't
+  exist in any of the other 7 forks, so adopting it means adding real
+  new infrastructure across all of them, not a single-file move. Both
+  are genuine "give this file the more advanced design" cases, same as
+  the `amd64`/`i386`/`amd64-jserv`/`mips` gap left open in `log.c`
+  above - flagged for a future, dedicated pass rather than forced in
+  here.
+
+  Verified: build + full `usertests` ("ALL TESTS PASSED") for all
+  eleven touched forks, `make test-all`, `docker build --build-arg
+  ARCH=<name>` for every touched fork with its own Dockerfile case and
+  `ARCH=all` for `arm64-pi4`, and `git blame -C -C` on both new/renamed
+  files.
+
 - **Queued next: `kernel/bio.c`.** Previously postponed once already
   (criterion 6 - "prefer the easier file when a candidate reveals deep,
   costly work": `bio.c` needs a `struct buf` unification and a new

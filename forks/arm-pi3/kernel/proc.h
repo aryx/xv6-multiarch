@@ -42,6 +42,11 @@ struct cpu cpus[NCPU];
 #define curr_cpu    (&cpus[cpu_id()])
 #define curr_proc   (cpus[cpu_id()].proc)
 
+// claude: interface for the shared kernel/sysproc-legacy.c, matching
+// this repo's uintp/P2V/copyin precedent - a trivial backend here since
+// this port has no real myproc() function, just this per-CPU macro.
+#define myproc() (curr_proc)
+
 //PAGEBREAK: 17
 // Saved registers for kernel context switches.
 // Don't need to save all the segment registers (%cs, etc),
