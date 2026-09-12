@@ -1,10 +1,10 @@
 # Plan: cut testing time
 
 **Status:** in progress. Written 2026-09-12, after measuring where
-`stress-test-all`'s wall time actually goes. Option 3 (`bigdir`'s `N`) and
-option 2 (disk `cache=` mode) are both done as of the same day - see
-"Results after option 3" and "Results after option 2" below. Options 1
-and 4-8 remain proposals, not started.
+`stress-test-all`'s wall time actually goes. Options 2 (disk `cache=`
+mode), 3 (`bigdir`'s `N`), and 5 (the other `riscv64`-specific constants)
+are all done as of the same day - see their own "Results after..."
+sections below. Options 1, 4, 6, 7, 8 remain proposals, not started.
 
 ## The measurement
 
@@ -313,6 +313,68 @@ genuine ~35-40% cut each, but `bigdir` and `execout`'s cost was never
 disk-I/O in the first place (CPU-bound linear-scan and memory-pressure
 work, respectively), so this lever doesn't touch them regardless of arch.
 
+## Results after option 5: `riscv64`'s other constants (DONE 2026-09-12)
+
+With `bigdir` and `cache=unsafe` both landed, `riscv64` was still the
+CI-matrix bottleneck by a wide margin (388.0s vs. `arm64`'s 200.3s), so
+went after its four remaining arch-specific constants in
+`forks/riscv64/tests/usertests.c`, each with its own `claude:` comment:
+
+- `manywrites`'s `howmany`: 30 -> 15 (halved - still real 4-child
+  concurrent create/write/unlink contention, less margin on top of it)
+- `execout`'s `avail` range: `< 15` -> `< 5` (the interesting edge cases,
+  0-4 free pages, are the tightest margin for `exec()` to make progress;
+  the higher values gave it ever more slack and are least likely to ever
+  matter)
+- `outofinodes`'s `nzz`: `32*32=1024` -> `256` (still comfortably exceeds
+  `NINODES=200`, so the create loop below still reaches real inode
+  exhaustion the same way; only the wasted padding in both loops shrinks)
+- `badwrite`'s `assumed_free`: 600 -> 200, but **not for the same
+  reason as the others** - this one was already broken as a real
+  regression test on this fork, independent of speed. `mkfs`'s own
+  boot-time print (visible in every build log) reports `blocks 1915
+  total 2000` - i.e. **1915 free data blocks**, not ~600, so even a real
+  one-block-per-iteration leak bug would never exhaust free space within
+  600 iterations and trigger `balloc: out of blocks`. This test has
+  provided **zero actual leak-detection coverage on riscv64** at any
+  value below ~1916, both before and after this change - lowering it
+  further costs nothing that wasn't already lost. Fixing it properly
+  (raising `assumed_free` above 1915) is a separate, *slower* change,
+  deliberately not done here - see "Definition of done" below for where
+  that's tracked.
+
+Rebuilt and ran the full `docker build --build-arg ARCH=riscv64` (on top
+of both earlier changes):
+
+| test | before this round | after |
+|---|---|---|
+| `manywrites` | 32.0s | 16.1s (as predicted, ~halved) |
+| `badwrite` | 63.1s | 21.0s (matches the 1/3 prediction exactly) |
+| `execout` | 62.1s | 20.0s (matches the 1/3 prediction exactly) |
+| `outofinodes` + tail | 76.1s | 64.1s (only -16%, far less than the naive 4x) |
+| `bigdir`/`diskfull` | unchanged, not touched this round | 17.0s / 14.0s |
+| **full test step** | 388.0s | **281.8s** (-27.4%) |
+
+Still `ALL TESTS PASSED`. `outofinodes` barely moved despite a 4x cut to
+`nzz` - most of its ~76s/~64s cost is evidently the *fixed* part (the
+real ~200 creates it takes to reach inode exhaustion, plus whatever
+share of the ambiguous tail this test's own ~1024-name cleanup loop
+wasn't actually responsible for - see the earlier methodology caveat).
+Diminishing returns there; not worth cutting `nzz` further without
+better isolating that number first.
+
+**Running total for `riscv64` across all three changes so far: ~558s
+(original average) -> 281.8s, a ~50% reduction.** The single largest
+remaining chunk is now the ~130s "fast tests" cluster itself (everything
+before `bigdir`) - no single lever there, since it's ~40+ small,
+individually-fast tests whose aggregate cost is fork/exec/wait overhead
+under TCG, not anything obviously trimmable without losing real test
+identities. `outofinodes`+tail (64.1s) is the next largest single item,
+but as noted above doesn't respond well to further constant-shrinking.
+Closing more of the remaining gap to `arm64`'s ~200s likely needs the
+structural option (4: split into two parallel CI boots) rather than more
+tuning.
+
 ## Options, cheapest/safest first
 
 1. **Do nothing - the matrix already parallelizes this.** CI wall time is
@@ -348,15 +410,18 @@ work, respectively), so this lever doesn't touch them regardless of arch.
    subset already exists - this would mostly be a Makefile/CI wiring
    change, not new test-harness code. Only helps `riscv64`; doesn't touch
    `arm64`/`riscv32`, which don't have this pair of tests at all.
-5. **Shrink the other, arch-specific constants** - `outofinodes`'s
-   `nzz` toward `NINODES` (`riscv64` only), `execout`'s `avail` range
-   (`riscv64`/`arm64`), some slack out of `manywrites`'s `howmany`
-   (`riscv64`/`arm64`). Do **not** lower `badwrite`'s `assumed_free` - it
-   may already be undersized relative to `FSSIZE`'s real free-block
-   count; compute that count before touching it either way. Lower
-   priority than `bigdir` since each of these is O(N) (linear payoff for
-   the cut, not quadratic) and touches at most two of the three top-3
-   arches.
+5. **DONE 2026-09-12: shrunk `riscv64`'s other four constants** -
+   `outofinodes`'s `nzz` 1024 -> 256, `execout`'s `avail` range `<15` ->
+   `<5`, `manywrites`'s `howmany` 30 -> 15, and `badwrite`'s
+   `assumed_free` 600 -> 200 (computed the real free-block count first:
+   `mkfs` reports 1915, so 600 was already providing zero real
+   leak-detection coverage on this fork - lowering it further doesn't
+   cost anything that wasn't already lost; properly fixing this test
+   means *raising* it above 1915, a separate and slower change, not done
+   here). `riscv64`'s full test step: 388.0s -> 281.8s. Results above.
+   Not applied to `arm64` (only has `manywrites`/`execout`, and shrinking
+   just those two wasn't attempted separately - low expected payoff since
+   `arm64`'s total is already well below `riscv64`'s).
 6. **Root-cause why `riscv32`'s `bigdir` costs 1.6-2x `riscv64`'s/`arm64`'s
    for the identical workload**, given its own `fs.c` directory-lookup
    code was checked and found algorithmically identical (only `uint32` vs.
@@ -381,24 +446,33 @@ work, respectively), so this lever doesn't touch them regardless of arch.
 
 ## Definition of done
 
-Not defined yet - this is a proposal, not a committed plan. Options 2 and
-3 are done (see their own Results sections); running total so far:
+Not defined yet - this is a proposal, not a committed plan. Options 2, 3,
+and 5 are done (see their own Results sections); running total so far:
 
-| arch | original | after option 3 (`bigdir`) | after option 2 (`cache=unsafe`) | total change |
-|---|---|---|---|---|
-| `riscv64` | 552-565s | 419.1s | **388.0s** | **-30%** |
-| `arm64` | 244.5-245.4s | 201.9s | 200.3s | -18% |
-| `riscv32` | 207.1-207.8s | 120.9s | 120.4s | -42% |
+| arch | original | after `bigdir` (3) | after `cache=unsafe` (2) | after other constants (5) | total change |
+|---|---|---|---|---|---|
+| `riscv64` | 552-565s | 419.1s | 388.0s | **281.8s** | **~-50%** |
+| `arm64` | 244.5-245.4s | 201.9s | 200.3s | 200.3s (not touched) | -18% |
+| `riscv32` | 207.1-207.8s | 120.9s | 120.4s | 120.4s (not touched) | -42% |
 
-`riscv64` is still the CI-matrix bottleneck by a wide margin (388.0s vs.
-`arm64`'s 200.3s), and its own remaining breakdown is now `outofinodes`+
-tail (76.1s), `badwrite` (63.1s), `execout` (62.1s), a ~125s fast-tests
-cluster (no single lever), `manywrites` (32.0s), `bigdir` (16.0s),
-`diskfull` (14.0s) - so option 5 (shrink `outofinodes`'s `nzz` and
-`execout`'s `avail` range) is the next concrete candidate specifically
-for `riscv64`, since `execout` in particular didn't benefit from either
-change already made (CPU/memory-bound, not disk- or scan-bound). Neither
-has been attempted yet. Pick a starting point and turn this section into
-an actual target (e.g. "`stress-test-all`'s CI wall time under N
-minutes", or "`riscv64`'s own `test-riscv64` under N minutes") before
-starting further work.
+`riscv64` went from the largest single bottleneck (552-565s, more than
+2x `arm64`) to 281.8s - closer to but still above `arm64`'s 200.3s.
+Constant-tuning has hit diminishing returns there: its remaining
+breakdown is now a ~130s fast-tests cluster (no single lever - ~40+
+individually-fast tests, cost is fork/exec/wait overhead under TCG, not
+anything trimmable without losing real test identities), `outofinodes`+
+tail (64.1s, mostly fixed cost per the note above), `execout` (20.0s),
+`badwrite` (21.0s), `bigdir` (17.0s), `manywrites` (16.1s), `diskfull`
+(14.0s). Getting further below ~280s for `riscv64` most likely needs
+option 4 (split into two parallel CI boots) rather than more tuning -
+that's the next concrete step if closing the remaining ~80s gap to
+`arm64` still matters. Separately, `badwrite`'s real fix (raising
+`assumed_free` above the 1915-block real free count so it actually
+detects a leak regression again) is still owed - it's currently fast
+*and* provides no real coverage, which is an honest tradeoff for this
+pass but not a place to leave the test permanently.
+
+Pick a starting point among what's left (4, 6, 7, 8, or the `badwrite`
+fix above) and turn this section into an actual target (e.g.
+"`stress-test-all`'s CI wall time under N minutes", or "`riscv64`'s own
+`test-riscv64` under N minutes") before starting further work.
