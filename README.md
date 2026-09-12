@@ -124,7 +124,7 @@ to bring up a new one.
 ## Layout
 
 ```
-forks/<name>/     one port's full tree, own Makefile, own LICENSE
+forks/<name>/     one port's full tree, own Makefile, own LICENSE if it differs
 docs/             provenance evidence, build/factorization plans, per-arch notes
 scripts/          shared test harness (QEMU console/graphics drivers)
 scripts/repo-history/   archived, unmaintained record of how the history was built
@@ -138,6 +138,13 @@ other.
 
 ## Licensing
 
-Each `forks/<name>/LICENSE` carries the terms from that architecture's
-original repository, all descending from MIT's xv6 permission notice (see
-`forks/i386/LICENSE`). No license text was altered by this merge.
+Every port here grants the same MIT terms from the same original authors,
+so the top-level `LICENSE` is the default for the whole repo. A
+`forks/<name>/LICENSE` exists only where that port genuinely carries its
+own copyright holder on top of MIT's - `arm-pi1`, `arm-pi1-bis` and
+`arm-pi2`'s University of Otago/Cambridge authors, `arm`'s inaciose, and
+`amd64-jserv`'s Jim Huang/Brian Swetland credits - and even those point
+back to `LICENSE.common` for the shared permission and warranty text
+rather than repeating it. Acknowledgments shared across every port (John
+Lions's Commentary, the contributor list) are consolidated the same way,
+in `README.common`.

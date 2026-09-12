@@ -12,6 +12,8 @@ one from the actively maintained mit-pdos/xv6-riscv), and it was checked to
 be a superset of every other fork's list, so that no contributor loses
 credit by this consolidation.
 
+-------------------------------------------------------------------------
+
 xv6 is inspired by John Lions's Commentary on UNIX 6th Edition (Peer
 to Peer Communications; ISBN: 1-57398-013-7; 1st edition (June 14,
 2000)).  See also https://pdos.csail.mit.edu/6.1810/, which provides

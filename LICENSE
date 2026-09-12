@@ -1,6 +1,6 @@
 The xv6 software is:
 
-Copyright (c) 2006-2019 Frans Kaashoek, Robert Morris, Russ Cox,
+Copyright (c) 2006-2024 Frans Kaashoek, Robert Morris, Russ Cox,
                         Massachusetts Institute of Technology
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -22,3 +22,9 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+This is the default license for every port under forks/ - all of them
+grant these same MIT terms from the same authors. A fork keeps its own
+forks/<name>/LICENSE only when it genuinely differs - a distinct
+copyright holder layered on top of MIT's own. See LICENSE.common for
+the permission and warranty text those forks' own LICENSE files point
+back to instead of repeating it.

@@ -1,7 +1,12 @@
-The xv6 software is:
+MIT PERMISSION AND WARRANTY TEXT SHARED BY EVERY xv6 PORT IN THIS REPOSITORY
 
-Copyright (c) 2006-2019 Frans Kaashoek, Robert Morris, Russ Cox,
-                        Massachusetts Institute of Technology
+Every port under forks/ grants the same standard MIT permission and
+disclaims warranty in the same words, so that text is kept here once
+instead of being repeated fourteen times. The top-level LICENSE carries
+it too, for ports with no copyright of their own beyond MIT's; a handful
+of forks/<name>/LICENSE files exist only because that port genuinely has
+its own copyright holder on top of MIT's, and each keeps just that
+notice plus a pointer here instead of repeating this text again.
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -21,4 +26,3 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
