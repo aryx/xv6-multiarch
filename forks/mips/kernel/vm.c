@@ -86,7 +86,10 @@ mappages(pde_t *pgdir, char asid, void *va, uint size, uint pa, int perm)
 // (directly addressable from end..P2V(PHYSTOP)).
 
 // This table defines the kernel's mappings, which are present in
-// every process's page table.
+// every process's page table. The kern-text+rodata / kern-data+memory
+// split is NOT in this table - see kmap_boundary()'s own comment below
+// for why that one boundary needs runtime rounding instead of a static
+// initializer.
 static struct kmap {
   void *virt;
   uint phys_start;
@@ -94,10 +97,37 @@ static struct kmap {
   int perm;
 } kmap[] = {
  { (void*)KERNBASE, 0,             EXTMEM,    ELO_G | ELO_D}, // I/O space
- { (void*)KERNLINK, V2P(KERNLINK), V2P(data), 0},     // kern text+rodata
- { (void*)data,     V2P(data),     PHYSTOP,   ELO_G | ELO_D}, // kern data+memory
  { (void*)DEVSPACE, DEVSPACE,      0,         ELO_G | ELO_D}, // more devices
 };
+
+// claude: kern text+rodata and kern data+memory meet at the linker's
+// own `data` symbol, which mappages()/walkpgdir() can't treat as an
+// arbitrary boundary: each hardware PTE here packs two adjacent 4KB
+// pages (EntryLo0/EntryLo1 - MIPS's native paired TLB-entry scheme,
+// PTXSHIFT=13 covers an 8KB pair). If `data` lands on an odd 4KB page,
+// its own first page and the previous region's last page fall in the
+// same pair slot; mappages() then panics with "remap" the second time
+// that slot is written, since walkpgdir() finds it already has ELO_V
+// set from the first region's own write. This is silent and boot-fatal
+// (it happens before consoleinit() ever runs), and whether it triggers
+// depends only on which 4KB page the linker happens to place `data` on
+// - purely a function of the kernel's overall code size, so any future
+// size change (a new function, a bigger constant table) can flip it.
+// Round the boundary down to an 8KB (pair) boundary so the two regions
+// never share a slot, regardless of kernel size.
+static uint
+kmap_boundary(void)
+{
+  // Widens kern-text+rodata's own mapping by at most one page, so a
+  // few trailing bytes of real .rodata end up sharing ELO_D ("dirty",
+  // writable) permission with kern-data+memory instead of staying
+  // read-only - a permission relaxation, not a correctness bug: this
+  // port enforces no rodata write-protection test, and no other code
+  // path is affected. The alternative (rounding up) would instead risk
+  // marking real, live .data as read-only, which silently corrupts
+  // whatever global variable lands there - strictly worse.
+  return (uint)data & ~0x1FFF;
+}
 
 // Set up kernel part of a page table.
 pde_t*
@@ -105,6 +135,7 @@ setupkvm(void)
 {
   pde_t *pgdir;
   struct kmap *k;
+  uint boundary;
 
   if((pgdir = (pde_t*)kalloc()) == 0)
     return 0;
@@ -112,9 +143,18 @@ setupkvm(void)
   if (p2v(PHYSTOP) > (void*)DEVSPACE)
     panic("PHYSTOP too high");
   for(k = kmap; k < &kmap[NELEM(kmap)]; k++)
-    if(mappages(pgdir, 0, k->virt, k->phys_end - k->phys_start, 
+    if(mappages(pgdir, 0, k->virt, k->phys_end - k->phys_start,
                 (uint)k->phys_start, k->perm) < 0)
       return 0;
+
+  boundary = kmap_boundary();
+  if(mappages(pgdir, 0, (void*)KERNLINK, boundary - (uint)KERNLINK,
+              V2P(KERNLINK), 0) < 0)
+    return 0;
+  if(mappages(pgdir, 0, (void*)boundary, PHYSTOP - V2P(boundary),
+              V2P(boundary), ELO_G | ELO_D) < 0)
+    return 0;
+
   return pgdir;
 }
 

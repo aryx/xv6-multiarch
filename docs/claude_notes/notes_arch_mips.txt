@@ -681,3 +681,65 @@ segmentation), unreferenced by any #include anywhere in this fork.
 Inherited from this port's own fork point in `docs/provenance.md`
 (nullpo-head/xv6-mips, forked from the original x86 xv6 at
 i386@41f16c2, 2014-10-03) and never pruned once ported.
+
+Bug 10 (real, found and fixed 2026-09-13, while migrating this fork
+onto the arch_copyin()/arch_copyout() interface as part of
+plan_factorization.md's Tier 3 work): the kernel silently hung on boot
+- zero console output at all, not even the "xv6..." banner - the
+moment the migration's own new code (readi()/writei()'s user_dst/
+user_src parameter, either_copyin()/either_copyout(), FD_DEVICE
+handling) pushed the linked kernel image's size past a razor's-edge
+alignment boundary nobody had ever hit before.
+
+Root cause, confirmed live via gdb attached to `qemu-system-mipsel -s
+-S` (this port has no gdb-friendly symbol-rich crash dump of its own,
+so this was traced by hand): kernel/vm.c's setupkvm() maps the
+kernel's own "text+rodata" and "data+memory" regions with two separate
+mappages() calls, split at the linker's own `data` symbol. Each
+hardware PTE on this MIPS target packs TWO adjacent 4KB pages
+(EntryLo0/EntryLo1 - a native paired TLB-entry scheme, PTXSHIFT=13
+covers one 8KB pair). If `data` lands on an ODD 4KB page, its own
+first page and the previous region's last page fall into the SAME
+pair slot; mappages() then panics with "remap" the second time that
+slot is written, because walkpgdir() finds it already has ELO_V set
+from the first region's own write. This happens inside kvmalloc(),
+called from main() before consoleinit() ever runs - hence the total
+silence, which made it look at first like a hang rather than a panic.
+
+Confirmed the "razor's edge" framing is literal, not a guess: baseline
+(pre-migration) `data` sits at 0x8010c000 (even - kmap[1]/kmap[2] split
+cleanly, no shared slot, works by luck); the migration's own extra code
+shifted it to 0x8010d000 (odd - triggers the bug). Reproduced the exact
+same panic on the UNMODIFIED baseline tree too, with nothing more than
+a 4352-byte dummy static array added to vm.c to nudge `data` across the
+same parity boundary - proving this was never specific to the
+migration's own logic, just to total kernel image size. This bug has
+been latent since this port's own kmap[]/mappages() design was written
+(whenever that was - long before this repository existed), waiting for
+any future size change to flip it.
+
+Fix (kernel/vm.c, in its own commit, separate from the interface
+migration that surfaced it): stopped hardcoding the kmap[1]/kmap[2]
+split at the bare `data` symbol. setupkvm() now computes
+`kmap_boundary() = (uint)data & ~0x1FFF` - `data` rounded DOWN to the
+nearest 8KB (TLB-pair) boundary - and maps text+rodata up to that
+boundary, data+memory from it, so the two regions can never again
+share a pair slot regardless of kernel size. This does cost something:
+up to one page of the true tail of .rodata ends up mapped with
+data+memory's ELO_D ("dirty"/writable) permission instead of staying
+read-only. Deliberately accepted rather than rounding UP instead (which
+would have marked a page of real, live .data read-only - silently
+breaking whatever global variable happens to land there, a strictly
+worse failure mode than a few relaxed permission bits this port has no
+test for anyway).
+
+Verified: reproduced the panic on baseline via the artificial padding
+above, confirmed the fix (with that same padding still in place) boots
+to a shell and passes the full usertests suite unmodified, then removed
+the padding and reconfirmed both the plain baseline-sized build and the
+real migration (which naturally lands `data` on the odd boundary on its
+own, no padding needed) each report "ALL TESTS PASSED" - three separate
+build sizes, one fix, no regressions. Also re-ran the full usertests
+suite on every other fork sharing kernel/pipe.c/kernel/file.c
+(arm64, arm64-pi4, loongarch, amd64, i386) to confirm this fork-local
+fix didn't touch anything outside forks/mips/.
