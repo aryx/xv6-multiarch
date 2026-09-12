@@ -1,3 +1,5 @@
+#include "arch_vm.h"  // claude: pagetable_t, for arch_copyin()/arch_copyout() below
+
 struct buf;
 struct context;
 struct file;
@@ -31,9 +33,9 @@ struct file*    filealloc(void);
 void            fileclose(struct file*);
 struct file*    filedup(struct file*);
 void            fileinit(void);
-int             fileread(struct file*, char*, int n);
-int             filestat(struct file*, struct stat*);
-int             filewrite(struct file*, char*, int n);
+int             fileread(struct file*, uint64, int n);
+int             filestat(struct file*, uint64);
+int             filewrite(struct file*, uint64, int n);
 
 // fs.c
 void            readsb(int dev, struct superblock *sb);
@@ -51,9 +53,9 @@ void            itrunc(struct inode*);   // claude: for sys_open's O_TRUNC
 int             namecmp(const char*, const char*);
 struct inode*   namei(char*);
 struct inode*   nameiparent(char*, char*);
-int             readi(struct inode*, char*, uint, uint);
+int             readi(struct inode*, int, uint64, uint, uint);
 void            stati(struct inode*, struct stat*);
-int             writei(struct inode*, char*, uint, uint);
+int             writei(struct inode*, int, uint64, uint, uint);
 
 // ide.c
 void            ideinit(void);
@@ -100,12 +102,14 @@ void            picinit(void);
 // pipe.c
 int             pipealloc(struct file**, struct file**);
 void            pipeclose(struct pipe*, int);
-int             piperead(struct pipe*, char*, int);
-int             pipewrite(struct pipe*, char*, int);
+int             piperead(struct pipe*, uint64, int);
+int             pipewrite(struct pipe*, uint64, int);
 
 //PAGEBREAK: 16
 // proc.c
 int             cpuid(void);
+int             either_copyin(void*, int, uint64, uint64);
+int             either_copyout(int, uint64, void*, uint64);
 void            exit(void);
 int             fork(void);
 int             growproc(int);
@@ -188,7 +192,8 @@ int             loaduvm(pde_t*, char*, struct inode*, uint, uint);
 pde_t*          copyuvm(pde_t*, uint);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
-int             copyout(pde_t*, uint, void*, uint);
+int             arch_copyout(pagetable_t, uint64, char*, uint64);
+int             arch_copyin(pagetable_t, char*, uint64, uint64);
 void            clearpteu(pde_t *pgdir, char *uva);
 
 // number of elements in fixed-size array
