@@ -78,8 +78,8 @@ _forktest: forktest.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
 
-$(FS_IMAGE): $(MKFS)  $(UPROGS)
-	$(MKFS) $@  $(UPROGS)
+$(FS_IMAGE): $(MKFS) ../README $(UPROGS)
+	$(MKFS) $@ ../README $(UPROGS)
 	$(OBJDUMP) -S usys.o > usys.asm
 
 clean:

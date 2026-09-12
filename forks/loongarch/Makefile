@@ -196,8 +196,8 @@ UPROGS=\
 	$U/_wc\
 	$T/_zombie\
 
-fs.img: $O/mkfs $(UPROGS)
-	$O/mkfs fs.img $(UPROGS)
+fs.img: $O/mkfs README $(UPROGS)
+	$O/mkfs fs.img README $(UPROGS)
 	xxd -i fs.img > kernel/ramdisk.h
 
 -include kernel/*.d user/*.d tests/*.d ulib/*.d

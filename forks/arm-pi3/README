@@ -1,0 +1,22 @@
+xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
+Version 6 (v6).  xv6 loosely follows the structure and style of v6,
+but is implemented for real multiprocessing on Raspberry Pi 3
+hardware (ARMv8-A/Cortex-A53, running in AArch32 compatibility mode -
+a 32-bit kernel, not a 64-bit one), using ANSI C.  Boots both under
+QEMU and on real Raspberry Pi 3 hardware, with an interactive shell
+and a working USB stack (vendored USPi).
+
+ACKNOWLEDGMENTS
+
+See README.common at the top of this repository for the acknowledgments
+shared by every port here - John Lions's Commentary, the contributor
+list, and the copyright.  What follows is specific to this port.
+
+BUILDING AND RUNNING XV6
+
+From the repository root: run ./configure once (it detects an ARM
+cross toolchain and a qemu-system-arm on this machine), then
+`make build-arm-pi3`, `make run-arm-pi3` (interactive shell under
+QEMU), or `make test-arm-pi3` (boots headless and runs the usertests
+suite).  See this directory's own Makefile for the real-hardware
+(SD card image) target.

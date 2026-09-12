@@ -1,0 +1,18 @@
+xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
+Version 6 (v6).  xv6 loosely follows the structure and style of v6,
+but is implemented for a 64-bit LoongArch multiprocessor, targeting
+QEMU's "virt" machine, using ANSI C.
+
+ACKNOWLEDGMENTS
+
+See README.common at the top of this repository for the acknowledgments
+shared by every port here - John Lions's Commentary, the contributor
+list, and the copyright.  What follows is specific to this port.
+
+BUILDING AND RUNNING XV6
+
+From the repository root: run ./configure once (it detects a
+loongarch64 cross toolchain and a qemu-system-loongarch64 on this
+machine), then `make build-loongarch`, `make run-loongarch`
+(interactive shell under QEMU), or `make test-loongarch` (boots
+headless and runs the usertests suite).

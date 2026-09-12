@@ -291,8 +291,8 @@ UPROGS=\
 	_zombie\
 
 
-fs.img: tools/mkfs $(UPROGS)
-	./tools/mkfs fs.img $(UPROGS)
+fs.img: tools/mkfs README $(UPROGS)
+	./tools/mkfs fs.img README $(UPROGS)
 
 -include kernel/*.d user/*.d tests/*.d ulib/*.d
 
