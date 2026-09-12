@@ -110,9 +110,7 @@ $(BUILD)csud/%.o: $(CSUDDIR)source/%.c
 #     the vendored libcsud.a's own prebuilt hard-float ABI - forcing
 #     soft-float here would conflict with it ("uses VFP register
 #     arguments, build/output.elf does not").
-# claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
-# so top-level kernel/ rather than include/kernel/).
-CFLAGS := -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/arm
+CFLAGS := -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 
 # claude: was "CC := gcc" - ignored ARMGNU entirely, always invoking the
 # HOST compiler regardless of cross-toolchain prefix (every .s file

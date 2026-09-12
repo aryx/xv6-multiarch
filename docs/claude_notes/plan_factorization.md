@@ -1037,9 +1037,22 @@ verify any build rule writing into it guards with `mkdir -p`.**
   `91c9300`) — a genuine two-way split, not per-fork drift: 9 forks keep
   a debug `pcs[10]` call-stack array (`kernel/spinlock.h`, using `uintp`
   for the array width like `elf.h`/`usertests-x86.c` already do), 5 drop
-  it entirely in the newer MIT layout (`kernel/nopcs/spinlock.h` - the
-  first kernel-only header, placed at top-level `kernel/` rather than
+  it entirely in the newer MIT layout (originally `kernel/nopcs/spinlock.h`
+  - the first kernel-only header, placed at top-level `kernel/` rather than
   `include/kernel/`).
+
+  **Later (2026-09-12): `kernel/nopcs/` retired**, same shape as the
+  `legacy/` retirement above - this split predated the "symlinks, not
+  `-I` flags" placement-strategy correction (also below) and was the one
+  remaining holdout still using a directory plus an extra `-I` flag per
+  consuming fork instead. Flattened to a `kernel/spinlock-nopcs.h`
+  sibling (pure `git mv`) and all 14 forks - not just the 5 nopcs ones,
+  for full consistency - now get a real `forks/<name>/kernel/spinlock.h`
+  symlink instead of relying on `-I../../kernel`/`-I../../kernel/nopcs`
+  search-path tricks; both `-I` flags dropped from every Makefile/
+  `makefile.inc` that carried them. Verified with `make build-all` and
+  `make test-all` (all 13 QEMU-tested forks reached a shell; `arm64-pi4`
+  stays excluded per its own build-vs-boot split above).
 
   **Done: `include/arch/<arch>/arch.h`, all 14 forks** (`5f08922`) - the
   `uint64`/`uintp` typedefs this tier kept re-adding by hand per fork

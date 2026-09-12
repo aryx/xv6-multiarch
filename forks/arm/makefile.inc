@@ -44,9 +44,7 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # docs/claude_notes/notes_build_system.txt. The .d lands next to the
 # object (build/foo.d for build/foo.o) and is read back by the
 # "-include" at the bottom of Makefile.
-# claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
-# so top-level kernel/ rather than include/kernel/).
-CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -Ikernel -g -mfloat-abi=soft -fno-stack-protector -marm -MD -MP -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/arm
+CFLAGS = -march=armv7-a -mtune=cortex-a7 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -Ikernel -g -mfloat-abi=soft -fno-stack-protector -marm -MD -MP -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 LDFLAGS = -L.
 #ASFLAGS = -march=armv7-a
 ASFLAGS = -mcpu=cortex-a7 -mfloat-abi=soft -MD -MP -Ikernel -I../../include/kernel

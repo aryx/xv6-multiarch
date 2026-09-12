@@ -59,9 +59,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-# claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
-# (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../kernel/arch/riscv32 -I../../include/arch/riscv32
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/riscv32 -I../../include/arch/riscv32
 CFLAGS += -MD
 # claude: this repo has no dedicated riscv32-unknown-elf- package (Ubuntu's
 # gcc-riscv64-unknown-elf is multilib and defaults to rv64/lp64d) - without
