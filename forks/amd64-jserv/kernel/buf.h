@@ -1,7 +1,7 @@
 struct buf {
   int flags;
   uint dev;
-  uint blockno;
+  uint sector;
   struct buf *prev; // LRU cache list
   struct buf *next;
   struct buf *qnext; // disk queue

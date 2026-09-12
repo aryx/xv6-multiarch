@@ -85,20 +85,20 @@ idestart(struct buf *b)
 {
   if(b == 0)
     panic("idestart");
-  if(b->blockno >= FSSIZE)
+  if(b->sector >= FSSIZE)
     panic("incorrect blockno");
   int sector_per_block =  BSIZE/SECTOR_SIZE;
-  int sector = b->blockno * sector_per_block;
+  int disk_sector = b->sector * sector_per_block;
 
   if (sector_per_block > 7) panic("idestart");
-  
+
   idewait(0);
   outb(0x3f6, 0);  // generate interrupt
   outb(0x1f2, sector_per_block);  // number of sectors
-  outb(0x1f3, sector & 0xff);
-  outb(0x1f4, (sector >> 8) & 0xff);
-  outb(0x1f5, (sector >> 16) & 0xff);
-  outb(0x1f6, 0xe0 | ((b->dev&1)<<4) | ((sector>>24)&0x0f));
+  outb(0x1f3, disk_sector & 0xff);
+  outb(0x1f4, (disk_sector >> 8) & 0xff);
+  outb(0x1f5, (disk_sector >> 16) & 0xff);
+  outb(0x1f6, 0xe0 | ((b->dev&1)<<4) | ((disk_sector>>24)&0x0f));
   if(b->flags & B_DIRTY){
     outb(0x1f7, IDE_CMD_WRITE);
     outsl(0x1f0, b->data, BSIZE/4);

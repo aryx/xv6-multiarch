@@ -1752,12 +1752,34 @@ split, just discovered a tier later than expected.
      confirms each calls the right symbol (`ramdiskrw` for `arm64-pi4`,
      `virtio_disk_rw` for plain `arm64`). See `docs/claude_notes/
      notes_new_kernel_organization.md`'s own updated write-up.
-  2. **`kernel/bio-legacy.c` can likely grow**, and isn't ARM-specific
-     at all (further confirming the naming rationale above) - `mips`'s
-     own `bio.c` is only ~14 lines from it (comment/whitespace noise,
-     already calls the same `iderw()`); `amd64-jserv` is ~50 lines away
-     but the same `B_BUSY`-flag-polling design (no real sleeplock),
-     worth a closer read before merging. Not started.
+  2. **`kernel/bio-legacy.c` grew to 6 forks (2026-09-12)** - `mips`
+     joined for free (its own `bio.c` really was just comment/whitespace
+     noise). `amd64-jserv` needed one real, self-contained fix first:
+     its own `struct buf` already spelled this field `blockno`
+     (matching the *modern* `kernel/bio.c`'s own naming, not
+     `bio-legacy.c`'s `sector`) - simplest fix was renaming
+     `amd64-jserv`'s own `blockno` to `sector` (in its own `buf.h`,
+     `log.c`, `ide.c` - none of which are shared yet, so fully
+     self-contained), not the reverse, because `ide.c`'s own
+     `idestart()` already had a *different* local variable named
+     `sector` holding a derived, more specific value (the real disk
+     sector after multiplying by `sector_per_block`) - renamed to
+     `disk_sector` to avoid the collision, a small but real semantic
+     distinction worth preserving accurately, not just renaming past.
+
+     One more real gap, found only once `amd64-jserv` actually tried
+     to build against the shared file: `amd64-jserv`'s own `buf.h`
+     spells its data array `uchar data[BSIZE]` (a macro, defined in
+     `conf.h`), while `mips`/`arm-pi`'s own `buf.h` files hardcode the
+     literal `512` instead - so `kernel/bio-legacy.c` never needed to
+     make `BSIZE` visible before, and didn't. Fixed by adding
+     `#include "fs.h"` back to the shared file itself (the *portable*
+     `include/kernel/fs.h`, already reachable by all six forks via
+     their existing `-I` flags, which itself does `#include "conf.h"`
+     specifically for this) - matching what `amd64-jserv`'s own
+     original `bio.c` already had before joining. Rebuilt and re-ran
+     all six forks' own full `usertests` after this fix, not just
+     `amd64-jserv`'s.
   3. **`amd64`/`i386` are their own third cluster** (already 0-diff
      between themselves) - a genuinely more advanced locking primitive
      (real `sleeplock`/`acquiresleep()`, not `B_BUSY` polling) but
