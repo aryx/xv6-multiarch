@@ -58,9 +58,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-# claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
-# (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../kernel/arch/arm64 -I../../include/arch/arm64
+CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/arm64 -I../../include/arch/arm64
 CFLAGS += -MD
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I. -Ikernel
@@ -189,8 +187,8 @@ UPROGS=\
 	$U/_wc\
 	$T/_zombie\
 
-fs.img: $O/mkfs README $(UPROGS)
-	$O/mkfs fs.img README $(UPROGS)
+fs.img: $O/mkfs $(UPROGS)
+	$O/mkfs fs.img $(UPROGS)
 
 -include kernel/*.d user/*.d tests/*.d ulib/*.d
 

@@ -65,9 +65,7 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 ASFLAGS = -march=loongarch64 -mabi=lp64s
-# claude: -I../../kernel/nopcs - kernel/spinlock.h is shared there
-# (kernel-only, so top-level kernel/ rather than include/kernel/).
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/nopcs -I../../kernel/arch/loongarch -I../../include/arch/loongarch
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/loongarch -I../../include/arch/loongarch
 CFLAGS += -MD -MP
 CFLAGS += -march=loongarch64 -mabi=lp64s
 CFLAGS += -ffreestanding -fno-common -nostdlib
@@ -198,8 +196,8 @@ UPROGS=\
 	$U/_wc\
 	$T/_zombie\
 
-fs.img: $O/mkfs README $(UPROGS)
-	$O/mkfs fs.img README $(UPROGS)
+fs.img: $O/mkfs $(UPROGS)
+	$O/mkfs fs.img $(UPROGS)
 	xxd -i fs.img > kernel/ramdisk.h
 
 -include kernel/*.d user/*.d tests/*.d ulib/*.d

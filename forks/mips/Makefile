@@ -79,9 +79,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # way mit-pdos/xv6-riscv does. It must go on this unconditional line: an
 # earlier attempt appended it to the last CFLAGS line, which in several
 # forks sits inside an ifeq branch that is not taken.
-# claude: -I../../kernel - kernel/spinlock.h is shared there (kernel-only,
-# so top-level kernel/ rather than include/kernel/).
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/kernel -I../../include/user -I../../kernel -I../../include/arch/mips
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -fvar-tracking -fvar-tracking-assignments -O0 -g -std=gnu99 -Wall -Wunused-function -MD -MP -gdwarf-2 -march=mips4 -G0 -fno-omit-frame-pointer -Ikernel -Iuser -I. -I. -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/mips
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 # claude: mipsel-linux-gnu-gcc defaults -mabicalls on (confirmed via
 # "gcc -Q --help=target"), i.e. GOT-relative R_MIPS_GOT16/CALL16 calls -
@@ -293,8 +291,8 @@ UPROGS=\
 	_zombie\
 
 
-fs.img: tools/mkfs README $(UPROGS)
-	./tools/mkfs fs.img README $(UPROGS)
+fs.img: tools/mkfs $(UPROGS)
+	./tools/mkfs fs.img $(UPROGS)
 
 -include kernel/*.d user/*.d tests/*.d ulib/*.d
 

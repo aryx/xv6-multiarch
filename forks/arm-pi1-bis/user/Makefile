@@ -79,7 +79,7 @@ _forktest: forktest.o $(ULIB)
 	$(OBJDUMP) -S _forktest > forktest.asm
 
 $(FS_IMAGE): $(MKFS)  $(UPROGS)
-	$(MKFS) $@  $(UPROGS) README
+	$(MKFS) $@  $(UPROGS)
 	$(OBJDUMP) -S usys.o > usys.asm
 
 clean:

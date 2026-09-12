@@ -109,8 +109,8 @@ UPROGS=\
 	_timetest\
 	_benchmark\
 
-fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+fs.img: mkfs $(UPROGS)
+	./mkfs fs.img $(UPROGS)
 
 clean:
 	rm -f *.o *.d *.asm *.sym fs.img mkfs initcode initcode.out $(UPROGS)

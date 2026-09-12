@@ -114,8 +114,8 @@ UPROGS=\
         _wc\
         _zombie\
 
-fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+fs.img: mkfs $(UPROGS)
+	./mkfs fs.img $(UPROGS)
 
 clean:
 	rm -f *.o *.d fs.img mkfs $(UPROGS)
