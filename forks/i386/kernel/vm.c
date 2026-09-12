@@ -160,7 +160,7 @@ switchuvm(struct proc *p)
     panic("switchuvm: no process");
   if(p->kstack == 0)
     panic("switchuvm: no kstack");
-  if(p->pgdir == 0)
+  if(p->pagetable == 0)
     panic("switchuvm: no pgdir");
 
   pushcli();
@@ -173,7 +173,7 @@ switchuvm(struct proc *p)
   // forbids I/O instructions (e.g., inb and outb) from user space
   mycpu()->ts.iomb = (ushort) 0xFFFF;
   ltr(SEG_TSS << 3);
-  lcr3(V2P(p->pgdir));  // switch to process's address space
+  lcr3(V2P(p->pagetable));  // switch to process's address space
   popcli();
 }
 
@@ -210,7 +210,7 @@ loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
       n = sz - i;
     else
       n = PGSIZE;
-    if(readi(ip, P2V(pa), offset+i, n) != n)
+    if(readi(ip, 0, (uint64)(uintp)P2V(pa), offset+i, n) != n)
       return -1;
   }
   return 0;
@@ -359,28 +359,51 @@ uva2ka(pde_t *pgdir, char *uva)
   return (char*)P2V(PTE_ADDR(*pte));
 }
 
-// Copy len bytes from p to user address va in page table pgdir.
-// Most useful when pgdir is not the current page table.
+// Copy len bytes from src to user address dstva in page table pagetable.
+// Most useful when pagetable is not the current page table.
 // uva2ka ensures this only works for PTE_U pages.
 int
-copyout(pde_t *pgdir, uint va, void *p, uint len)
+arch_copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
-  char *buf, *pa0;
-  uint n, va0;
+  char *pa0;
+  uint64 n, va0;
 
-  buf = (char*)p;
   while(len > 0){
-    va0 = (uint)PGROUNDDOWN(va);
-    pa0 = uva2ka(pgdir, (char*)va0);
+    va0 = PGROUNDDOWN(dstva);
+    pa0 = uva2ka((pde_t*)pagetable, (char*)(uintp)va0);
     if(pa0 == 0)
       return -1;
-    n = PGSIZE - (va - va0);
+    n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
-    memmove(pa0 + (va - va0), buf, n);
+    memmove(pa0 + (dstva - va0), src, n);
     len -= n;
-    buf += n;
-    va = va0 + PGSIZE;
+    src += n;
+    dstva = va0 + PGSIZE;
+  }
+  return 0;
+}
+
+// Copy len bytes to dst from user address srcva in page table pagetable.
+// Symmetric to arch_copyout above.
+int
+arch_copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+{
+  char *pa0;
+  uint64 n, va0;
+
+  while(len > 0){
+    va0 = PGROUNDDOWN(srcva);
+    pa0 = uva2ka((pde_t*)pagetable, (char*)(uintp)va0);
+    if(pa0 == 0)
+      return -1;
+    n = PGSIZE - (srcva - va0);
+    if(n > len)
+      n = len;
+    memmove(dst, pa0 + (srcva - va0), n);
+    len -= n;
+    dst += n;
+    srcva = va0 + PGSIZE;
   }
   return 0;
 }

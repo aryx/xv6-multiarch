@@ -52,6 +52,19 @@ argint(int n, int *ip)
   return fetchint((myproc()->tf->esp) + 4 + 4*n, ip);
 }
 
+// Fetch the nth 32-bit system call argument as a raw address.
+// Doesn't check for legality, since arch_copyin/arch_copyout will do
+// that - matching every other fork on this interface.
+int
+argaddr(int n, uint64 *ip)
+{
+  int i;
+  if(argint(n, &i) < 0)
+    return -1;
+  *ip = (uint)i;
+  return 0;
+}
+
 // Fetch the nth word-sized system call argument as a pointer
 // to a block of memory of size bytes.  Check that the pointer
 // lies within the process address space.

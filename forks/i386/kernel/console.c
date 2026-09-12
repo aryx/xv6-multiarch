@@ -232,20 +232,23 @@ consoleintr(int (*getc)(void))
   }
 }
 
+// claude: no longer takes/locks an inode - fileread()'s own FD_DEVICE
+// branch calls devsw directly, without holding any inode lock (see
+// kernel/file.c, shared with arm64/arm64-pi4/loongarch/riscv32/amd64),
+// so this no longer needs the iunlock()/ilock() dance around the sleep.
 int
-consoleread(struct inode *ip, char *dst, int n)
+consoleread(int user_dst, uint64 dst, int n)
 {
   uint target;
   int c;
+  char cbuf;
 
-  iunlock(ip);
   target = n;
   acquire(&cons.lock);
   while(n > 0){
     while(input.r == input.w){
       if(myproc()->killed){
         release(&cons.lock);
-        ilock(ip);
         return -1;
       }
       sleep(&input.r, &cons.lock);
@@ -259,30 +262,34 @@ consoleread(struct inode *ip, char *dst, int n)
       }
       break;
     }
-    *dst++ = c;
+    cbuf = c;
+    if(either_copyout(user_dst, dst, &cbuf, 1) == -1)
+      break;
+    dst++;
     --n;
     if(c == '\n')
       break;
   }
   release(&cons.lock);
-  ilock(ip);
 
   return target - n;
 }
 
 int
-consolewrite(struct inode *ip, char *buf, int n)
+consolewrite(int user_src, uint64 src, int n)
 {
   int i;
+  char c;
 
-  iunlock(ip);
   acquire(&cons.lock);
-  for(i = 0; i < n; i++)
-    consputc(buf[i] & 0xff);
+  for(i = 0; i < n; i++){
+    if(either_copyin(&c, user_src, src+i, 1) == -1)
+      break;
+    consputc(c & 0xff);
+  }
   release(&cons.lock);
-  ilock(ip);
 
-  return n;
+  return i;
 }
 
 void
