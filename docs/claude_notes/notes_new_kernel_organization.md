@@ -202,6 +202,51 @@ processes/memory/devices already have) - not for `kernel/arch/<arch>/`
 itself, which holds no interface, only raw per-ISA register
 definitions with nothing to document beyond what each register does.
 
+### A second kind, added 2026-09-13/14: documenting *emergent* naming, not a deliberate interface
+
+`kernel/console/interface_console.h`, `kernel/interrupts/
+interface_trap.h`, and a same-day-added second section inside
+`kernel/memory/interface_vm.h`, `kernel/syscalls/interface_syscall.h`
+and `kernel/processes/interface_proc.h` document something different
+in kind from the `arch_*.h` contracts above: `console.c`/`uart.c`,
+`trap.c`, `vm.c`, `syscall.c` and `proc.c` are all classic Tier-4
+material - genuinely too divergent to share a single file (confirmed,
+not assumed, for `console.c`/`timer.c` by an actual pairwise-diff
+check before writing anything - see `plan_factorization.md`'s own
+entry) - so none of them has, or is ever likely to get, a real
+`arch_*.h` dispatch family. But every fork's own independent
+implementation still converged on the *same function names* for the
+*same roles* anyway, entirely without being told to - real, useful
+structure a reader can't see without diffing thirteen-plus forks by
+hand.
+
+These sections exist to write that structure down, not to declare a
+contract nothing enforces. The same repeated finding, worth
+internalizing before writing one of these: **this tree's near-
+universal legacy/modern family split** (first found in `bio.c`/
+`buf.h`/`conf.h`/`kalloc.c`, see `plan_factorization.md`) **shows up
+again in almost every one of these naming conventions** -
+`consoleintr(int(*)(void))` vs `consoleintr(int)`, `trap()` vs
+`usertrap()`/`kerneltrap()`, `walkpgdir()` vs `walk()`,
+`argptr()`/`fetchstr(int,char**)` vs `argaddr()`/`fetchstr(addr,char*,
+int)`, `exit(void)` vs `exit(int status)`. Expect it again in any
+future one of these; check for it explicitly rather than assuming a
+single common name covers every fork. And check *definitions*, not
+just names or `grep -c` counts, before writing a prototype down -
+every one of these five files found at least one real per-fork
+exception hiding inside an apparently-universal name (`riscv64`'s own
+`kexit`/`prepare_return`, `loongarch` folding `trapinithart` into
+`trapinit`, `mips`'s extra `asid` parameter on `mappages`, `amd64`'s
+`sysframe`-argument `syscall()`, `arm-pi3`'s cache-writeback
+`switchuvm()`) that a shallower check would have missed or silently
+papered over.
+
+`arm` is excluded from every one of these five files - its own
+process/trap/VM/syscall code isn't a variant of either family, it's
+organized on genuinely different lines throughout (real ARM exception
+vectors instead of a unified `trap()`, its own `buddy.c` instead of
+`kalloc.c`'s family, ...).
+
 ## The check before accepting "real difference, not naming"
 
 Before concluding two forks genuinely can't share a file over some
