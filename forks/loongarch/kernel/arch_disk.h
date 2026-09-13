@@ -1,1 +1,1 @@
-../../../kernel/devices/loongarch/arch_disk.h
+../../../kernel/devices/storage/loongarch/arch_disk.h

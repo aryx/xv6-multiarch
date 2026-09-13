@@ -1,1 +1,1 @@
-../../../kernel/devices/riscv64/arch_disk.h
+../../../kernel/devices/storage/riscv64/arch_disk.h

@@ -1,1 +1,1 @@
-../../../kernel/devices/arm64-pi4/arch_disk.h
+../../../kernel/devices/storage/arm64-pi4/arch_disk.h
