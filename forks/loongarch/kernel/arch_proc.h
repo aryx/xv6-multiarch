@@ -1,0 +1,1 @@
+../../../kernel/processes/loongarch/arch_proc.h
