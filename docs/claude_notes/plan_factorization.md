@@ -1611,22 +1611,17 @@ split, just discovered a tier later than expected.
   - checked by hand instead: booted interactively, ran `sync` at the
   shell, confirmed it returns and the shell keeps working afterward.
 
-  **Still not merged: `amd64`, `i386`, `amd64-jserv`, `mips`.** All four
-  use the *same* concurrent `begin_op()`/`end_op()` design as this
-  cluster (not `kernel/log-legacy.c`'s older single-transaction one -
-  confirmed by reading, not just line counts: `amd64-jserv`/`mips` are
-  only 20-25 lines from `amd64`/`i386`, a difference of missing
-  generalizations - `ROOTDEV` hardcoded instead of a `dev` param, no
-  `bpin`/`bunpin` - not a different algorithm). But converging them
-  onto *this* baseline means giving `amd64`/`i386`/`amd64-jserv`/`mips`'s
-  own `bio.c` a `bpin()`/`bunpin()` pair and switching their `bget()`
-  eviction check off `B_DIRTY`, which is the same `struct buf`
-  unification `bio.c` itself has been waiting on. Left as their own
-  future cluster (baseline `amd64`/`i386`, already 0-diff) rather than
-  forced onto the `bpin`/`bunpin` design now - a real "give this file
-  the more advanced design" case, but one that reaches into `bio.c`,
-  so it should land together with (or after) that file, not as a
-  drive-by inside `log.c`.
+  **All four since merged.** `amd64`/`i386` joined 2026-09-13 (see the
+  `bio-x86.c` gains `bpin()`/`bunpin()` entry below) once `bio-x86.c` got
+  its own `refcnt`-based pin/unpin pair. `amd64-jserv`/`mips` joined the
+  same day, once `bio-legacy.c` (their own buffer cache, not `bio.c`)
+  got the equivalent structural migration - see the "`kernel/
+  bio-legacy.c` converts to `refcnt`+`sleeplock`" entry further below.
+  All 14 forks are now on exactly two log designs: this file (9 of 14)
+  and `kernel/log-legacy.c` (`arm`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`,
+  `arm-pi3` - a genuinely different, single-transaction algorithm, not
+  a merge candidate for this file - see `kernel/log.c`'s own top-of-file
+  comment for the design comparison).
 
 - **`kernel/string.c`** (2026-09-12, later same conversation) - split into
   three files, following the same "free the plain name" move as
@@ -2004,6 +1999,79 @@ substitute for verifying the actual change.
   boot check) to confirm no regression across this and the four
   `arch_copyin()`/`arch_copyout()` migration commits above - none of
   which had reached GitHub Actions CI yet at the time.
+
+- **`kernel/bio-legacy.c` converts to `refcnt`+`sleeplock` (2026-09-13)** -
+  the deferred half of the previous entry: `bio-legacy.c` (`mips`,
+  `amd64-jserv`, `arm-pi1`, `arm-pi1-bis`, `arm-pi2`, `arm-pi3`) still
+  used a `B_BUSY`-flag-plus-raw-spinlock `bget()` (exclusive-only
+  ownership, sleep-and-retry on contention). Converted to the same
+  `refcnt`+`acquiresleep()`/`bpin()`/`bunpin()` shape as `bio.c`/
+  `bio-x86.c`, with the old design kept as a comment in `bget()` -
+  the last piece needed before `mips`/`amd64-jserv` (which already had
+  their own `begin_op()`/`end_op()`-shaped `log.c`) could join the
+  shared `kernel/log.c`.
+
+  Two real, pre-existing bugs found only by actually building/running
+  against the new design, not by inspection:
+  - `defs.h` forward-declares `struct buf`/`proc`/`spinlock`/etc. but
+    never `struct sleeplock` - so the new `acquiresleep()`/
+    `holdingsleep()` prototypes each silently created their own
+    incompatible, prototype-scoped `struct sleeplock` (a real C rule:
+    a struct tag first introduced inside a parameter list has scope
+    limited to that declaration, not file scope). Fixed by adding
+    `struct sleeplock;` to the same forward-declaration block as the
+    others, in all 6 forks' `defs.h`.
+  - `mips`/`amd64-jserv`'s own (not-yet-merged) `log.c` pinned
+    modified-but-uncommitted buffers via `b->flags |= B_DIRTY` -
+    harmless under the old `B_BUSY` design (exclusive ownership by
+    construction) but a real, reproducible data-corruption bug under
+    the new `refcnt` design: once `brelse()` dropped `refcnt` to 0,
+    `bget()` would evict and reuse the buffer before `commit()` ever
+    wrote it out. Caught by `usertests`' `createdelete()` under
+    `amd64-jserv`'s real SMP boot - `mips`'s single-core QEMU boot
+    never raced hard enough to hit the same bug. Fixed by giving both
+    their own `bpin()`/`bunpin()`, matching `kernel/log.c`'s own
+    already-fixed `log_write()`/`install_trans()`.
+
+  `kernel/log.c`'s own top-of-file comment gained the design-history
+  note it was missing: why `begin_op()`/`end_op()` (this file) is a
+  genuinely better design than `log-legacy.c`'s single-transaction
+  `begin_trans()`/`commit_trans()` (untouched, still used by `arm`/the
+  four Pi ports - not a design being retired, kept for comparison, per
+  the user's own explicit request to record *why*, not just *that*, a
+  design differs).
+
+  Verified: build + full `usertests` for all 6 forks, `docker build
+  --build-arg ARCH=<name>` for all 6, `make test-all`.
+
+- **`kernel/bio-legacy.c`: `sector` -> `blockno`; `mips`/`amd64-jserv`
+  join `kernel/log.c` (2026-09-13)** - `kernel/log.c` hardcodes `struct
+  buf`'s field as `blockno` (`bio.c`/`bio-x86.c`'s name); `bio-legacy.c`
+  called it `sector`, an older, literal disk-sector name predating this
+  repo's convergence on block-cache terminology. Renamed across
+  `bio-legacy.c` and all 6 forks' own `buf.h`/`ide.c`/`memide.c` (pure
+  rename, no behavior change) - confirmed via `AskUserQuestion` before
+  touching the 4 real-hardware Pi ports' shared file for a rename that
+  serves the other two forks' merge, not theirs. `arm` has its own,
+  separate `fs.c`/`log.c`/`buf.h` and is unaffected - confirmed by
+  building and testing it too.
+
+  With the field aligned, `mips`/`amd64-jserv` join the shared
+  `kernel/log.c`, matching `amd64`/`i386`'s own earlier merge: new
+  `kernel/arch/{mips,amd64-jserv}/arch_proc.h` (`arch_sleep_release()`,
+  plain pass-through - both ports' own `sleep()` is already atomic),
+  both forks' `fs.c` gains `fsinit(int dev)` (new file-scope `sb`,
+  `FSMAGIC` check neither fork had before despite their on-disk format
+  - shared `tools/mkfs.c` - always writing one, then `initlog(dev,
+  &sb)`), `defs.h`/`proc.c` updated to match, own `log.c` deleted and
+  symlinked to `kernel/log.c`. This brings `kernel/log.c` to 9 of 14
+  forks (see the updated `kernel/log.c` entry above).
+
+  Verified: build + full `usertests` for `mips`/`amd64-jserv`
+  (`amd64-jserv` re-run 3x under its own real `-smp` to specifically
+  re-check the SMP log race the previous commit fixed), a rebuild+retest
+  of the 4 renamed-only Pi forks and `arm`, `docker build --build-arg
+  ARCH=<name>` for all 7, `make test-all` across all 14.
 
 **Tier 4 — the irreducibly arch-specific.** `proc.c`, `vm.c`, `trap.c`,
 `swtch.S`, `entry.S`, `trapasm.S`, `mmu.h`. These stay in `arch/<name>/`.
