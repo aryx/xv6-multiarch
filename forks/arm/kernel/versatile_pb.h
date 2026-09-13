@@ -1,1 +1,1 @@
-../../../kernel/devices/arm/versatile_pb.h
+../../../kernel/arch/arm/versatile_pb.h

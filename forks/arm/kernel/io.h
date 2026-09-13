@@ -1,1 +1,1 @@
-../../../kernel/devices/arm/io.h
+../../../kernel/arch/arm/io.h
