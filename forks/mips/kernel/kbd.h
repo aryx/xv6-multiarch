@@ -1,1 +1,1 @@
-../../../kernel/devices/keyboard/mips/kbd.h
+../../../kernel/devices/keyboard/kbd.h

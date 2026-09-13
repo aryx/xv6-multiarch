@@ -1,1 +1,1 @@
-../../../kernel/devices/keyboard/amd64/kbd.h
+../../../kernel/devices/keyboard/kbd.h
