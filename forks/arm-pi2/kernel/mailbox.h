@@ -1,1 +1,1 @@
-../../../kernel/devices/arm-pi2/mailbox.h
+../../../kernel/buses/arm-pi2/mailbox.h

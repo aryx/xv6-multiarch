@@ -1,1 +1,1 @@
-../../../kernel/devices/arm/timer.h
+../../../kernel/time/arm/timer.h

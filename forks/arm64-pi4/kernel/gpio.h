@@ -1,1 +1,1 @@
-../../../kernel/devices/arm64-pi4/gpio.h
+../../../kernel/buses/arm64-pi4/gpio.h
