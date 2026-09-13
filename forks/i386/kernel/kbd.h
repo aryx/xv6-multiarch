@@ -1,1 +1,1 @@
-../../../kernel/devices/i386/kbd.h
+../../../kernel/devices/keyboard/i386/kbd.h

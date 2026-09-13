@@ -1,1 +1,1 @@
-../../../kernel/devices/amd64-jserv/kbd.h
+../../../kernel/devices/keyboard/amd64-jserv/kbd.h
