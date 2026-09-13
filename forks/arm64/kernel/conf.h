@@ -1,1 +1,1 @@
-../../../kernel/conf.h
+../../../kernel/conf/conf.h

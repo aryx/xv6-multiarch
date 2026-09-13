@@ -1,1 +1,1 @@
-../../../kernel/conf-legacy.h
+../../../kernel/conf/conf-legacy.h
