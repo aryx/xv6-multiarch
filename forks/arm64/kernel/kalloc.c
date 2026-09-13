@@ -1,1 +1,1 @@
-../../../kernel/kalloc.c
+../../../kernel/memory/kalloc.c
