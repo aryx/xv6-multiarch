@@ -24,6 +24,9 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 // claude: no longer static - sys_open calls it for O_TRUNC.
 void itrunc(struct inode*);
+// there should be one superblock per disk device, but we run with
+// only one device
+struct superblock sb;
 
 // Read the super block.
 void
@@ -167,6 +170,24 @@ void
 iinit(void)
 {
   initlock(&icache.lock, "icache");
+}
+
+// claude: matches the amd64/i386 cluster's own fsinit(), needed so
+// this fork's own initlog() can join their shared kernel/log.c -
+// that file's initlog(dev, sb) takes an already-read superblock
+// instead of reading a second copy of its own (the old, now-replaced
+// initlog(void) used to read a local one just for itself, via
+// ROOTDEV directly rather than the dev this function is given).
+// Also adds the FSMAGIC check this fork never had, even though the
+// on-disk format has carried a magic field since the fs.h
+// unification (see tools/mkfs.c's own sb.magic = xint(FSMAGIC)).
+void
+fsinit(int dev)
+{
+  readsb(dev, &sb);
+  if(sb.magic != FSMAGIC)
+    panic("invalid file system");
+  initlog(dev, &sb);
 }
 
 static struct inode* iget(uint dev, uint inum);

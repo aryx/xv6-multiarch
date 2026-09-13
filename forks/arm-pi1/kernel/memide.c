@@ -45,10 +45,10 @@ iderw(struct buf *b)
     panic("iderw: nothing to do");
   if(b->dev != 1)
     panic("iderw: request not for disk 1");
-  if(b->sector >= disksize)
+  if(b->blockno >= disksize)
     panic("iderw: sector out of range");
 
-  p = memdisk + b->sector*512;
+  p = memdisk + b->blockno*512;
   
   if(b->flags & B_DIRTY){
     b->flags &= ~B_DIRTY;

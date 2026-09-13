@@ -44,6 +44,7 @@ int             dirlink(struct inode*, char*, uint);
 struct inode*   dirlookup(struct inode*, char*, uint*);
 struct inode*   ialloc(uint, short);
 struct inode*   idup(struct inode*);
+void            fsinit(int dev);
 void            iinit(void);
 void            ilock(struct inode*);
 void            iput(struct inode*);
@@ -87,7 +88,7 @@ void            lapicstartap(uchar, uint);
 void            microdelay(int);
 
 // log.c
-void            initlog(void);
+void            initlog(int dev, struct superblock *sb);
 void            log_write(struct buf*);
 void            begin_op();
 void            end_op();

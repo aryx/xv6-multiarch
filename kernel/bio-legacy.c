@@ -55,19 +55,19 @@ binit(void)
   }
 }
 
-// Look through buffer cache for sector on device dev.
+// Look through buffer cache for block on device dev.
 // If not found, allocate a buffer.
 // In either case, return locked buffer.
 static struct buf*
-bget(uint dev, uint sector)
+bget(uint dev, uint blockno)
 {
   struct buf *b;
 
   acquire(&bcache.lock);
 
-  // Is the sector already cached?
+  // Is the block already cached?
   for(b = bcache.head.next; b != &bcache.head; b = b->next){
-    if(b->dev == dev && b->sector == sector){
+    if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
       release(&bcache.lock);
       acquiresleep(&b->lock);
@@ -76,8 +76,8 @@ bget(uint dev, uint sector)
   }
 
   // claude: old design (kept for history) - this used to walk the same
-  // list twice, once above under a bare "if(b->dev==dev && b->sector==
-  // sector)" cache-hit check, then a second time below for eviction,
+  // list twice, once above under a bare "if(b->dev==dev && b->blockno==
+  // blockno)" cache-hit check, then a second time below for eviction,
   // with the SAME buffer's ownership tracked by a single B_BUSY flag
   // rather than a refcnt: a cache hit that was already B_BUSY made the
   // caller sleep() on the buffer itself and retry the whole scan from
@@ -97,7 +97,7 @@ bget(uint dev, uint sector)
   for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
     if(b->refcnt == 0) {
       b->dev = dev;
-      b->sector = sector;
+      b->blockno = blockno;
       b->flags = 0;
       b->refcnt = 1;
       release(&bcache.lock);
@@ -108,13 +108,13 @@ bget(uint dev, uint sector)
   panic("bget: no buffers");
 }
 
-// Return a locked buf with the contents of the indicated disk sector.
+// Return a locked buf with the contents of the indicated block.
 struct buf*
-bread(uint dev, uint sector)
+bread(uint dev, uint blockno)
 {
   struct buf *b;
 
-  b = bget(dev, sector);
+  b = bget(dev, blockno);
   if(!(b->flags & B_VALID)) {
     iderw(b);
   }

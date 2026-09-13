@@ -169,10 +169,10 @@ log_write(struct buf *b)
     panic("write outside of trans");
 
   for (i = 0; i < log.lh.n; i++) {
-    if (log.lh.sector[i] == b->sector)   // log absorbtion?
+    if (log.lh.sector[i] == b->blockno)   // log absorbtion?
       break;
   }
-  log.lh.sector[i] = b->sector;
+  log.lh.sector[i] = b->blockno;
   struct buf *lbuf = bread(b->dev, log.start+i+1);
   memmove(lbuf->data, b->data, BSIZE);
   bwrite(lbuf);

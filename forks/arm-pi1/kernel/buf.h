@@ -1,7 +1,10 @@
 struct buf {
   int flags;
   uint dev;
-  uint sector;
+  // claude: was named "sector" in this file - an older, literal
+  // disk-sector name - before converging on bio.c/bio-x86.c's own
+  // "blockno", the modern block-cache term.
+  uint blockno;
   struct sleeplock lock;
   uint refcnt;
   struct buf *prev; // LRU cache list

@@ -86,10 +86,10 @@ idestart(struct buf *b)
 {
   if(b == 0)
     panic("idestart");
-  if(b->sector >= FSSIZE)
+  if(b->blockno >= FSSIZE)
     panic("incorrect blockno");
   int sector_per_block =  BSIZE/SECTOR_SIZE;
-  int disk_sector = b->sector * sector_per_block;
+  int disk_sector = b->blockno * sector_per_block;
 
   if (sector_per_block > 7) panic("idestart");
 
