@@ -80,6 +80,7 @@ OBJS = \
 	kernel/mmu.o\
 	kernel/pipe.o\
 	kernel/proc.o\
+	kernel/sleeplock.o\
 	kernel/spinlock.o\
 	kernel/string.o\
 	kernel/syscall.o\

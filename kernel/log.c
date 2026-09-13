@@ -29,6 +29,19 @@
 //   block C
 //   ...
 // Log appends are synchronous.
+//
+// claude: the alternative design, kernel/log-legacy.c (still in use by
+// arm/arm-pi1/arm-pi1-bis/arm-pi2/arm-pi3, not retired - kept here for
+// comparison, not history), allows only ONE transaction at a time:
+// begin_trans()/commit_trans() serialize every FS syscall behind a
+// single "busy" flag, where this file's begin_op()/end_op() let many
+// syscalls batch into one commit and only the commit itself is
+// serialized. log-legacy.c's own log_write() also does a real,
+// synchronous disk write to the log block on every single call; this
+// file's own log_write() only records the block number and pins it
+// (bpin(), below) - the actual log writes happen once, batched, in
+// write_log() at commit time. Genuinely better, not just different:
+// less serialization, less redundant disk I/O for the same guarantees.
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.

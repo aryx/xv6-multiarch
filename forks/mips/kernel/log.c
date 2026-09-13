@@ -2,6 +2,7 @@
 #include "defs.h"
 #include "param.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "fs.h"
 #include "buf.h"
 
@@ -65,8 +66,8 @@ initlog(void)
 }
 
 // Copy committed blocks from log to their home location
-static void 
-install_trans(void)
+static void
+install_trans(int recovering)
 {
   int tail;
 
@@ -75,7 +76,9 @@ install_trans(void)
     struct buf *dbuf = bread(log.dev, log.lh.sector[tail]); // read dst
     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
     bwrite(dbuf);  // write dst to disk
-    brelse(lbuf); 
+    if(recovering == 0)
+      bunpin(dbuf);
+    brelse(lbuf);
     brelse(dbuf);
   }
 }
@@ -114,8 +117,8 @@ write_head(void)
 static void
 recover_from_log(void)
 {
-  read_head();      
-  install_trans(); // if committed, copy from log to disk
+  read_head();
+  install_trans(1); // if committed, copy from log to disk
   log.lh.n = 0;
   write_head(); // clear the log
 }
@@ -192,15 +195,33 @@ commit()
   if (log.lh.n > 0) {
     write_log();     // Write modified blocks from cache to log
     write_head();    // Write header to disk -- the real commit
-    install_trans(); // Now install writes to home locations
+    install_trans(0); // Now install writes to home locations
     log.lh.n = 0; 
     write_head();    // Erase the transaction from the log
   }
 }
 
 // Caller has modified b->data and is done with the buffer.
-// Record the block number and pin in the cache with B_DIRTY.
+// Record the block number and pin in the cache by increasing refcnt.
 // commit()/write_log() will do the disk write.
+//
+// claude: old design (kept for history) - this used to set
+// b->flags |= B_DIRTY unconditionally here, every call, "to prevent
+// eviction", and nothing ever cleared that bit except a real disk
+// write completing in ide.c/memide.c - conflating B_DIRTY's own, real
+// meaning ("needs a disk write") with a second, unrelated one ("keep
+// this out of the LRU eviction list"). Also missing log.lock around
+// the whole body below - harmless only by accident, since the old
+// bio-legacy.c's B_BUSY-based buffer ownership made b->flags itself
+// exclusive per-buffer; now that bio-legacy.c uses a real refcnt and
+// buffers can be legitimately shared, log.lh (a single global struct
+// shared by every concurrent transaction) genuinely needs the lock.
+// bpin()/bunpin() (below, and in install_trans() above) separate the
+// two meanings: pin only on first addition to this transaction
+// (matching log absorption below), unpin once install_trans() writes
+// it back. See kernel/bio-legacy.c's own bget() for the matching other
+// half, and kernel/log.c's own log_write() for the design this
+// converges on.
 //
 // log_write() replaces bwrite(); a typical use is:
 //   bp = bread(...)
@@ -212,6 +233,7 @@ log_write(struct buf *b)
 {
   int i;
 
+  acquire(&log.lock);
   if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)
     panic("too big a transaction");
   if (log.outstanding < 1)
@@ -222,8 +244,10 @@ log_write(struct buf *b)
       break;
   }
   log.lh.sector[i] = b->sector;
-  if (i == log.lh.n)
+  if (i == log.lh.n) {  // Add new block to log?
+    bpin(b);
     log.lh.n++;
-  b->flags |= B_DIRTY; // prevent eviction
+  }
+  release(&log.lock);
 }
 

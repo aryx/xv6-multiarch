@@ -14,6 +14,7 @@ OBJS = \
 	kernel/pipe.o\
 	kernel/proc.o\
 	kernel/procasm.o\
+	kernel/sleeplock.o\
 	kernel/spinlock.o\
 	kernel/string.o\
 	kernel/swtch.o\

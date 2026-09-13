@@ -44,6 +44,7 @@ OBJS := \
 	picirq.o \
 	pipe.o \
 	proc.o \
+	sleeplock.o \
 	spinlock.o \
 	string.o \
 	swtch$(BITS).o \

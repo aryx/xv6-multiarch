@@ -5,6 +5,7 @@ struct inode;
 struct pipe;
 struct proc;
 struct spinlock;
+struct sleeplock;
 struct stat;
 struct superblock;
 
@@ -28,6 +29,8 @@ void            binit(void);
 struct buf*     bread(uint, uint);
 void            brelse(struct buf*);
 void            bwrite(struct buf*);
+void            bpin(struct buf*);
+void            bunpin(struct buf*);
 
 // console.c
 void            consoleinit(void);
@@ -172,6 +175,12 @@ void            initlock(struct spinlock*, char*);
 void            release(struct spinlock*);
 void            pushcli(void);
 void            popcli(void);
+
+// sleeplock.c
+void            acquiresleep(struct sleeplock*);
+void            releasesleep(struct sleeplock*);
+int             holdingsleep(struct sleeplock*);
+void            initsleeplock(struct sleeplock*, char*);
 
 // string.c
 int             memcmp(const void*, const void*, uint);

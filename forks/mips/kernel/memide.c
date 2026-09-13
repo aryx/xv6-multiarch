@@ -9,6 +9,7 @@
 #include "mips.h"
 #include "traps.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "buf.h"
 
 extern uchar _binary_fs_img_start[], _binary_fs_img_size[];
@@ -38,7 +39,7 @@ iderw(struct buf *b)
 {
   uchar *p;
 
-  if(!(b->flags & B_BUSY))
+  if(!holdingsleep(&b->lock))
     panic("iderw: buf not busy");
   if((b->flags & (B_VALID|B_DIRTY)) == B_VALID)
     panic("iderw: nothing to do");
