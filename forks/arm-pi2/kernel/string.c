@@ -1,1 +1,1 @@
-../../../kernel/string-arm.c
+../../../kernel/lib/string-arm.c

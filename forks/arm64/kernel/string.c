@@ -1,1 +1,1 @@
-../../../kernel/string.c
+../../../kernel/lib/string.c
