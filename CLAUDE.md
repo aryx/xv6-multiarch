@@ -79,10 +79,10 @@ make build-docker [ARCH=riscv64]   # same, inside the pinned Dockerfile -
                       # ARCH defaults to "all"
 ```
 
-Same shape for every other wired-up arch (`i386` today; extend as Phase 4
-lands more). `make kill-<arch>`/`make kill-all` cleans up an orphaned
-`qemu-system-*` process left running after an interrupted `run-<arch>`/
-`test-<arch>`.
+Same shape for every other wired-up arch - see the root `README.md`'s
+status table or `Makefile` for the current list. `make kill-<arch>`/
+`make kill-all` cleans up an orphaned `qemu-system-*` process left
+running after an interrupted `run-<arch>`/`test-<arch>`.
 
 **Exiting an interactive `run-<arch>` session:** `-nographic` attaches the
 guest's serial console directly to your terminal - ordinary Ctrl-C/Ctrl-D
@@ -256,9 +256,12 @@ behave.
 - `docs/claude_notes/done/plan_build_and_test.md` - the build/boot/CI plan, DONE 2026-09-09
 - `docs/claude_notes/plan_build_and_test_2.md` - what that plan left behind (skipped usertests sub-tests, `arm64-pi4` out of CI, no real-hardware verification). Blocks nothing
 - `docs/claude_notes/plan_factorization.md` - the Linux-style-unification plan, active; its Phase 0 (uniform `kernel/ user/ ulib/ tests/ tools/` across all 14 forks) is DONE 2026-09-10, Tier 0 onwards is next
+- `docs/claude_notes/plan_test_speed.md` - cutting `stress-test-all`'s wall time; in progress, some options done, some still proposals
 - `docs/claude_notes/plan_lattepanda.md`, `plan_orange_pi.md` - proposed real-hardware bring-ups on the user's own boards
 - `docs/claude_notes/plan_tinyemu.md` - proposed second emulator (Bellard's TinyEMU) for the two RISC-V ports; includes why x86/amd64 can't work there
 - `docs/claude_notes/notes_arch_<name>.txt` - real bring-up findings, one per wired-up arch
 - `docs/claude_notes/notes_debugging_techniques.txt` - general debugging methodology, grown from real investigations in this repo
 - `docs/claude_notes/notes_build_system.txt` - how the ports' Makefiles behave as builds: header dependency tracking (and why `make depend` is the wrong fix), order-only vs normal prerequisites, and what `test-<arch>` legitimately needs to redo
 - `docs/claude_notes/notes_new_kernel_organization.md` - the `include/arch/<arch>/arch.h` / `kernel/arch/<arch>/arch_vm.h` / `arch_proc.h` layering and the "interface, not permanent fork" method behind Tier 3's per-file merges
+- `docs/claude_notes/notes_tutorial_gdb_multiarch.txt` - hands-on `gdb-multiarch` tutorial for a hung/misbehaving kernel under QEMU
+- `docs/claude_notes/notes_tutorial_qemu.txt` - hands-on QEMU-side debugging tutorial (everything except gdb-multiarch)
