@@ -10,6 +10,22 @@ blow-by-blow entries. Read `plan_factorization.md` for the history and
 the reasoning behind each individual file; read this for "where does a
 new type/constant/function go and why."
 
+**Updated 2026-09-13**: `kernel/arch/<arch>/arch_vm.h`, `arch_proc.h`
+and `arch_disk.h` - as named throughout the rest of this file below -
+moved out to `kernel/memory/<arch>/`, `kernel/processes/<arch>/` and
+`kernel/devices/<arch>/` respectively, joining the rest of their own
+subsystem's files (`mmu.h`/`memlayout.h`; `swtch.S`/`procasm.S`/
+`regs.h`; `mailbox.h`/`virtio.h`/...). `kernel/arch/<arch>/` itself now
+holds only genuine CPU register/CSR definitions (`arm.h`, `x86.h`,
+`mips.h`, `riscv.h`, `loongarch.h`, `aarch64.h`, `msr.h`, `cpuid.h`) -
+see `plan_factorization.md`'s own "A parallel track" section for the
+full `kernel/<category>/<arch>/` layout this is part of. The `-I` flag
+mechanics below are otherwise unchanged: each fork's existing
+`-I../../kernel/arch/<arch>` flag still resolves the quoted
+`#include "arch_vm.h"` etc., now via a symlink left at that same path
+pointing at the new location - read every `kernel/arch/<arch>/...`
+below as that symlink's target, not its literal current location.
+
 ## The layering, top to bottom
 
 ```
@@ -23,14 +39,21 @@ include/kernel/*.h              xv6 kernel-ABI concepts used by BOTH
                                kernel and user code (syscall numbers,
                                open() flags, stat/file-type constants)
 kernel/*.h, kernel/init/...     kernel-only headers, no user-side need
-kernel/arch/<arch>/arch_vm.h    VM-only per-arch interface: pagetable_t,
+kernel/memory/<arch>/arch_vm.h    VM-only per-arch interface: pagetable_t,
                                pte_t, PGSIZE/PGSHIFT/PGROUNDUP(DOWN)
-kernel/arch/<arch>/arch_proc.h  process/scheduling-only per-arch
+kernel/processes/<arch>/arch_proc.h  process/scheduling-only per-arch
                                interface: arch_sleep_release()
-kernel/arch/<arch>/arch_disk.h  block-device-only per-arch interface:
+kernel/devices/<arch>/arch_disk.h  block-device-only per-arch interface:
                                arch_disk_rw() - board-scoped, not
                                ISA-scoped (see its own section below)
 ```
+
+(As of 2026-09-13, `kernel/arch/<arch>/` itself holds only CPU
+register/CSR headers with no subsystem of their own - `arm.h`,
+`x86.h`, `riscv.h`, ... - and each fork's own `-I../../kernel/
+arch/<arch>` flag still finds `arch_vm.h`/`arch_proc.h`/`arch_disk.h`
+via a symlink left at their old path. See the note at the top of this
+file.)
 
 Each `include/arch/<arch>/` or `kernel/arch/<arch>/` directory is one
 `-I` flag added to that fork's own `CFLAGS`/`ASFLAGS` (sometimes more
@@ -92,7 +115,7 @@ Concrete precedents so far, each a template for the next one:
   integer. `uint64` on 64-bit ports, plain `uint`/`uint32` on 32-bit
   ones. The oldest one, predates this session.
 - **`pagetable_t`/`pte_t`, `PGSIZE`/`PGSHIFT`/`PGROUNDUP`/`PGROUNDDOWN`**
-  (`kernel/arch/<arch>/arch_vm.h`) - a page table is a different width
+  (`kernel/memory/<arch>/arch_vm.h`) - a page table is a different width
   and depth per arch; `PGSIZE` happens to be 4096 everywhere *today*,
   which is a fact about current hardware choices, not a portability
   guarantee (`arm`'s own buddy allocator has no `PGSIZE` concept at
@@ -108,12 +131,17 @@ Concrete precedents so far, each a template for the next one:
   `arm64-pi4`), a trivial `#define P2V(a) (a)` identity backend on
   identity-mapped forks (`riscv64`, `riscv32`) that never needed real
   translation at all.
-- **`copyin()`/`copyout()`** - real page-table walk on forks with a
-  separate user/kernel address space, a trivial `memmove()` backend on
-  forks without one (`amd64`, `i386`, `mips`, `amd64-jserv`) - not yet
-  turned into a literal shared-header interface, but already identified
-  as the same shape in `plan_factorization.md`'s own `pipe.c` writeup.
-- **`arch_sleep_release(chan, lk)`** (`kernel/arch/<arch>/arch_proc.h`)
+- **`arch_copyin()`/`arch_copyout()`** (declared in each fork's own
+  `defs.h`, defined in its own `vm.c` - not yet centralized into
+  `arch_vm.h` itself the way the static-inline interfaces below are,
+  since the page-table-walk logic is genuinely too different per ISA to
+  fit in a header; documented anyway in `kernel/memory/interface_vm.h`)
+  - completed 2026-09-12/13, see `plan_factorization.md`'s own entry:
+  every one of the 8 forks with this interface turned out to already
+  need a real page-table walk (just narrower in scope before), not the
+  trivial `memmove()` backend first predicted for `amd64`/`i386`/
+  `mips`/`amd64-jserv` - renamed and widened instead of replaced.
+- **`arch_sleep_release(chan, lk)`** (`kernel/processes/<arch>/arch_proc.h`)
   - most forks' own `sleep(chan, lk)` already does
   register+release+block+reacquire atomically, so `arch_sleep_release()`
   is a plain pass-through there; `riscv64`'s own `sleep()` is
@@ -132,13 +160,38 @@ Concrete precedents so far, each a template for the next one:
   `copyin`/`copyout`, just confirmed in practice instead of only
   predicted. Deliberately NOT renamed `arch_myproc()` - see the naming
   note above.
-- **`arch_disk_rw(b, write)`** (`kernel/arch/<arch>/arch_disk.h`) -
+- **`arch_disk_rw(b, write)`** (`kernel/devices/<arch>/arch_disk.h`) -
   most of the `kernel/bio.c` cluster (`arm64`, `riscv32`, `riscv64`)
   calls `virtio_disk_rw(b, write)`; `arm64-pi4`/`loongarch` call
   `ramdiskrw(b, write)` instead (no virtio device on those boards) -
   identical `(struct buf*, int)` shape either way. See its own section
   below for why this one needed a different directory shape than the
   others.
+
+## `interface_*.h`: documenting the contract C can't declare
+
+Added 2026-09-13, one per `kernel/<category>/` that has grown an
+`arch_*.h` family: `kernel/processes/interface_proc.h`,
+`kernel/memory/interface_vm.h`, `kernel/devices/interface_disk.h`.
+Each is a plain header - real prototypes and typedefs, not just prose,
+matching the actual signatures below - that is **never `#include`d by
+any build** (checked: no Makefile references it). C has no `interface`
+keyword and no way to say "every `arch_proc.h` must define a function
+with this exact signature" and have the compiler enforce it, so there
+is otherwise no single place a reader can jump to that lists the whole
+contract - only the scattered real implementations, each only showing
+its own fork's answer. These files are that place, kept honest by
+hand rather than by the compiler; nothing stops one from drifting out
+of sync with the real `arch_*.h` files it describes, so treat it as
+comment, not oracle - if in doubt, read the real files linked from the
+top of each one.
+
+Add one more here whenever a new `arch_*.h` family is created (the
+next likely candidate is `kernel/init/`'s or `kernel/interrupts/`'s
+own, once either grows a real cross-arch dispatch point the way
+processes/memory/devices already have) - not for `kernel/arch/<arch>/`
+itself, which holds no interface, only raw per-ISA register
+definitions with nothing to document beyond what each register does.
 
 ## The check before accepting "real difference, not naming"
 
@@ -167,10 +220,12 @@ Raspberry Pi 4 hardware) doesn't, so the two need genuinely different
 backends despite sharing an ISA directory for everything else.
 
 Fix: give the board that needs to differ its *own* directory
-(`kernel/arch/arm64-pi4/`), holding only the one file that actually
-diverges (`arch_disk.h`), and list it in that fork's own `-I` flags
-*before* the shared ISA directory - a quoted `#include "arch_disk.h"`
-then resolves to the board-specific one first, falling through to the
+(`kernel/arch/arm64-pi4/`, now a symlink to the real file at
+`kernel/devices/arm64-pi4/arch_disk.h` - see the note at the top of
+this file), holding only the one file that actually diverges
+(`arch_disk.h`), and list it in that fork's own `-I` flags *before*
+the shared ISA directory - a quoted `#include "arch_disk.h"` then
+resolves to the board-specific one first, falling through to the
 ISA-level one for any fork that doesn't override it. This is the same
 search-order mechanism gotcha 12 (`plan_factorization.md`) warns about
 being bitten by accidentally; here it's used deliberately. Verified past
@@ -201,9 +256,15 @@ contract. See `plan_factorization.md`'s own "what not to do" section.
 Long term, the bet is that most of `kernel/proc.c`, `kernel/vm.c`,
 `kernel/trap.c` (today's Tier 4) become mostly-portable Tier 3 files
 once enough of their own real differences are named as `arch_*.h`
-interfaces this same way - `copyin`/`copyout` (real page-table walk vs.
-a trivial `memmove()`) is the next likely case still open.
-`arch/<arch>/` trees would then hold only what's left once that's
-done: register/CSR access, context-switch asm, entry/trap asm,
-interrupt controller drivers - the genuinely irreducible per-ISA,
-per-board code.
+interfaces this same way - `arch_copyin`/`arch_copyout` (real
+page-table walk vs. a trivial `memmove()`, first predicted here, done
+2026-09-12/13) was the last one of these; no interface is currently
+known-and-not-yet-built. What's left once that's done - register/CSR
+access, context-switch asm, entry/trap asm, interrupt controller
+drivers, the genuinely irreducible per-ISA, per-board code - already
+has somewhere to live today, not just eventually: the
+`kernel/<category>/<arch>/` layout (`kernel/processes/`, `kernel/
+memory/`, `kernel/interrupts/`, `kernel/init/`, `kernel/devices/`,
+`kernel/syscalls/`, `kernel/arch/`) documented in
+`plan_factorization.md`'s own "A parallel track" section, not a single
+future `arch/<arch>/` tree.
