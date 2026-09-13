@@ -187,6 +187,23 @@ iinit(int dev)
           sb.bmapstart);
 }
 
+// claude: matches the arm64/arm64-pi4/loongarch/riscv32/riscv64 cluster's
+// own fsinit(), needed so this fork's own initlog() can join their
+// shared kernel/log.c - that file's initlog(dev, sb) takes an
+// already-read superblock instead of reading a third copy of its own
+// (iinit() above already reads one; the old, now-replaced initlog(int
+// dev) used to read a second, purely local one just for itself). Also
+// adds the FSMAGIC check iinit() itself never did, even though the
+// on-disk format has carried a magic field since the fs.h unification.
+void
+fsinit(int dev)
+{
+  readsb(dev, &sb);
+  if(sb.magic != FSMAGIC)
+    panic("invalid file system");
+  initlog(dev, &sb);
+}
+
 static struct inode* iget(uint dev, uint inum);
 
 //PAGEBREAK!

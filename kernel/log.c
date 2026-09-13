@@ -227,6 +227,18 @@ commit()
 // Record the block number and pin in the cache by increasing refcnt.
 // commit()/write_log() will do the disk write.
 //
+// claude: old design (kept for history, on amd64/i386's own copies of
+// this file before they joined this shared one) - those two forks used
+// to set b->flags |= B_DIRTY unconditionally here, every call, "to
+// prevent eviction", and nothing ever cleared that bit except a real
+// disk write completing in ide.c - conflating B_DIRTY's own, real
+// meaning ("needs a disk write") with a second, unrelated one ("keep
+// this out of the LRU eviction list") in the same flag. bpin()/
+// bunpin() (below, and in install_trans() above) separate the two:
+// pin only on first addition to this transaction (matching log
+// absorption below), unpin once install_trans() actually writes it
+// back. See kernel/bio-x86.c's own bget() for the matching other half.
+//
 // log_write() replaces bwrite(); a typical use is:
 //   bp = bread(...)
 //   modify bp->data[]
