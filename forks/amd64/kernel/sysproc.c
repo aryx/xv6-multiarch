@@ -1,1 +1,1 @@
-../../../kernel/sysproc-legacy.c
+../../../kernel/processes/sysproc-legacy.c

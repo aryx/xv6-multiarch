@@ -1,1 +1,1 @@
-../../../kernel/bio-legacy.c
+../../../kernel/devices/storage/bio-legacy.c

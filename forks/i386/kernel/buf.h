@@ -1,1 +1,1 @@
-../../../kernel/buf-legacy.h
+../../../kernel/devices/storage/buf-legacy.h

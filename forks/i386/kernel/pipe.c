@@ -1,1 +1,1 @@
-../../../kernel/pipe.c
+../../../kernel/ipc/pipe.c

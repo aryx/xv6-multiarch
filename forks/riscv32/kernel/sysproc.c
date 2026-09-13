@@ -1,1 +1,1 @@
-../../../kernel/sysproc.c
+../../../kernel/processes/sysproc.c
