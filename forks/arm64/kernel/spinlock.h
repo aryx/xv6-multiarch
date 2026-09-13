@@ -1,1 +1,1 @@
-../../../kernel/spinlock-nopcs.h
+../../../kernel/concurrency/spinlock-nopcs.h
