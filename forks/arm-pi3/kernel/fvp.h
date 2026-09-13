@@ -1,1 +1,1 @@
-../../../kernel/arch/arm-pi3/fvp.h
+../../../kernel/arch/arm/fvp.h
