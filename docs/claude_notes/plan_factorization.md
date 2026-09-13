@@ -2074,9 +2074,142 @@ substitute for verifying the actual change.
   ARCH=<name>` for all 7, `make test-all` across all 14.
 
 **Tier 4 — the irreducibly arch-specific.** `proc.c`, `vm.c`, `trap.c`,
-`swtch.S`, `entry.S`, `trapasm.S`, `mmu.h`. These stay in `arch/<name>/`.
-The work here is *defining the interface* they implement, not merging them.
-This is the real design work of the project and should not be rushed at.
+`swtch.S`, `entry.S`, `trapasm.S`, `mmu.h`. The work here is *defining the
+interface* they implement, not merging them. This is the real design work
+of the project and should not be rushed at. **Where they land changed
+underneath this paragraph, 2026-09-13 - see the new section right below.**
+
+## A parallel track: `kernel/<category>/<arch>/`, not one `arch/<name>/` tree (2026-09-13)
+
+This paragraph used to say Tier 4 material "stays in `arch/<name>/`" - a
+single directory per fork holding everything irreducibly arch-specific,
+the eventual cutover unit this whole plan was written around. That's no
+longer the destination. Prompted by the user wanting to "gather related
+code together under `kernel/` instead of spread in the forks" for files
+"we will never factorize" - not a rejection of Tiers 1-3's real merges
+above, but a recognition that Tier 4 material needs *somewhere to live
+now*, not just a promise that it'll get organized once a final `arch/`
+cutover happens (which, three sessions in, keeps being not-yet). The
+same mechanical move repeated per file family, subsystem-first:
+
+```
+kernel/init/<arch>/        entry.S, bootasm.S, entryother.S, asm.h,
+                            mp.h, acpi.h
+kernel/init/user/<arch>/   initcode.S
+kernel/processes/<arch>/   swtch.S, procasm.S, regs.h, arch_proc.h
+kernel/interrupts/<arch>/  trapasm.S, kernelvec.S, uservec.S, exception.s,
+                            traps.h, merror.S, tlbrefill.S
+kernel/memory/<arch>/      mmu.h, memlayout.h, arch_vm.h
+kernel/devices/<arch>/     mailbox.h, kbd.h, virtio.h, gpio.h, timer.h,
+                            io.h, arch_disk.h
+kernel/syscalls/<arch>/    usys.S / usys.pl
+kernel/arch/<arch>/        arm.h, x86.h, mips.h, riscv.h, loongarch.h,
+                            aarch64.h, msr.h, cpuid.h - CPU register/CSR
+                            definitions only, once arch_proc.h/arch_vm.h/
+                            arch_disk.h moved out to their own subsystem
+                            directories (see below)
+```
+
+Matches the user's own `~/principia/kernel/` layout by name
+(`init`/`processes`/`interrupts`/`memory`/`devices`/`syscalls`/`arch`,
+plus that project's further `console`/`concurrency`/`network`/... not
+yet needed here). **Mechanically identical to a Phase-0-style pure
+move**, every time: `git mv` the file to its new `kernel/<category>/
+<arch>/` home, then leave a symlink at the file's *original* path
+(`forks/<name>/...` for a file still read from there, or
+`kernel/arch/<arch>/...` for the three interface headers, which never
+had a `forks/` path at all - created directly under `kernel/arch/` by
+the `arch_` dispatch work) pointing at the new location. Every
+consuming Makefile/`#include` already resolves through that original
+path - a quoted `#include` via the including file's own directory, a
+build rule via its own hardcoded path, or an existing `-I` flag - so
+**zero Makefile changes**, in any of these commits, across around a
+dozen file families and 130+ individual file moves. Verified per
+family: `git blame -C -C` (traces to real original authors, not the
+move commit) and `make test-all` / each affected fork's own
+`quick-test-<arch>`.
+
+**Two real near-misses, both from the same root cause: a symlink
+target that happens to be textually similar to something else deleted
+in the same commit confuses git's rename/copy heuristics.** Bundling
+`riscv32`'s dead `kernelvec_64.S`-family leftover deletions in the same
+commit as the real `kernel/arch/riscv32/riscv.h` gather corrupted `git
+blame` on the surviving file (lines misattributed to the wrong, deleted
+file's own author) - caught by checking blame *after* the commit, not
+assuming the pre-commit check (which uses a simpler two-way diff, not a
+real historical search) was sufficient. Fixed by splitting the dead-file
+deletion into its own commit, done first, so the real gather commit has
+only one plausible source per added file. Rule going forward: **never
+bundle an unrelated dead-file deletion into the same commit as a gather
+that touches a similarly-named survivor.**
+
+**Dead files found along the way, not gathered - removed instead**,
+each verified with an actual `make -Bn build-<arch>` trace, not a name
+grep (a grep for a bare filename misses both `$(BITS)`-style make-
+variable interpolation and `$(wildcard ...)`-style object lists - two
+real near-misses recorded in `notes_arch_amd64_jserv.txt`'s and
+`notes_arch_arm_pi3.txt`'s own entries): `arm/kernel/kalloc.c`
+(superseded by this port's own `buddy.c`), `amd64/kernel/bootmain.c`/
+`memide.c` (no `bootblock`/`kernelmemfs` rule exists in this fork's
+Makefile at all), `riscv32/tests/alarmtest.c` (upstream's own lab-
+assignment test, never wired in), `riscv32`/`arm64`'s own
+`kernel/ramdisk.c` (both use `virtio_disk` instead), plus the
+assembly-family leftovers named in the section above and
+`mips/kernel/asm.h` (x86 segment-descriptor macros, inherited from this
+port's own fork point off the original x86 xv6, meaningless on MIPS).
+
+**`kernel/arch/<arch>/` split further, same day**: `arch_proc.h`,
+`arch_vm.h` and `arch_disk.h` (the three per-subsystem interface headers
+from the "interface, not permanent fork" method - see
+`notes_new_kernel_organization.md`) moved out to
+`kernel/processes/<arch>/`, `kernel/memory/<arch>/` and
+`kernel/devices/<arch>/` respectively, joining the rest of their own
+subsystem's files, leaving `kernel/arch/<arch>/` holding only genuine
+CPU-register/CSR definitions. Each fork's existing `-I../../kernel/
+arch/<arch>` flag still resolves the quoted `#include "arch_vm.h"` etc.
+via the symlink left behind, same zero-Makefile-change mechanics as
+every other move here.
+
+**`interface_*.h`: documenting a contract C can't express, added
+2026-09-13.** One per `kernel/<category>/` that has grown an `arch_*.h`
+family so far - `kernel/processes/interface_proc.h`,
+`kernel/memory/interface_vm.h`, `kernel/devices/interface_disk.h` -
+each a plain header, never `#include`d by any build, holding real
+prototypes/typedefs (not just prose) for every `arch_`-prefixed name
+that family's real per-arch headers must provide, with the actual
+rationale pulled from the real files' own comments. Exists because grep
+and IDE go-to-definition both fail C's own lack of an interface
+keyword: there's no single place a reader can jump to that lists "here
+is everything `kernel/processes/<arch>/arch_proc.h` needs to define" -
+now there is, at the cost of a file that must be kept in sync by hand
+whenever an interface grows.
+
+**Separately, back on the actual Tiers 1-3 merge track**: `kernel/
+buf-legacy.h` (`815fc4b`+`f1d2909`, the flags/refcnt/LRU-list struct
+`buf` shared by `bio-legacy.c`/`bio-x86.c`, 8 forks) and `kernel/buf.h`
+(`bbb44f1`, the valid/disk-boolean struct `buf` behind `bio.c`, 5
+forks) - the header side of a `.c`-file family split (`bio.c`/
+`bio-legacy.c`/`bio-x86.c`) that had already happened without its own
+header following along. Then `kernel/sleeplock.h` (`9feaf93`, 13
+forks in one file, no family split needed - `sleeplock.c` was already
+this uniform, and the header turned out to be too once actually
+diffed). `arm` excluded from both - its own real, older `B_BUSY`-flag
+locking design, no `sleeplock`/`refcnt` concept at all.
+
+`kernel/buf-legacy.h` is also the source of a real process mistake
+worth recording: after `make quick-test-mips` failed on a first attempt
+(`data[BSIZE]`, reverted to the proven `data[512]` - see that commit's
+own message), the working-tree fix was made but never re-staged before
+committing, so `815fc4b` actually shipped the broken version; every
+`quick-test-<arch>` run afterward passed because `make` reads the
+working tree, not the commit, so the break was real but invisible until
+a routine post-commit `git blame -C -C` check showed an unexpected "Not
+Committed" line where there should have been none. Fixed in a same-day
+follow-up commit rather than an amend, per this repo's own no-amend
+convention. **The lesson generalizes past this one file: a working-tree
+edit made *after* `git add` but before `git commit` needs a second `git
+add`, and `git blame -C -C` run again after the commit (not just before)
+is what actually catches it if that step is missed.**
 
 ## Build system
 
