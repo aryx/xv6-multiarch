@@ -19,12 +19,21 @@ subsystem's files (`mmu.h`/`memlayout.h`; `swtch.S`/`procasm.S`/
 holds only genuine CPU register/CSR definitions (`arm.h`, `x86.h`,
 `mips.h`, `riscv.h`, `loongarch.h`, `aarch64.h`, `msr.h`, `cpuid.h`) -
 see `plan_factorization.md`'s own "A parallel track" section for the
-full `kernel/<category>/<arch>/` layout this is part of. The `-I` flag
-mechanics below are otherwise unchanged: each fork's existing
-`-I../../kernel/arch/<arch>` flag still resolves the quoted
-`#include "arch_vm.h"` etc., now via a symlink left at that same path
-pointing at the new location - read every `kernel/arch/<arch>/...`
-below as that symlink's target, not its literal current location.
+full `kernel/<category>/<arch>/` layout this is part of. **The `-I`
+flag mechanics below are stale, corrected same day**: the first attempt
+left a symlink at `kernel/arch/<arch>/arch_vm.h` and relied on each
+fork's existing `-I../../kernel/arch/<arch>` flag to resolve it - a
+working but needlessly indirect two-hop path (flag into a symlink into
+the real file), unlike every other move in this whole convention. Fixed
+by putting the symlink directly in each consuming fork's own
+`forks/<arch>/kernel/` instead - the same directory `kernel/log.c`/
+`kernel/bio.c`/`kernel/file.c`/`kernel/pipe.c`/`kernel/sysfile.c` (the
+only files that `#include` these) already reach that fork through, so
+plain same-directory quoted-include resolution finds it with **no `-I`
+flag at all**. `kernel/arch/<arch>/` no longer has anything pointing
+through it - read every `kernel/arch/<arch>/...` below as
+`forks/<arch>/kernel/...`, a real symlink straight to the file's
+current location, not a two-hop path through `kernel/arch/`.
 
 ## The layering, top to bottom
 
@@ -211,27 +220,29 @@ deferred exactly this way once already, for `sleeplock.c`).
 ## Not every interface is ISA-scoped - some are board-scoped
 
 `arch_vm.h`/`arch_proc.h` are shared per-*ISA*: `arm64` and `arm64-pi4`
-are different boards but the same ISA, so they share one
-`kernel/arch/arm64/` directory for both, and that's correct - page
-table shape and the lost-wakeup race are properties of the CPU, not
-the board. `arch_disk_rw()` broke that assumption the first time:
+are different boards but the same ISA, so `arm64-pi4`'s own
+`forks/arm64-pi4/kernel/arch_vm.h`/`arch_proc.h` symlinks point at
+`arm64`'s real files (`kernel/memory/arm64/arch_vm.h`,
+`kernel/processes/arm64/arch_proc.h`), not its own - correct, since
+page table shape and the lost-wakeup race are properties of the CPU,
+not the board. `arch_disk_rw()` broke that assumption the first time:
 `arm64` (QEMU `virt`) has a virtio block device, `arm64-pi4` (real
 Raspberry Pi 4 hardware) doesn't, so the two need genuinely different
-backends despite sharing an ISA directory for everything else.
+backends despite sharing everything else.
 
-Fix: give the board that needs to differ its *own* directory
-(`kernel/arch/arm64-pi4/`, now a symlink to the real file at
-`kernel/devices/arm64-pi4/arch_disk.h` - see the note at the top of
-this file), holding only the one file that actually diverges
-(`arch_disk.h`), and list it in that fork's own `-I` flags *before*
-the shared ISA directory - a quoted `#include "arch_disk.h"` then
-resolves to the board-specific one first, falling through to the
-ISA-level one for any fork that doesn't override it. This is the same
-search-order mechanism gotcha 12 (`plan_factorization.md`) warns about
-being bitten by accidentally; here it's used deliberately. Verified past
-the source level too: `objdump -dr kernel/bio.o` on both forks confirms
-each calls the symbol it should (`ramdiskrw` vs `virtio_disk_rw`), not
-just "it compiled."
+Fix: give the board that needs to differ its own real file
+(`kernel/devices/arm64-pi4/arch_disk.h`) and point `arm64-pi4`'s own
+`forks/arm64-pi4/kernel/arch_disk.h` symlink at that instead of at
+`arm64`'s copy - each fork's three `arch_*.h` symlinks are set
+independently, so there is no shared-directory fallback/override order
+to get right the way an `-I` flag list would need (that was true only
+under the two-hop `kernel/arch/`-symlink scheme this file's own top
+note describes as corrected 2026-09-13; a same-directory symlink has
+no such ordering question at all - `arm64-pi4` simply points its three
+symlinks at three different real files, two shared with `arm64`, one
+its own). Verified past the source level too: `objdump -dr
+kernel/bio.o` on both forks confirms each calls the symbol it should
+(`ramdiskrw` vs `virtio_disk_rw`), not just "it compiled."
 
 **Before assuming a new interface is ISA-scoped, ask whether every
 fork sharing that ISA directory would actually agree on the answer.**

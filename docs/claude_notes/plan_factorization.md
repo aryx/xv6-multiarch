@@ -2165,10 +2165,25 @@ from the "interface, not permanent fork" method - see
 `kernel/processes/<arch>/`, `kernel/memory/<arch>/` and
 `kernel/devices/<arch>/` respectively, joining the rest of their own
 subsystem's files, leaving `kernel/arch/<arch>/` holding only genuine
-CPU-register/CSR definitions. Each fork's existing `-I../../kernel/
-arch/<arch>` flag still resolves the quoted `#include "arch_vm.h"` etc.
-via the symlink left behind, same zero-Makefile-change mechanics as
-every other move here.
+CPU-register/CSR definitions.
+
+**Corrected same day, one commit later**: the first attempt left a
+symlink at `kernel/arch/<arch>/arch_vm.h` pointing at the new location
+and relied on each fork's existing `-I../../kernel/arch/<arch>` flag to
+resolve `#include "arch_vm.h"` through it - working, but a needless
+two-hop indirection (Makefile flag into a symlink into the real file)
+unlike every other move in this whole file, all of which resolve via
+plain same-directory quoted-include lookup with no `-I` flag at all.
+Fixed by deleting the `kernel/arch/<arch>/arch_*.h` symlinks entirely
+and creating new ones directly in each consuming fork's own
+`forks/<arch>/kernel/` - the same directory `kernel/log.c`/`kernel/
+bio.c`/`kernel/file.c`/`kernel/pipe.c`/`kernel/sysfile.c` (the only
+files that `#include` these three) already reach that fork through, so
+the include resolves same-directory, one hop, zero Makefile changes.
+`arm64-pi4`'s board-scoped `arch_disk.h` override (described below)
+also got simpler this way: no `-I` order to get right any more, its
+three symlinks just point at three different real files independently
+(two shared with `arm64`, one its own).
 
 **`interface_*.h`: documenting a contract C can't express, added
 2026-09-13.** One per `kernel/<category>/` that has grown an `arch_*.h`
