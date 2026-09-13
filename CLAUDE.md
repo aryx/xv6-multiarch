@@ -16,193 +16,46 @@ material here - read it there.
 
 ## Current status and goal
 
-**Effort 1 below is DONE as of 2026-09-09.** All 14 `forks/<name>/` ports
-build, boot to a real interactive shell under QEMU and pass their own
-`usertests`; `make test-all` re-checks every one of them in about a
-minute, and the status matrix is in the root `README.md`. Its plan
-therefore moved to `docs/claude_notes/done/plan_build_and_test.md` (with
-an "Outcome" section recording where reality departed from it), and the
-residue it left behind - a few skipped `usertests` sub-tests, `arm64-pi4`'s
-boot kept out of CI, and no real-hardware verification yet - is tracked
-separately in `docs/claude_notes/plan_build_and_test_2.md`, which does
-NOT block anything. **Effort 2 (factorization) is consequently unblocked
-and is the active work now.** The per-port detail below is kept because
-it records what each port actually needed, not because it is still open.
+Two sequential efforts:
 
-Two sequential efforts, in order:
+1. **`docs/claude_notes/done/plan_build_and_test.md`** (DONE 2026-09-09) -
+   get each of the 14 `forks/<name>/` ports building and booting under
+   QEMU, with the result pinned reproducibly. All 14 build, boot to a real
+   interactive shell, and pass their own `usertests`; `make test-all`
+   re-checks every one in about a minute, and the status matrix is in the
+   root `README.md`. The plan's own "Outcome" section records where
+   reality departed from it. Residue it left behind - a few skipped
+   `usertests` sub-tests, `arm64-pi4`'s boot kept out of CI (QEMU needs a
+   local >= 9.1 source build for the Pi 4 board; Docker/CI only have a
+   distro package), and no real-hardware verification yet - is tracked in
+   `docs/claude_notes/plan_build_and_test_2.md` and blocks nothing.
+   **Per-port bug-by-bug findings live in each
+   `docs/claude_notes/notes_arch_<name>.txt` - read the relevant one
+   before touching that port; this file does not summarize them, and a
+   summary here would just go stale as new bugs are found and fixed.**
+2. **`docs/claude_notes/plan_factorization.md`** (ACTIVE, unblocked as of
+   2026-09-09) - now that ports build and boot, factor the near-duplicate
+   trees into a Linux-style layout (`kernel/ user/ ulib/ tests/ tools/`
+   shared, `arch/<name>/` per-port). Phase 0 (uniform five-directory
+   layout across all 14 forks) is DONE as of 2026-09-10; read the plan
+   itself for current tier status - it can lag committed work, so verify
+   via `git log`/`git ls-tree` before trusting what it says.
 
-1. **`docs/claude_notes/done/plan_build_and_test.md`** (DONE) - get each
-   of the 14 `forks/<name>/` ports actually building and booting under
-   QEMU on this machine, with the result pinned reproducibly. **Phases 1
-   (riscv64), 2 (i386), 3 (Docker), and 5 (CI) are done, and Phase 4's
-   original ten-port list is done too** (`forks/d1`, the eleventh item on
-   that list, was evaluated and then removed - build-only, no QEMU
-   target, no logic `forks/riscv64` didn't already have). Two more ports
-   surfaced after Phase 4 was scoped - `arm-pi3` and `arm64-pi4`.
-   `arm-pi3` is **done** as of 2026-09-09 (session 3) and reaches full
-   Phase-4 parity with its siblings: a real interactive shell on 20/20
-   consecutive boots (was ~1-in-6) and a full `usertests` run reporting
-   **"ALL TESTS PASSED"**. Fifteen real bugs found and fixed across
-   three sessions. The long-standing non-deterministic SMP hang - the
-   one sessions 1 and 2 chased through `memmove()`/`balloc()` and then
-   through a spurious EL2 return to QEMU's `raspi_smpboot` ROM - turned
-   out to be neither: the secondary-core boot handshake never blocked at
-   all (a bare `wfene` in `entry.S` plus a bare `wfe` in
-   `wait_for_event()`, neither in a loop, neither testing a flag), so
-   cores 1-3 enabled their MMUs against a page directory CPU0 was still
-   zeroing, printed through an uninitialized console lock, and called
-   `kalloc()` while `kmem.use_lock` was still 0. Replaced with real
-   release-flag spins; `.bss` zeroing (the same gap all three sibling Pi
-   ports had) was fixed alongside, and a fourth (the Return key did
-   nothing interactively - `consoleintr()` discarded CR and honoured only
-   LF, invisible to the pipe-driven test harness) after the user tried
-   the interactive target by hand. Now fully wired up -
-   `build`/`run`/`test`/`quick-test`/`clean`/`kill-arm-pi3`, folded into
-   every `-all` umbrella, plus a Dockerfile case and a CI matrix entry.
-   See `notes_arch_arm_pi3.txt`'s own Bug 14/Bug 15, and
-   `notes_debugging_techniques.txt` item 38 for the methodology lesson
-   (read the boot ORDER before analysing the crash). `arm64-pi4` is **done**
-   too, as of 2026-09-09: a real interactive shell under QEMU on all 4
-   cores and a full, unmodified `usertests` run reporting **"ALL TESTS
-   PASSED"** (245s, nothing skipped - including `preempt()`, which
-   `arm`, `mips` and `arm-pi2` each skipped rather than root-caused).
-   Four real bugs found and fixed, plus two modern-GCC false
-   positives: (1) its `-DRPI4_QEMU` compile-time switch
-   replaced by a runtime `CurrentEL` check, so one `kernel8.img` is now
-   correct both on a real Pi 4 (entered at EL2 by the firmware's
-   armstub) and under QEMU (entered at EL3), per the "prefer runtime
-   detection over `#ifdef`" rule below - upstream's README used to tell
-   you to hand-edit the Makefile before building for the board;
-   (2) `TCR_TBI0`, which enabled Top Byte Ignore for user addresses and
-   so aliased 2^8 user pointers onto every page (`0xff00000000000000`
-   landed on user VA 0 instead of faulting) and undermined the kernel's
-   own `va >= MAXVA` checks - caught by `usertests`' `MAXVAplus`;
-   (3) the virtual-timer PPI enabled on CPU0 only, because GICv2 banks
-   `ISENABLER0`/`ICPENDR0`/`IPRIORITYR` per CPU interface for INTIDs
-   0-31 - cores 1-3 ran with no timer, so a spinning user process was
-   never preempted and `kill()`ed spinners never died (measured: 108/0/
-   0/0 IRQs per CPU before, 382/351/351/350 after). Worth knowing that
-   the same `preempt()` hang was independently hit and skipped, never
-   root-caused, in `arm` and `mips`. (An earlier version of this
-   paragraph named `arm-pi2` as a third - that was wrong, and corrected
-   2026-09-09: `arm-pi1`, `arm-pi1-bis`, `arm-pi2` and `arm-pi3` all run
-   `preempt()` uncommented, `arm-pi2` because it already ticks off the
-   BCM2835 System Timer rather than the SP804 QEMU stubs out. Only `arm`
-   and `mips` skipped it - and `arm`'s is now **fixed** too, 2026-09-09,
-   by the same "count the interrupts first" step: it had exactly ONE IRQ
-   across a whole run because the SP804 ARM timer it programmed is a
-   QEMU `create_unimp()` stub, so it was running with no preemption at
-   all. Moved to the System Timer, like `arm-pi2`; `preempt()` is
-   uncommented and `test-arm` is green. `mips`'s own `preempt()` is
-   fixed too, the same day and by the same "measure first" step but with
-   a different cause: its timer WAS firing (~23Hz, counted at the i8259
-   via `-trace memory_region_ops_write`, since `-d int` does not log
-   external interrupts on QEMU's MIPS target and reports a false zero),
-   but `trap.c`'s yield test compared `tf->cause` - the CP0 Cause
-   bitfield - against the x86 constant `T_IRQ0+IRQ_TIMER`, so it could
-   never be true and `yield()` was never called. **No port skips
-   `preempt()` any more.** See `plan_build_and_test_2.md` item 1.) And (4) - unmasked by
-   (3), which is the useful kind of regression - `scheduler()` flushed
-   the process's **entire** address space (`dc cvau`/`ic ivau` per page,
-   O(`p->sz`)) on *every* context switch while holding `p->lock`, which
-   only survived as long as secondary cores almost never rescheduled;
-   `usertests`' `countfree()` grows a child to ~100MB and the system
-   stopped making progress entirely (gdb: CPU0 in `entry.S`'s `cdc`
-   loop, CPU1-3 all in `acquire()`, all from `scheduler()`). The sync is
-   genuinely needed on real hardware, so it is now done once per image
-   change via a `p->cachesync` flag set by `fork()`/`userinit()`
-   (`exec()` already had its own inline sync), not once per timeslice.
-
-   The catch is the emulator, not the port: QEMU only gained a
-   Raspberry Pi 4 board (`-M raspi4b`, 2GB revision `0xb03115`) in 9.1
-   and this Ubuntu packages 8.2.2, so the working binary is a **local
-   source build** (11.1.50 here; `./configure` looks for a >= 9.1
-   `qemu-system-aarch64` on PATH and then in a few well-known local
-   build locations, deliberately without putting it on PATH). Because
-   of that, the split is along **build vs. boot**, not "is this port
-   finished": `build-arm64-pi4` IS in `build-all` (and `clean-arm64-pi4`
-   in `clean-all`) - compiling needs only an aarch64 cross-compiler,
-   which every host and image wired up for `arm64`/`arm-pi3` already
-   has - but its boot targets are **deliberately absent from
-   `test-all`/`stress-test-all` and from the Dockerfile and CI matrix**,
-   since Docker and GitHub Actions take their QEMU from a distro package
-   and cannot be expected to have this one. See
-   `notes_arch_arm64_pi4.txt`.
-
-   Beyond Phase 4's own "build and boot" bar: `arm-pi1` was taken all
-   the way to a genuinely interactive shell under QEMU, with a real
-   emulated HDMI framebuffer console (`make run-arm-pi1-qemu-graphics`)
-   and a working USB keyboard (`-device usb-kbd`, typed keystrokes
-   execute real shell commands, verified end to end) - ten real bugs
-   found and fixed across four sessions, see `notes_arch_arm_pi1.txt`.
-   `arm-pi1-bis` - same real-hardware board family as `arm-pi1` - was
-   taken to the same fully-working state (interactive shell, graphics,
-   USB keyboard) via the identical fix pattern, see
-   `notes_arch_arm_pi1_bis.txt`. `arm-pi2` (a different, more mature
-   board-family member - real ARMv7/Cortex-A7, `hw=rpi2`) reaches full
-   Phase-4 parity with its siblings too now: a real interactive shell
-   under QEMU and a full `usertests` run reporting **"ALL TESTS
-   PASSED"** - nine distinct real bugs found and fixed (an ARM/Thumb
-   interworking gap and a PIC/PIE-codegen gap, both in its own
-   hand-written `entry.S`/toolchain defaults and independently again in
-   its user-space programs' own build, a missing VFP/NEON coprocessor
-   enable, the same missing-`.bss`-zeroing bug as its siblings, the
-   same QEMU-uses-PL011-not-mini-UART finding as `arm-pi1`/`arm-pi1-bis`
-   - both TX and RX - an invalid Non-Secure-to-Monitor-mode switch, and
-   a filesystem `MAXFILE` limit too small for a modern-toolchain-built
-   `usertests` binary, same fix shape as `amd64-jserv`'s own `fs.h`).
-   One sub-test, `mem()` (a malloc/free heap-exhaustion stress loop), is
-   skipped rather than fixed - confirmed via gdb to hang for real, the
-   same failure independently already found and skipped in `mips`'s own
-   `usertests.c`. Fully wired up now - `build`/`run`/`test`/
-   `quick-test`/`clean`/`kill-arm-pi2`, folded into every `-all`
-   umbrella target - see `notes_arch_arm_pi2.txt`'s own "Session 2" for
-   the full bug-by-bug diagnosis.
-2. **`docs/claude_notes/plan_factorization.md`** - once ports build and
-   boot, factor the near-duplicate trees into a Linux-style layout
-   (`user/`, `kernel/`, `ulib/`, `tests/`, `tools/` shared;
-   `arch/<name>/` per-port). **Was blocked on (1); no longer, as of
-   2026-09-09** - the rule that produced the block still stands but now
-   applies per commit: do not merge a file you cannot rebuild and re-boot
-   afterwards, and run `make test-all` after each merge commit
-   (`stress-test-all` before trusting a batch). Merging files nobody has
-   verified is exactly how this repo's abandoned predecessor
-   (`gitlab.com/xv6-multiarch`) died.
-
-   **Phase 0 of that plan is DONE as of 2026-09-10.** All 14 forks now
-   have the same five directories - `kernel/ user/ ulib/ tests/ tools/` -
-   replacing the five different layouts they used to have (flat,
-   flat+`usr/`, `kernel/`+`user/`, `source/`+`include/`+`uprogs/`, and
-   jserv's own). Every fork went through the same pair of commits: a pure
-   `git mv` (all files showing `R100`, so `git blame -C -C` still reaches
-   the original authors) followed by a separate build fixup, each verified
-   with a from-scratch rebuild, that fork's own full `test-<arch>`, and
-   `docker build --build-arg ARCH=<name>`. Two extra commits fell out of
-   it: seven dead kernel headers removed from all four Pi ports'
-   userlands, and a `.dockerignore` fix after a real CI regression (see
-   below). The payoff for the remaining tiers is that the plan's
-   "two-family split" is gone as a *structural* problem - that boundary
-   WAS the layout split - so what separates the families now is one
-   mechanical include-path difference, and files can be compared across
-   forks by path (`*/user/echo.c`) rather than by ad-hoc mapping. Ten
-   numbered gotchas are recorded in the plan; read them before moving
-   files in this repo again.
-
-   **`make test-all` cannot catch a build-context break.** Phase 0's one
-   real regression was `arm-pi1` failing in Docker while green on the
-   host: `.dockerignore` excludes `**/*.bin` and negated the Pi ports'
-   font blobs *by full path*, so renaming `source/` to `kernel/` silently
-   stopped the negation matching and the fonts never reached the
-   container. Nothing on the host can see this, because every file is
-   present there by construction. **A layout change is not verified until
-   `docker build --build-arg ARCH=<name>` passes** - which is CLAUDE.md's
-   own long-standing rule under "Adding a new arch", and it applies to
-   moves as much as to new ports.
+   **Rule that applies per commit, for the rest of this effort:** do not
+   merge a file you cannot rebuild and re-boot afterwards; run
+   `make test-all` after each merge commit (`stress-test-all` before
+   trusting a batch); and a layout change is not verified until
+   `docker build --build-arg ARCH=<name>` passes, since `make test-all`
+   cannot see a Docker-build-context break (Phase 0 hit exactly this once
+   - see "Adding a new arch" below). Merging files nobody has verified is
+   exactly how this repo's abandoned predecessor (`gitlab.com/xv6-multiarch`)
+   died.
 
 Read the plans before doing substantial work in this repo - they encode
 real decisions (why riscv64 first, why per-arch files beat `#ifdef`, the
-blame-preservation rule for the eventual merge) that are easy to
-re-litigate by accident otherwise.
+blame-preservation rule for the eventual merge, the numbered
+factorization gotchas) that are easy to re-litigate by accident
+otherwise.
 
 ## Build and run
 
