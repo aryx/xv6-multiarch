@@ -1897,6 +1897,114 @@ given commit actually touches - both stay cheap at that scope, and
 CI's own coverage is for confirming nothing *else* broke, not a
 substitute for verifying the actual change.
 
+- **`arch_copyin()`/`arch_copyout()` interface completed (2026-09-12/13)** -
+  the `copyin()`/`copyout()` pair `pipe.c`/`file.c`/`sysfile.c` already
+  called on the `arm64`/`arm64-pi4`/`loongarch`/`riscv32` cluster was
+  renamed to `arch_copyin()`/`arch_copyout()` (matching the
+  `arch_sleep_release()`/`arch_disk_rw()` naming convention - see
+  `notes_new_kernel_organization.md`), then implemented for the four
+  remaining `argptr()`-based forks in turn - `amd64`, `i386`, `mips`,
+  `amd64-jserv` - each joining the shared `kernel/pipe.c`/`kernel/file.c`
+  cluster (now 7 of 14 forks). None of the four needed a genuinely new
+  "trivial `memmove()`" backend as first expected: each already had (or
+  needed, for `exec()`'s own not-yet-active-pagetable case) a real
+  page-table-walking `copyout()`, just narrower in scope - renamed and
+  widened to the `uint64` interface signature instead of replaced.
+  `i386`/`mips`/`amd64-jserv` (32-bit, or 32-bit-capable) needed the
+  established `uintp` intermediate cast at every `uint64`<->pointer
+  conversion along this path (`(char*)(uintp)x`), same pattern as
+  `usertests-x86.c`'s own `uintp` casts; `amd64` (already 64-bit
+  natively) needed none.
+
+  Found and fixed one real, unrelated bug along the way: `mips`'s own
+  `setupkvm()` hardcoded its kern-text+rodata/kern-data+memory split at
+  the bare linker `data` symbol, which aliases two regions into one
+  MIPS paired-TLB-entry slot if `data` happens to land on an odd 4KB
+  page - latent since this port's own `mappages()` was written, and
+  triggered for the first time by this migration's own code size
+  shift. Fixed by rounding that boundary down to an 8KB pair boundary
+  at runtime, in its own commit ahead of the migration that found it.
+  Full diagnosis in `notes_arch_mips.txt`'s own Bug 10.
+
+  Each of the four forks also needed its own small, real gap closed:
+  `amd64`/`i386`/`mips` gained `argaddr()` (none had one - `argint()`
+  already fetches a word, but the shared file's own call sites want a
+  `uint64` out-param for consistency); `amd64-jserv` got a thin wrapper
+  around its own pre-existing `arguintp()` instead. `mips` and
+  `amd64-jserv` (neither ever had `sleeplock` - both use a plain
+  `I_BUSY` flag for inode locking) each got the same dead-but-real
+  `kernel/sleeplock.h` stub `sleeplock.c`'s own pcs/nopcs split first
+  needed, just to satisfy the shared `pipe.c`/`file.c`'s own
+  `#include "sleeplock.h"`. `amd64-jserv` additionally gained a real
+  `myproc()` (`#define myproc() (proc)`, it had never had one at all)
+  and a self-contained `proc.h` (`#include "mmu.h"` for `struct
+  taskstate`/`struct segdesc`, with a new include guard added to
+  `mmu.h` itself, which had none).
+
+  `readi()`/`writei()` picked up a `user_dst`/`user_src` flag in all
+  four forks (matching the modern cluster), with device I/O
+  (`ip->type == T_DEVICE`) moved out to `file.c`'s own `FD_DEVICE`
+  branch - `amd64-jserv`'s own second `devsw` driver (`cpuid.c`, major
+  device `CPUID`) updated to the new signature alongside `console.c`'s.
+
+  Verified per fork: build + full `usertests` ("ALL TESTS PASSED",
+  including `pipe1`/`preempt`/the deliberate `uio`/`mem` traps),
+  `docker build --build-arg ARCH=<name>`, `make test-all` across all
+  fourteen after each, and `git blame -C -C` on `kernel/pipe.c`/
+  `kernel/file.c` still tracing to real original authors. `amd64-jserv`'s
+  own `X64=` (32-bit) build path was confirmed to already fail
+  identically on the unmodified baseline (host has no `-m32` multilib
+  installed) - pre-existing, not attempted.
+
+  `i386`/`mips`/`amd64-jserv` have the same `argptr()`-based design
+  `riscv64`/`riscv32` do NOT share (see `pipe.c`'s own outlier note
+  above) - this closes the `argptr()`-based side of that gap entirely;
+  no forks of this shape remain.
+
+- **`kernel/bio-x86.c` gains `bpin()`/`bunpin()` (2026-09-13)** - the
+  prerequisite `log.c`'s own "still not merged: `amd64`, `i386`,
+  `amd64-jserv`, `mips`" note (above) named for joining those four onto
+  the shared `log.c`. Scoped down deliberately to `bio-x86.c` alone
+  (`amd64`/`i386`) rather than also converting `bio-legacy.c` (`mips`,
+  `amd64-jserv`, plus the four ARM32 Pi ports) in the same pass: unlike
+  `bio-x86.c`, which already used `refcnt`+`sleeplock` (needing only
+  the two new functions and a one-line `bget()` change),
+  `bio-legacy.c`'s `struct buf` has no `refcnt`/`sleeplock` at all - a
+  `B_BUSY`-flag-plus-raw-spinlock design needing a real structural
+  migration across 6 forks, four of which are real physical Raspberry
+  Pi boards this repo is committed to never regressing on real
+  hardware. Left for its own dedicated pass.
+
+  `bio-x86.c`'s own `bget()` used to keep a buffer out of LRU eviction
+  by checking `(b->flags & B_DIRTY) == 0` in addition to `refcnt==0` -
+  conflating `B_DIRTY`'s own real meaning ("needs a disk write", still
+  used exactly that way by `ide.c`) with a second, unrelated one ("log.c
+  is still holding this"). `bpin()`/`bunpin()` (identical to `bio.c`'s
+  own) replace that second job: `amd64`/`i386`'s own `log_write()` now
+  calls `bpin()` on first addition to a transaction (matching log
+  absorption) instead of setting `B_DIRTY`, and `install_trans()` calls
+  `bunpin()` once the buffer is actually written back - gated by a new
+  `recovering` parameter, since recovery's own buffers were never
+  pinned via `log_write()` in the first place. The old `B_DIRTY`-based
+  design is kept as a comment at both call sites, matching the
+  `notes_new_kernel_organization.md` convention of recording *why*
+  a design changed, not just what changed.
+
+  **Carry forward when `bio-x86.c` eventually merges into the fully
+  modern `kernel/bio.c`** (still blocked on extending `arch_disk_rw()`
+  to cover `iderw()`, per the `bio.c` three-way-split entry above): bring
+  this same old-B_DIRTY-design history comment along into the merged
+  file, not just the code change - the user's own explicit request
+  when this conversion was done.
+
+  Verified: build + full `usertests` ("ALL TESTS PASSED") for `amd64`/
+  `i386`, `make test-all`, `docker build --build-arg ARCH=<name>` for
+  both, and a full `stress-test-all` run across all thirteen
+  QEMU-tested forks (the slow, full-usertests form, not just the quick
+  boot check) to confirm no regression across this and the four
+  `arch_copyin()`/`arch_copyout()` migration commits above - none of
+  which had reached GitHub Actions CI yet at the time.
+
 **Tier 4 — the irreducibly arch-specific.** `proc.c`, `vm.c`, `trap.c`,
 `swtch.S`, `entry.S`, `trapasm.S`, `mmu.h`. These stay in `arch/<name>/`.
 The work here is *defining the interface* they implement, not merging them.

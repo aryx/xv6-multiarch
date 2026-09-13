@@ -76,10 +76,22 @@ bget(uint dev, uint blockno)
   }
 
   // Not cached; recycle an unused buffer.
-  // Even if refcnt==0, B_DIRTY indicates a buffer is in use
-  // because log.c has modified it but not yet committed it.
+  // claude: old design (kept for history) - a buffer that log.c had
+  // modified but not yet committed used to be kept out of eviction by
+  // testing (b->flags & B_DIRTY) == 0 here, on top of refcnt==0:
+  //   if(b->refcnt == 0 && (b->flags & B_DIRTY) == 0) {
+  // log_write() set B_DIRTY "to prevent eviction" (its own old comment),
+  // and nothing ever cleared it except a real disk write completing in
+  // ide.c. That conflated two different meanings of B_DIRTY - "needs a
+  // disk write" (ide.c's own, real use) and "keep this out of the LRU
+  // list" (log.c's use) - in the same flag. Replaced by bpin()/bunpin()
+  // below, matching the shared kernel/log.c's own design: log_write()
+  // now calls bpin() (bump refcnt) instead of setting B_DIRTY, and
+  // install_trans() calls bunpin() once the buffer is actually written
+  // back. B_DIRTY itself is untouched - ide.c still uses it for its own,
+  // real "needs a disk write" purpose - only its second job here is gone.
   for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0 && (b->flags & B_DIRTY) == 0) {
+    if(b->refcnt == 0) {
       b->dev = dev;
       b->blockno = blockno;
       b->flags = 0;
@@ -137,6 +149,20 @@ brelse(struct buf *b)
     bcache.head.next = b;
   }
   
+  release(&bcache.lock);
+}
+
+void
+bpin(struct buf *b) {
+  acquire(&bcache.lock);
+  b->refcnt++;
+  release(&bcache.lock);
+}
+
+void
+bunpin(struct buf *b) {
+  acquire(&bcache.lock);
+  b->refcnt--;
   release(&bcache.lock);
 }
 //PAGEBREAK!

@@ -65,9 +65,12 @@ initlog(int dev)
   recover_from_log();
 }
 
-// Copy committed blocks from log to their home location
+// Copy committed blocks from log to their home location.
+// If recovering, this runs before log_write() has ever pinned any of
+// these buffers (recovery reads the on-disk log directly), so there is
+// nothing to unpin.
 static void
-install_trans(void)
+install_trans(int recovering)
 {
   int tail;
 
@@ -76,6 +79,8 @@ install_trans(void)
     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
     bwrite(dbuf);  // write dst to disk
+    if(recovering == 0)
+      bunpin(dbuf);
     brelse(lbuf);
     brelse(dbuf);
   }
@@ -116,7 +121,7 @@ static void
 recover_from_log(void)
 {
   read_head();
-  install_trans(); // if committed, copy from log to disk
+  install_trans(1); // if committed, copy from log to disk
   log.lh.n = 0;
   write_head(); // clear the log
 }
@@ -195,15 +200,26 @@ commit()
   if (log.lh.n > 0) {
     write_log();     // Write modified blocks from cache to log
     write_head();    // Write header to disk -- the real commit
-    install_trans(); // Now install writes to home locations
+    install_trans(0); // Now install writes to home locations
     log.lh.n = 0;
     write_head();    // Erase the transaction from the log
   }
 }
 
 // Caller has modified b->data and is done with the buffer.
-// Record the block number and pin in the cache with B_DIRTY.
+// Record the block number and pin in the cache by increasing refcnt.
 // commit()/write_log() will do the disk write.
+//
+// claude: old design (kept for history) - this used to set
+// b->flags |= B_DIRTY unconditionally, every call, "to prevent
+// eviction" (the old comment here), and nothing ever cleared that bit
+// except a real disk write completing in ide.c - which conflated
+// B_DIRTY's own, real meaning ("needs a disk write") with a second,
+// unrelated one ("keep this out of the LRU eviction list") in the same
+// flag. Replaced by bpin()/bunpin(), matching the shared kernel/log.c's
+// own design: pin only on first addition to this transaction (matching
+// log-absorption below), unpin once install_trans() actually writes it
+// back. See kernel/bio-x86.c's own bget() for the other half of this.
 //
 // log_write() replaces bwrite(); a typical use is:
 //   bp = bread(...)
@@ -226,9 +242,10 @@ log_write(struct buf *b)
       break;
   }
   log.lh.block[i] = b->blockno;
-  if (i == log.lh.n)
+  if (i == log.lh.n) {  // Add new block to log?
+    bpin(b);
     log.lh.n++;
-  b->flags |= B_DIRTY; // prevent eviction
+  }
   release(&log.lock);
 }
 
