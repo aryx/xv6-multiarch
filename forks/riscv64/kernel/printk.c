@@ -1,1 +1,1 @@
-../../../kernel/lib/riscv64/printk.c
+../../../kernel/lib/printk.c
