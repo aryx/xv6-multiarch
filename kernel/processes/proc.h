@@ -1,96 +1,59 @@
-/*****************************************************************
-*       proc.h
-*       adapted from MIT xv6 by Zhiyi Huang, hzy@cs.otago.ac.nz
-*       University of Otago
-*
-********************************************************************/
+// claude: was relying on whichever caller happened to already include
+// spinlock.h/arch_vm.h before this file, for struct spinlock/
+// pagetable_t just below (both embedded/used by value, needing full
+// definitions, not just forward declarations) - kept self-contained
+// instead, same reasoning kernel/sleeplock.c's own merge already
+// established for this file.
+#include "spinlock.h"
+#include "arch_vm.h"
 
+// claude: struct cpu and struct context are real CPU register layout
+// (hand-matched to each fork's own swtch.S) - genuinely per-arch, not
+// shared even within this family. Moved to each fork's own
+// kernel/processes/<arch>/arch_proc.h; #included here since struct
+// proc below embeds "struct context context" BY VALUE (unlike the
+// legacy family's kernel/processes/proc-legacy.h, where it's a bare
+// pointer) - the full struct context definition must already be
+// visible at this point, not just forward-declared.
+#include "arch_proc.h"
 
+// claude: riscv32 alone lacks a separate USED state in its own
+// original enum (UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE) - safe
+// to use the 4-fork shape here anyway, since every comparison goes
+// through the enum's names, never a raw integer value, so the shifted
+// numeric values this gives riscv32 for SLEEPING/RUNNABLE/RUNNING/
+// ZOMBIE don't matter.
+enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-// Segments in proc->gdt.
-#define NSEGS     7
-
-// Per-CPU state
-struct cpu {
-  uchar id;                    // Local APIC ID; index into cpus[] below
-  struct context *scheduler;   // swtch() here to enter scheduler
-  volatile uint started;       // Has the CPU started?
-  int ncli;                    // Depth of pushcli nesting.
-  int intena;                  // Were interrupts enabled before pushcli?
-  
-  // Cpu-local storage variables; see below
-  struct cpu *cpu;
-  struct proc *proc;           // The currently-running process.
-};
-
-extern struct cpu cpus[NCPU];
-//extern int ncpu;
-
-// Per-CPU variables, holding pointers to the
-// current cpu and to the current process.
-// The asm suffix tells gcc to use "%gs:0" to refer to cpu
-// and "%gs:4" to refer to proc.  seginit sets up the
-// %gs segment register so that %gs refers to the memory
-// holding those two variables in the local cpu's struct cpu.
-// This is similar to how thread-local variables are implemented
-// in thread libraries such as Linux pthreads.
-//extern struct cpu *cpu asm("%gs:0");       // &cpus[cpunum()]
-//extern struct proc *proc asm("%gs:4");     // cpus[cpunum()].proc
-
-#define curr_cpu (&cpus[0])
-#define curr_proc   (cpus[0].proc)
-
-// claude: interface for the shared kernel/sysproc-legacy.c, matching
-// this repo's uintp/P2V/copyin precedent - a trivial backend here since
-// this port has no real myproc() function, just this per-CPU macro.
-#define myproc() (curr_proc)
-
-//PAGEBREAK: 17
-// Saved registers for kernel context switches.
-// Don't need to save all the segment registers (%cs, etc),
-// because they are constant across kernel contexts.
-// Don't need to save %eax, %ecx, %edx, because the
-// x86 convention is that the caller has saved them.
-// Contexts are stored at the bottom of the stack they
-// describe; the stack pointer is the address of the context.
-// The layout of the context matches the layout of the stack in swtch.S
-// at the "Switch stacks" comment. Switch doesn't save eip explicitly,
-// but it is on the stack and allocproc() manipulates it.
-struct context {
-  uint r4;
-  uint r5;
-  uint r6;
-  uint r7;
-  uint r8;
-  uint r9;
-  uint r10;
-  uint r11;
-  uint r12;
-  uint lr;
-  uint pc;
-};
-
-enum procstate { UNUSED=0, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
-
-// Per-process state
+// Per-process state. Covers the 5-fork modern family: arm64,
+// arm64-pi4, loongarch, riscv32, riscv64.
 struct proc {
-  uint sz;                     // Size of process memory (bytes)
-  pde_t* pgdir;                // Page table
-  char *kstack;                // Bottom of kernel stack for this process
+  struct spinlock lock;
+
+  // p->lock must be held when using these:
   enum procstate state;        // Process state
-  volatile int pid;            // Process ID
-  struct proc *parent;         // Parent process
-  struct trapframe *tf;        // Trap frame for current syscall
-  struct context *context;     // swtch() here to run process
   void *chan;                  // If non-zero, sleeping on chan
   int killed;                  // If non-zero, have been killed
+  int xstate;                  // Exit status to be returned to parent's wait
+  int pid;                     // Process ID
+#ifdef ARM64_PI4_EXTRA
+  int ctxid;
+  // claude: set when the kernel has written this process's user image
+  // (fork's uvmcopy, userinit's initcode) and it has not yet been
+  // I-cache-synced; cleared by scheduler() once it has. See scheduler().
+  int cachesync;
+#endif
+
+  // wait_lock must be held when using this:
+  struct proc *parent;         // Parent process
+
+  // these are private to the process, so p->lock need not be held.
+  uintp kstack;                // Virtual address of kernel stack
+  uintp sz;                    // Size of process memory (bytes)
+  pagetable_t pagetable;       // User page table
+  struct trapframe *trapframe; // data page for trampoline/uservec
+  struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };
-
-// Process memory is laid out contiguously, low addresses first:
-//   text
-//   original data and bss
-//   fixed-size stack
-//   expandable heap

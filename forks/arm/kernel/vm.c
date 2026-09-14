@@ -174,11 +174,11 @@ void switchuvm (struct proc *p)
 
     pushcli();
 
-    if (p->pgdir == 0) {
+    if (p->pagetable == 0) {
         panic("switchuvm: no pgdir");
     }
 
-    val = (uint) V2P(p->pgdir) | 0x00;
+    val = (uint) V2P(p->pagetable) | 0x00;
 
     asm("MCR p15, 0, %[v], c2, c0, 0": :[v]"r" (val):);
     flush_tlb();

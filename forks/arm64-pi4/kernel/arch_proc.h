@@ -1,1 +1,1 @@
-../../../kernel/processes/arm64/arch_proc.h
+../../../kernel/processes/arm64-pi4/arch_proc.h

@@ -199,10 +199,10 @@ switchuvm(struct proc *p)
 {
   pushcli();
   //cpu->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
-  if(p->pgdir == 0)
+  if(p->pagetable == 0)
     panic("switchuvm: no pgdir");
 //cprintf("before copying uvm to kvm kpgdir=%x the first entry: %x\n", kpgdir, kpgdir[0]);
-  memmove((void *)kpgdir, (void *)p->pgdir, PGSIZE);  // switch to new user address space
+  memmove((void *)kpgdir, (void *)p->pagetable, PGSIZE);  // switch to new user address space
   flush_idcache();
   flush_tlb();
   popcli();

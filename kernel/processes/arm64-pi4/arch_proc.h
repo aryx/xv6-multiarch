@@ -8,8 +8,17 @@ struct spinlock;
 void sleep(void*, struct spinlock*);
 
 // claude: struct cpu/struct context - real CPU register layout,
-// hand-matched to swtch.S. Shared by arm64 and arm64-pi4 - same ISA,
-// same register set.
+// hand-matched to swtch.S, identical to arm64's own (same ISA). Kept
+// as its own file rather than a symlink to arm64's because struct proc
+// itself needs one extra flag only this board uses - see
+// ARM64_PI4_EXTRA below.
+
+// claude: struct proc has two real arm64-pi4-only fields (ctxid,
+// cachesync - I-cache-sync tracking this board's own scheduler()
+// needs, arm64 doesn't) on top of the shared kernel/processes/proc.h
+// shape - this flag lets that file add them conditionally instead of
+// duplicating the whole struct here.
+#define ARM64_PI4_EXTRA 1
 
 // Saved registers for kernel context switches.
 struct context {

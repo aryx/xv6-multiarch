@@ -1,49 +1,9 @@
-// claude: was relying on whichever caller happened to already include
-// mmu.h before this file, for struct taskstate/segdesc/NSEGS just
-// below - true of every caller until kernel/sleeplock.c's own merge
-// (docs/claude_notes/plan_factorization.md) needed this file
-// self-contained instead.
-#include "mmu.h"
-
-// Per-CPU state
-struct cpu {
-  uint64 syscallno;            // Temporary used by sysentry
-  uint64 usp;                  // Temporary used by sysentry
-  struct proc *proc;           // The process running on this cpu or null
-  struct cpu *cpu;             // XXX
-  uchar apicid;                // Local APIC ID
-  struct context *scheduler;   // swtch() here to enter scheduler
-  struct taskstate ts;         // Used by x86 to find stack for interrupt
-  struct segdesc gdt[NSEGS];   // x86 global descriptor table
-  volatile uint started;       // Has the CPU started?
-  int ncli;                    // Depth of pushcli nesting.
-  int intena;                  // Were interrupts enabled before pushcli?
-};
-
-extern struct cpu cpus[NCPU];
-extern int ncpu;
-
-//PAGEBREAK: 17
-// Saved registers for kernel context switches.
-// Don't need to save all the segment registers (%cs, etc),
-// because they are constant across kernel contexts.
-// Don't need to save %eax, %ecx, %edx, because the
-// x86 convention is that the caller has saved them.
-// Contexts are stored at the bottom of the stack they
-// describe; the stack pointer is the address of the context.
-// The layout of the context matches the layout of the stack in swtch.S
-// at the "Switch stacks" comment. Switch doesn't save eip explicitly,
-// but it is on the stack and allocproc() manipulates it.
-struct context {
-  uint64 r15;
-  uint64 r14;
-  uint64 r13;
-  uint64 r12;
-  uint64 r11;
-  uint64 rbx;
-  uint64 rbp;
-  uint64 rip;
-};
+// claude: struct cpu/struct context (real CPU register layout,
+// hand-matched to swtch.S) live in kernel/processes/amd64/arch_proc.h.
+// struct proc itself stays standalone here rather than shared: its own
+// struct sysframe *sf instead of trapframe, and a real "kstack must be
+// first entry" layout requirement its own sysentry asm depends on.
+#include "arch_proc.h"
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 

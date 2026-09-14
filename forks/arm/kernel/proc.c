@@ -122,11 +122,11 @@ void userinit(void)
     p = allocproc();
     initproc = p;
 
-    if((p->pgdir = kpt_alloc()) == NULL) {
+    if((p->pagetable = kpt_alloc()) == NULL) {
         panic("userinit: out of memory?");
     }
 
-    inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+    inituvm(p->pagetable, _binary_initcode_start, (int)_binary_initcode_size);
 
     p->sz = PTE_SZ;
 
@@ -157,12 +157,12 @@ int growproc(int n)
     sz = proc->sz;
 
     if(n > 0){
-        if((sz = allocuvm(proc->pgdir, sz, sz + n)) == 0) {
+        if((sz = allocuvm(proc->pagetable, sz, sz + n)) == 0) {
             return -1;
         }
 
     } else if(n < 0){
-        if((sz = deallocuvm(proc->pgdir, sz, sz + n)) == 0) {
+        if((sz = deallocuvm(proc->pagetable, sz, sz + n)) == 0) {
             return -1;
         }
     }
@@ -187,7 +187,7 @@ int fork(void)
     }
 
     // Copy process state from p.
-    if((np->pgdir = copyuvm(proc->pgdir, proc->sz)) == 0){
+    if((np->pagetable = copyuvm(proc->pagetable, proc->sz)) == 0){
         free_page(np->kstack);
         np->kstack = 0;
         np->state = UNUSED;
@@ -287,7 +287,7 @@ int wait(void)
                 pid = p->pid;
                 free_page(p->kstack);
                 p->kstack = 0;
-                freevm(p->pgdir);
+                freevm(p->pagetable);
                 p->state = UNUSED;
                 p->pid = 0;
                 p->parent = 0;

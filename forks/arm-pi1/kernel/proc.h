@@ -1,1 +1,1 @@
-../../../kernel/processes/proc.h
+../../../kernel/processes/proc-legacy.h

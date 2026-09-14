@@ -11,9 +11,31 @@
 // worked example, including the one real case where two forks in the
 // same family need genuinely different bodies.
 //
-// Adopted by 8 of 14 forks so far (amd64-jserv, amd64, arm64, i386,
-// loongarch, mips, riscv32, riscv64); the six ARM ports don't have
-// this interface yet.
+// arch_sleep_release() below was arch_proc.h's original, narrow job.
+// Its real scope is broader: it's also where struct cpu, struct
+// context, and (where struct proc embeds it by value rather than via
+// a pointer) struct trapframe live - genuine per-ISA register layout,
+// hand-matched to that fork's own swtch.S, that a proc.h shared across
+// forks can no longer hold. Two lessons worth keeping in mind before
+// ever using one fork's arch_proc.h as a template for another:
+//   - struct proc being identical between two forks does not mean
+//     struct cpu/context are too - the mechanism for reaching "the
+//     current cpu" and "the current process" is a separate design
+//     choice (an array-indexed cpus[] macro vs. plain module-level
+//     "cpu"/"proc" globals vs. something else) that can differ even
+//     between forks sharing everything else.
+//   - a struct context copied from a sibling fork can silently gain or
+//     lose a field its own swtch.S was never written to save/restore.
+//     The struct "looking right" proves nothing; only the actual
+//     register list swtch.S (or its equivalent) pushes and pops does.
+//     A context struct wider than what the assembly actually saves
+//     corrupts the kernel stack silently - it just shifts everything
+//     built on top of it - and only shows up as a crash on first use.
+// What belongs here, per fork: struct cpu, struct context, struct
+// trapframe (where applicable), extern struct cpu cpus[NCPU], and
+// whatever mechanism this fork uses to reach the current cpu/proc.
+// There's no single shape to document as "the" contract for that last
+// part - see each fork's own arch_proc.h.
 
 // Atomically register the caller as waiting on `chan`, release `lk`,
 // block until woken, then reacquire `lk` - the same operation every

@@ -233,10 +233,10 @@ switchuvm(struct proc *p, u32 old_sz, int writeback_old)
   #endif
   pushcli();
   //cpu->ts.esp0 = (uint)proc->kstack + KSTACKSIZE;
-  if(p->pgdir == 0)
+  if(p->pagetable == 0)
     panic("switchuvm: no pgdir");
 //cprintf("before copying uvm to kvm kpgdir=%x the first entry: %x\n", kpgdir, kpgdir[0]);
-  memmove((void *)curr_cpu->kpgdir, (void *)p->pgdir, PGSIZE);  // switch to new user address space
+  memmove((void *)curr_cpu->kpgdir, (void *)p->pagetable, PGSIZE);  // switch to new user address space
   //On RPI1 flush_idcache only invalidates  the I cache.
   #ifdef RPI1
   flush_idcache();

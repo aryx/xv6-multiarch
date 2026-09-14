@@ -122,8 +122,8 @@ int exec (char *path, char **argv)
     safestrcpy(proc->name, last, sizeof(proc->name));
 
     // Commit to the user image.
-    oldpgdir = proc->pgdir;
-    proc->pgdir = pgdir;
+    oldpgdir = proc->pagetable;
+    proc->pagetable = pgdir;
     proc->sz = sz;
     proc->tf->pc = elf.entry;
     proc->tf->sp_usr = sp;
