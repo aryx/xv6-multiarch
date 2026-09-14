@@ -11,35 +11,29 @@
 //     variant's family. A pragmatic bridge, not the end state - meant
 //     to shrink or disappear as more categories grow a real arch_*.h
 //     dispatch interface the way processes/memory/devices already
-//     have. Two INDEPENDENT macro axes, not one - found the hard way,
-//     via an actual "conflicting types" build error on exactly 4 forks:
-//     - LEGACY: exit/wait/argstr/consoleintr's own cprintf/pushcli/
-//       argstr(int,char**)-style family (9 forks: amd64, amd64-jserv,
-//       i386, mips, arm, arm-pi1, arm-pi1-bis, arm-pi2, arm-pi3).
+//     have. Three independent macro axes so far, each a genuinely
+//     separate design question - don't assume one family boundary
+//     applies to all of them:
+//     - LEGACY: the old exit(void)/wait(void)/argstr(int,char**)/
+//       consoleintr(int(*)(void)) API vs. the modern exit(int)/
+//       wait(uintp)/argstr(int,char*,int)/consoleintr(int) one.
 //     - OLD_FILEIO: the pre-copyin/copyout, direct-char*-pointer file/
-//       pipe/inode read-write API - a DIFFERENT 5-fork family (arm,
-//       arm-pi1, arm-pi1-bis, arm-pi2, arm-pi3 only). amd64/amd64-jserv/
-//       i386/mips are LEGACY for the former axis but already share
-//       kernel/files/file.c's modern style for this one - don't assume
-//       the two axes' family boundaries coincide.
-//     - FILEIO32 (on top of the non-OLD_FILEIO branch above): the
-//       shared kernel/files/file.c hardcodes a literal "uint64" address
-//       parameter for every one of its 8 forks REGARDLESS of their own
-//       native pointer width (confirmed: i386/mips's own "uintp" is
-//       "uint", not "uint64", yet their real fileread/etc. still take
-//       uint64 - a real, if wasteful, characteristic of that shared
-//       file, not fixable by using "uintp" here). riscv32 alone has its
-//       own genuinely-32-bit, non-shared file.c and needs uint32
-//       instead - #define FILEIO32 before including this file for that
-//       one fork only.
+//       pipe/inode read-write API vs. the address-based one - a
+//       different split from LEGACY above (a fork can be LEGACY for
+//       the syscall API but already on the modern file I/O one, since
+//       that lives in a separately-shared file.c).
+//     - FILEIO32: the shared kernel/files/file.c hardcodes a literal
+//       "uint64" address parameter for the file I/O functions above,
+//       independent of a given fork's own native pointer width (real,
+//       if wasteful - not fixable by using "uintp" instead, since the
+//       shared C file itself is what hardcodes the type). A fork with
+//       its own genuinely 32-bit, non-shared file.c needs uint32
+//       instead - #define FILEIO32 before including this file.
 // Deliberately NOT centralized here: anything with more than two real
-// variants, or a single-fork exception layered on top of one of the
-// two splits above (riscv64's own argint/sleep, amd64/i386's own
-// iinit, arm-pi3's cache-writeback params on switchuvm/allocuvm/
-// copyuvm/inituvm, mips's mappages asid parameter, amd64's
-// syscall(sysframe*), and more) - those stay in every fork's own
-// <arch>_defs.h, including the forks that would otherwise share the
-// common version, rather than growing a third macro axis.
+// variants for a given name, or a single-fork exception layered on top
+// of one of the axes above - those stay in every fork's own
+// <arch>_defs.h, including forks that would otherwise share the common
+// version, rather than growing a fourth macro axis for one fork.
 
 struct buf;
 struct context;
