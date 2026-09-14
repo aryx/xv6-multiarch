@@ -85,12 +85,9 @@ $(BUILD)csud/%.o: $(CSUDDIR)source/%.c
 	$(CC) $(CSUD_CFLAGS) -I $(CSUDDIR)include -c $< -o $@
 
 #CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -MD -ggdb -Werror -fno-omit-frame-pointer -nostdinc -nostdlib -fno-stack-protector
-# claude: two build-correctness fixes, safe for real hardware AND QEMU
-# alike (neither changes any runtime behavior, just what gcc is actually
-# told to target) - see notes_arch_rpi1.txt for the fuller writeup:
-#   - "-fcommon": kernel/proc.h's own "struct cpu cpus[NCPU];" (no
-#     extern) needs this to avoid "multiple definition of `cpus`" under
-#     GCC 10+'s -fno-common default.
+# claude: a build-correctness fix, safe for real hardware AND QEMU alike
+# (doesn't change any runtime behavior, just what gcc is actually told
+# to target) - see notes_arch_rpi1.txt for the fuller writeup:
 #   - real "-mcpu=arm1176jzf-s -marm" instead of "-Wa,-march=armv6
 #     -Wa,-mcpu=arm1176jzf-s" - "-Wa," flags only restrict what the
 #     ASSEMBLER stage accepts, not gcc's own code generation target,
@@ -110,7 +107,7 @@ $(BUILD)csud/%.o: $(CSUDDIR)source/%.c
 #     the vendored libcsud.a's own prebuilt hard-float ABI - forcing
 #     soft-float here would conflict with it ("uses VFP register
 #     arguments, build/output.elf does not").
-CFLAGS := -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
+CFLAGS := -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 
 # claude: was "CC := gcc" - ignored ARMGNU entirely, always invoking the
 # HOST compiler regardless of cross-toolchain prefix (every .s file

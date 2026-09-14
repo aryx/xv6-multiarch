@@ -9,16 +9,6 @@ OBJCOPY = $(CROSSCOMPILE)objcopy
 OBJDUMP = $(CROSSCOMPILE)objdump
 
 #CFLAGS = -march=armv7-a -mtune=cortex-a15 -fno-pic -static -fno-builtin -fno-strict-aliasing -Wall -Werror -I. -g
-# claude: added -fcommon - proc.h declares "struct cpu cpus[NCPU];" (no
-# extern) and gets #included into every .c file, which used to work
-# because GCC defaulted to -fcommon (tentative definitions across
-# translation units get merged by the linker as a "common" symbol) - GCC
-# 10 flipped the default to -fno-common, so every one of those
-# translation units now provides its own real, non-mergeable definition
-# of "cpus", and the link fails with "multiple definition of `cpus`".
-# -fcommon restores the old behavior this 2017-era code was written
-# against, rather than restructuring proc.h's own declaration.
-#
 # claude: replaced the old "-Wa,-march=armv6 -Wa,-mcpu=arm1176jzf-s"
 # (which ONLY restricts what the assembler *stage* accepts - it does
 # nothing to tell gcc's own code generator what to target) with real
@@ -36,7 +26,7 @@ OBJDUMP = $(CROSSCOMPILE)objdump
 # (not Thumb) instruction generation outright, removing the
 # state-switch question entirely - simplest, most robust fix for a
 # freestanding kernel with no reason to ever be in Thumb state.
-CFLAGS = -fno-pic -static -fcommon -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Ikernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
+CFLAGS = -fno-pic -static -Wno-packed-bitfield-compat -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -fno-omit-frame-pointer -fno-stack-protector -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Ikernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 LDFLAGS = -L.
 # claude: added -mfloat-abi=soft - this modern arm-linux-gnueabihf- cross
 # toolchain defaults to "-march=armv7-a+fp -mfloat-abi=hard" (confirmed
