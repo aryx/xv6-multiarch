@@ -25,4 +25,6 @@ typedef uint64 pte_t;
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
+#include "interface_vm.h"
+
 #endif /* ARCH_VM_H */

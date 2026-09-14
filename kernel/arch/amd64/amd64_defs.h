@@ -1,4 +1,4 @@
-#include "arch_vm.h"  // claude: pagetable_t, for arch_copyin()/arch_copyout() below
+#include "arch_vm.h"  // pagetable_t
 
 struct rtcdate;
 struct sysframe;
@@ -113,6 +113,4 @@ int             loaduvm(pde_t*, char*, struct inode*, uint, uint);
 pde_t*          copyuvm(pde_t*, uint);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
-int             arch_copyout(pagetable_t, uint64, char*, uint64);
-int             arch_copyin(pagetable_t, char*, uint64, uint64);
 void            clearpteu(pde_t *pgdir, char *uva);

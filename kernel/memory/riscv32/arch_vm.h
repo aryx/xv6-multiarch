@@ -21,4 +21,7 @@ typedef uint32 *pagetable_t;
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
+#define ARCH_COPY32 1  // this port's arch_copyout/arch_copyin take uint32
+#include "interface_vm.h"
+
 #endif /* ARCH_VM_H */

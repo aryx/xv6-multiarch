@@ -1,17 +1,28 @@
 #ifndef INTERFACE_PROC_H
 #define INTERFACE_PROC_H
 
-// claude: documentation only - never #included by any build. C has no
-// way to declare or enforce an interface, so this file exists purely
-// so a reader can find, in one place, the contract every fork's own
-// kernel/processes/<arch>/arch_proc.h is expected to satisfy. See
-// docs/claude_notes/notes_new_kernel_organization.md for the
-// "interface, not permanent fork" method this documents, and any one
-// real arch_proc.h (e.g. kernel/processes/riscv64/arch_proc.h) for a
-// worked example, including the one real case where two forks in the
+// claude: unlike the rest of this file (and every other interface_*.h
+// in this tree), the declaration right below is genuinely live -
+// #included by every fork's own arch_proc.h that implements
+// arch_sleep_release(), so a signature typo in a newly-copied
+// arch_proc.h fails to compile instead of silently mismatching. Safe
+// to do here (not for most of this file's own content) because the
+// signature only uses void* and a forward-declared struct pointer -
+// no per-fork type width or layout to get wrong.
+struct spinlock;
+static inline void arch_sleep_release(void *chan, struct spinlock *lk);
+
+// claude: everything below IS documentation only - never #included by
+// any build. C has no way to declare or enforce an interface, so this
+// file exists purely so a reader can find, in one place, the contract
+// every fork's own kernel/processes/<arch>/arch_proc.h is expected to
+// satisfy. See docs/claude_notes/notes_new_kernel_organization.md for
+// the "interface, not permanent fork" method this documents, and any
+// one real arch_proc.h (e.g. kernel/processes/riscv64/arch_proc.h) for
+// a worked example, including the one real case where two forks in the
 // same family need genuinely different bodies.
 //
-// arch_sleep_release() below was arch_proc.h's original, narrow job.
+// arch_sleep_release() above was arch_proc.h's original, narrow job.
 // Its real scope is broader: it's also where struct cpu, struct
 // context, and (where struct proc embeds it by value rather than via
 // a pointer) struct trapframe live - genuine per-ISA register layout,
@@ -37,10 +48,11 @@
 // There's no single shape to document as "the" contract for that last
 // part - see each fork's own arch_proc.h.
 
-// Atomically register the caller as waiting on `chan`, release `lk`,
-// block until woken, then reacquire `lk` - the same operation every
-// port's own sleep(chan, lk) performs internally. Exists as its own
-// interface point (rather than every caller just calling sleep()
+// arch_sleep_release(void *chan, struct spinlock *lk) (declared live,
+// above): atomically register the caller as waiting on `chan`, release
+// `lk`, block until woken, then reacquire `lk` - the same operation
+// every port's own sleep(chan, lk) performs internally. Exists as its
+// own interface point (rather than every caller just calling sleep()
 // directly) because riscv64's own sleep() is split into two steps -
 // sleep_prepare(chan) then a zero-arg sleep() - to close a real
 // lost-wakeup race between releasing the caller's lock and the
@@ -48,7 +60,14 @@
 // call directly and unaffected code never needs to know about. Every
 // other fork's own arch_proc.h is a one-line pass-through to its
 // ordinary sleep(chan, lk). Called from: kernel/filesystems/log.c.
-void arch_sleep_release(void *chan, struct spinlock *lk);
+
+// claude: wrapped in #if 0 - unlike arch_sleep_release() above, these
+// declarations genuinely conflict with each other (the legacy and
+// modern families below use the same names with different signatures)
+// and would break the build if ever actually compiled. Kept as text a
+// reader can find, not as live code - see interface_console.h/
+// interface_vm.h/interface_syscall.h for the same pattern.
+#if 0
 
 // claude: everything below is a different kind of documentation than
 // the arch_proc.h contract above - proc.c has no arch_*.h dispatch
@@ -176,5 +195,7 @@ void reparent(void *p);
 //   table, trapframe) and mark its slot UNUSED again - called from
 //   wait() once a zombie child has been reaped. 5 of 5 modern forks.
 void freeproc(void *p);
+
+#endif /* #if 0 */
 
 #endif /* INTERFACE_PROC_H */

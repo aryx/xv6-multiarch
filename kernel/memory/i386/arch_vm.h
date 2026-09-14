@@ -9,4 +9,6 @@
 
 typedef pde_t *pagetable_t;
 
+#include "interface_vm.h"
+
 #endif /* ARCH_VM_H */

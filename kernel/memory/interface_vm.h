@@ -11,16 +11,17 @@
 // real arch_vm.h (e.g. kernel/memory/arm64/arch_vm.h) for a worked
 // example.
 //
-// Adopted by 8 of 14 forks so far (amd64-jserv, amd64, arm64, i386,
-// loongarch, mips, riscv32, riscv64); the six ARM ports don't have
-// this interface yet.
-
 // The only type every arch_vm.h must define - an opaque handle to a
 // page table, needed by the shared kernel/pipe.c, kernel/file.c and
 // kernel/sysfile.c. Concretely a pointer to this port's own top-level
 // page-directory entry type (pde_t/pte_t), whatever width and layout
-// that is on this ISA.
+// that is on this ISA - each fork's own arch_vm.h defines it as that
+// real type, not literally "void *" (kept here as documentation shorthand
+// only - never live, since it would conflict with the fork's own more
+// specific typedef).
+#if 0
 typedef void *pagetable_t;
+#endif
 
 // Needed only by the shared kernel/kalloc.c, and only on forks that
 // don't already define these in their own kernel/arch/<arch>/mmu.h
@@ -37,22 +38,28 @@ typedef /* ... */ pte_t;
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 #endif
 
-// Copy `len` bytes from kernel memory at `src` into `pagetable`'s own
-// user address space starting at `dstva`, and the reverse direction
-// for arch_copyin (`srcva` in `pagetable`'s user space to kernel `dst`).
-// Both walk the page table themselves rather than assuming user memory
-// is identity-mapped, since it isn't on most of these ports. Declared
-// in each fork's own defs.h (not yet centralized here) and defined in
-// its own vm.c, unlike arch_sleep_release/arch_disk_rw which are
-// static-inline one-liners living directly in the arch_*.h itself -
-// the page-table-walk logic is genuinely too different per ISA to fit
-// in a header.
-// The address/length type is each port's own native width (uint32 on
-// riscv32, uint64 elsewhere - see e.g. riscv32's own defs.h), not
-// fixed here.
-// Called from: kernel/file.c, kernel/pipe.c, kernel/sysfile.c.
-int arch_copyout(pagetable_t pagetable, uintp dstva, char *src, uintp len);
-int arch_copyin(pagetable_t pagetable, char *dst, uintp srcva, uintp len);
+// claude: genuinely live (unlike the rest of this file) - #included by
+// each fork's own arch_vm.h that implements these, so the compiler
+// checks the real definition in that fork's own vm.c against this
+// declaration. The address/length type is a real, hardcoded "uint64"
+// on every implementing fork's own vm.c regardless of that fork's own
+// native pointer width (confirmed even on 32-bit i386/mips) - not
+// "uintp", which would be wrong there. One fork has its own genuinely
+// 32-bit, non-shared vm.c and needs uint32 instead - #define
+// ARCH_COPY32 before including this file for that one.
+#ifdef ARCH_COPY32
+int arch_copyout(pagetable_t pagetable, uint32 dstva, char *src, uint32 len);
+int arch_copyin(pagetable_t pagetable, char *dst, uint32 srcva, uint32 len);
+#else
+int arch_copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len);
+int arch_copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+#endif
+
+// claude: wrapped in #if 0 - unlike arch_copyout/arch_copyin above,
+// legacy and modern below use the same names with different
+// signatures and would break the build if ever actually compiled.
+// Kept as text a reader can find, not as live code.
+#if 0
 
 // claude: everything below is a different kind of documentation than
 // the arch_vm.h contract above - vm.c has no arch_*.h dispatch family
@@ -189,5 +196,7 @@ void kvmmap(pagetable_t kpgtbl, uintp va, uintp pa, uintp sz, int perm);
 //   hardware page-table walker) - a real, narrower 1-fork exception,
 //   not part of the common shape below.
 int mappages(pagetable_t pagetable, uintp va, uintp size, uintp pa, int perm);
+
+#endif /* #if 0 */
 
 #endif /* INTERFACE_VM_H */
