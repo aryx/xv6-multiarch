@@ -182,10 +182,23 @@ uprogs-fs-img:
 kernel/fs.img: uprogs-fs-img
 	cmp -s user/fs.img $@ || cp user/fs.img $@
 
+# claude: kernel/initcode was a checked-in binary blob with NO build rule
+# at all - real bit-rot, not a deliberate choice: rebuilding user/initcode.S
+# with the current toolchain produces a structurally identical but
+# byte-different file (an older assembler's multi-register "push {lr}"
+# vs. the current one's single-register form). Same fix, same rule shape,
+# as kernel/fs.img just above.
+.PHONY: uprogs-initcode
+uprogs-initcode:
+	$(MAKE) -C user TOOLPREFIX=$(ARMGNU)- initcode
+
+kernel/initcode: uprogs-initcode
+	cmp -s user/initcode $@ || cp user/initcode $@
+
 # entry.s is the only source file that embeds the image (its own
 # .incbin "fs.img", resolved via the "-I $(SOURCE)" on the assembler line
 # above), so only ITS object needs the dependency.
-$(BUILD)entry.o: kernel/fs.img
+$(BUILD)entry.o: kernel/fs.img kernel/initcode
 
 # claude: QEMU-only targets, added alongside the existing real-hardware
 # ones above rather than replacing anything - "all"/"$(TARGET)" (which

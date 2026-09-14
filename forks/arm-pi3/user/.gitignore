@@ -7,5 +7,4 @@
 # build output.
 /fs.img
 /mkfs
-/initcode
 /initcode.out

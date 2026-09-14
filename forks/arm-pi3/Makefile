@@ -25,15 +25,11 @@ ifeq ($(hw), fvp)
 	MMIO_VA   = 0xD0000000
 	MMIO_SIZE = 0x04000000
 	PERIPHBASE= 0xDF000000
-	# claude: -fcommon added (here and below) - modern GCC (10+) defaults to
-	# -fno-common, and include/proc.h's "struct cpu cpus[NCPU];" is a
-	# non-extern global declaration included by every .c file, so without
-	# -fcommon the linker sees it as a real multiple-definition conflict.
 	# claude: -fno-pic -fno-pie added (here and below) - see the rpi2
 	# block's own long comment for the full story (found chasing a real
 	# "cpu0: panic: release" SMP race in this fork; identical root cause
 	# and fix to forks/arm-pi2's own equivalent bug).
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O0 -Wall -MD -MP -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -marm -fno-pic -fno-pie -O0 -Wall -MD -MP -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 	#CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a9 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = fvp.img
 	CC_OPTIONS = -DFVP
@@ -51,7 +47,7 @@ else ifeq ($(hw), rpi1)
 	# alternate CFLAGS line right above (which already had -fno-pic -
 	# real evidence someone hit this before) - see the rpi2 block's own
 	# long comment.
-	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
+	CFLAGS    =   -ffreestanding -nostdlib -nostartfiles -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -ggdb -Wall -mcpu=arm1176jzf-s -mfloat-abi=hard -fno-short-enums -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 	TARGET    = kernel.img
 	CC_OPTIONS = -DRPI1
 else ifeq ($(hw), rpi2)
@@ -92,7 +88,7 @@ else ifeq ($(hw), rpi2)
 	# the kernel and every core equally, not a QEMU quirk - real
 	# hardware would behave identically (or worse - unpopulated-GOT
 	# memory content isn't guaranteed to even be zero there either).
-	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -fcommon -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -std=gnu99 -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -fno-zero-initialized-in-bss -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
+	CFLAGS    = -ffreestanding -nostdlib -nostartfiles -marm -fno-pic -fno-pie -O2 -Wall -MD -MP -std=gnu99 -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -fno-zero-initialized-in-bss -I kernel -I../../include -I../../include/kernel -I../../include/user -I../../include/arch/arm
 	#CFLAGS    = -ffreestanding -nostdlib -nostartfiles -O2 -Wall -MD -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -I kernel
 	TARGET    = kernel7.bin
 	CC_OPTIONS = -DRPI2 -DRASPPI=2 -DNDEBUG
@@ -286,6 +282,19 @@ uprogs-fs-img:
 kernel/fs.img: uprogs-fs-img
 	cmp -s user/fs.img $@ || cp user/fs.img $@
 
+# claude: kernel/initcode was a checked-in binary blob with NO build rule
+# at all - real bit-rot, not a deliberate choice: rebuilding user/initcode.S
+# with the current toolchain produces a structurally identical but
+# byte-different file (an older assembler's multi-register "push {lr}"
+# vs. the current one's single-register form). Same fix, same rule shape,
+# as kernel/fs.img just above.
+.PHONY: uprogs-initcode
+uprogs-initcode:
+	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) initcode
+
+kernel/initcode: uprogs-initcode
+	cmp -s user/initcode $@ || cp user/initcode $@
+
 # entry.S is the only source file that embeds the image (its own
 # .incbin "fs.img"), so only ITS object needs the dependency - but this fork
 # builds entry.S TWICE, into two separate object trees: build/ for the real
@@ -294,9 +303,10 @@ kernel/fs.img: uprogs-fs-img
 # Naming only $(BUILD)entry.o leaves the QEMU kernel embedding a STALE image
 # while the rest of the kernel is compiled against the current fs.h - which
 # boots as far as the scheduler and then hangs with no shell and no panic,
-# because mkfs wrote one on-disk layout and the kernel reads another.
-$(BUILD)entry.o: kernel/fs.img
-$(BUILD_QEMU)entry.o: kernel/fs.img
+# because mkfs wrote one on-disk layout and the kernel reads another. Same
+# reasoning applies to kernel/initcode.
+$(BUILD)entry.o: kernel/fs.img kernel/initcode
+$(BUILD_QEMU)entry.o: kernel/fs.img kernel/initcode
 
 loader: loader.S kernel7.bin
 	$(TOOLCHAIN)gcc -c loader.S -o loader.elf -fpic -ffreestanding -nostdlib -nostartfiles -O0 -Wall -ggdb -Wall -mcpu=cortex-a7 -mfloat-abi=hard -fno-short-enums -o loader.o

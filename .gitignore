@@ -59,6 +59,18 @@ build-qemu/
 **/kernel/kernel
 **/tools/mkfs
 
+# claude: hoisted 2026-09-14 - every port's generated initcode blob (the
+# tiny hand-assembled program process 1 execs before /init exists) is
+# named bare "initcode" with no extension, but at a different depth per
+# port: fork root for the classic-xv6-style ports (i386, amd64, mips -
+# their own "-b binary initcode" link step bakes the exact relative
+# path into the linker-generated _binary_initcode_start symbol name, so
+# it can't move), user/ for the newer ports (arm64, arm64-pi4,
+# loongarch, riscv32) and arm-pi1/arm-pi2/arm-pi3's own uprogs/ build,
+# kernel/ for arm-pi1/arm-pi2/arm-pi3's own copy that kernel/entry.s's
+# ".incbin \"initcode\"" actually embeds. "**/" matches all of these.
+**/initcode
+
 # claude: per-developer noise, previously scattered across four forks.
 TAGS
 .gdb_history

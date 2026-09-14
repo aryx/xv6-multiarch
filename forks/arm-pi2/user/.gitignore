@@ -6,5 +6,4 @@
 # fork-level .gitignore's own comment.
 /fs.img
 /mkfs
-/initcode
 /initcode.out
