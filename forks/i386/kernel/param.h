@@ -1,1 +1,1 @@
-../../../kernel/param-x86.h
+../../../kernel/conf/i386/param.h

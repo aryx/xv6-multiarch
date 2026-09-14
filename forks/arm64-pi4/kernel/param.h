@@ -1,1 +1,1 @@
-../../../kernel/param.h
+../../../kernel/conf/arm64-pi4/param.h

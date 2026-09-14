@@ -1,1 +1,1 @@
-../../../kernel/param-x86.h
+../../../kernel/conf/amd64/param.h
