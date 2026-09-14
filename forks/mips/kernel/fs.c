@@ -132,16 +132,14 @@ bfree(int dev, uint b)
 //   to decrement ref.
 //
 // * Valid: the information (type, size, &c) in an inode
-//   cache entry is only correct when the I_VALID bit
-//   is set in ip->flags. ilock() reads the inode from
-//   the disk and sets I_VALID, while iput() clears
-//   I_VALID if ip->ref has fallen to zero.
+//   cache entry is only correct when ip->valid is 1.
+//   ilock() reads the inode from
+//   the disk and sets ip->valid, while iput() clears
+//   ip->valid if ip->ref has fallen to zero.
 //
 // * Locked: file system code may only examine and modify
 //   the information in an inode and its content if it
-//   has first locked the inode. The I_BUSY flag indicates
-//   that the inode is locked. ilock() sets I_BUSY,
-//   while iunlock clears it.
+//   has first locked the inode.
 //
 // Thus a typical sequence is:
 //   ip = iget(dev, inum)
@@ -169,7 +167,14 @@ struct {
 void
 iinit(void)
 {
+  int i;
+
   initlock(&icache.lock, "icache");
+  // claude: matches the amd64/i386/file-x86.h cluster's sleeplock-based
+  // inode locking, needed so this fork's own file.h can join theirs
+  // instead of keeping its own I_BUSY/I_VALID flag-based copy.
+  for(i = 0; i < NINODE; i++)
+    initsleeplock(&icache.inode[i].lock, "inode");
 }
 
 // claude: matches the amd64/i386 cluster's own fsinit(), needed so
@@ -271,7 +276,7 @@ iget(uint dev, uint inum)
   ip->dev = dev;
   ip->inum = inum;
   ip->ref = 1;
-  ip->flags = 0;
+  ip->valid = 0;
   release(&icache.lock);
 
   return ip;
@@ -299,13 +304,9 @@ ilock(struct inode *ip)
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
 
-  acquire(&icache.lock);
-  while(ip->flags & I_BUSY)
-    sleep(ip, &icache.lock);
-  ip->flags |= I_BUSY;
-  release(&icache.lock);
+  acquiresleep(&ip->lock);
 
-  if(!(ip->flags & I_VALID)){
+  if(!ip->valid){
     struct superblock sb;
     readsb(ip->dev, &sb);
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
@@ -317,7 +318,7 @@ ilock(struct inode *ip)
     ip->size = dip->size;
     memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
     brelse(bp);
-    ip->flags |= I_VALID;
+    ip->valid = 1;
     if(ip->type == 0)
       panic("ilock: no type");
   }
@@ -327,13 +328,10 @@ ilock(struct inode *ip)
 void
 iunlock(struct inode *ip)
 {
-  if(ip == 0 || !(ip->flags & I_BUSY) || ip->ref < 1)
+  if(ip == 0 || !holdingsleep(&ip->lock) || ip->ref < 1)
     panic("iunlock");
 
-  acquire(&icache.lock);
-  ip->flags &= ~I_BUSY;
-  wakeup(ip);
-  release(&icache.lock);
+  releasesleep(&ip->lock);
 }
 
 // Drop a reference to an in-memory inode.
@@ -346,20 +344,22 @@ iunlock(struct inode *ip)
 void
 iput(struct inode *ip)
 {
-  acquire(&icache.lock);
-  if(ip->ref == 1 && (ip->flags & I_VALID) && ip->nlink == 0){
-    // inode has no links and no other references: truncate and free.
-    if(ip->flags & I_BUSY)
-      panic("iput busy");
-    ip->flags |= I_BUSY;
-    release(&icache.lock);
-    itrunc(ip);
-    ip->type = 0;
-    iupdate(ip);
+  acquiresleep(&ip->lock);
+  if(ip->valid && ip->nlink == 0){
     acquire(&icache.lock);
-    ip->flags = 0;
-    wakeup(ip);
+    int r = ip->ref;
+    release(&icache.lock);
+    if(r == 1){
+      // inode has no links and no other references: truncate and free.
+      itrunc(ip);
+      ip->type = 0;
+      iupdate(ip);
+      ip->valid = 0;
+    }
   }
+  releasesleep(&ip->lock);
+
+  acquire(&icache.lock);
   ip->ref--;
   release(&icache.lock);
 }
