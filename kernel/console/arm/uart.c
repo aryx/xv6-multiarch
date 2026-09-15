@@ -6,7 +6,7 @@
 #include "memlayout.h"
 
 //static volatile uint *uart_base;
-void isr_uart (struct trapframe *tf, int idx);
+void isr_uart(struct trapframe *tf, int idx);
 
 // ***************************************************************************
 
@@ -19,7 +19,7 @@ inline void udelay(unsigned int count)
 
 // need to change the code to handle kernelbase relocation
 /*
-void uart_init ( void )
+void uart_init(void)
 {
   unsigned int ra;
 
@@ -94,7 +94,7 @@ void uart_init ( void )
 // all). Must match start.c's own choice of peripheral - this is the
 // same physical UART, just accessed post-MMU via its KERNBASE-offset
 // virtual alias instead of pre-MMU via its raw physical address.
-void uartputc ( int byte )
+void uartputc(int byte)
 {
   while(read32(UART0_FR+KERNBASE)&(1<<5)) ; // wait while TXFF
   write32(UART0_DR+KERNBASE, byte);
@@ -109,7 +109,7 @@ void uart_puts(const char *s)
   }
 }
 
-int uartgetc ()
+int uartgetc(void)
 {
   if(read32(UART0_FR+KERNBASE)&(1<<4)) { // RXFE (receive FIFO empty)
     return -1;
@@ -138,7 +138,7 @@ void print_hex(uint val) {
     uartputc('\n');
 }
 
-void hexstrings ( unsigned int d )
+void hexstrings(unsigned int d)
 {
   unsigned int rb;
   unsigned int rc;
@@ -155,7 +155,7 @@ void hexstrings ( unsigned int d )
   uartputc(0x20);
 }
 
-void hexstring ( unsigned int d )
+void hexstring(unsigned int d)
 {
   hexstrings(d);
   uartputc(0x0D);
@@ -177,7 +177,7 @@ void hexstring ( unsigned int d )
 // to the real ENABLE_IRQS_2 register itself (see device/gic.c's own
 // comment) - see notes_arch_armv7_rpi.txt's own "Gap 2" for the full
 // investigation this fixes.
-void uart_enable_rx ()
+void uart_enable_rx(void)
 {
     write32(UART0_IMSC+KERNBASE, (1<<4)|(1<<6)); // RXIM | RTIM
 
@@ -185,7 +185,7 @@ void uart_enable_rx ()
 }
 
 
-void isr_uart (struct trapframe *tf, int idx)
+void isr_uart(struct trapframe *tf, int idx)
 {
     //if (uart_base[UART_MIS] & UART_RXI) {
         consoleintr(uartgetc);
