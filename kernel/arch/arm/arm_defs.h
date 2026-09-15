@@ -75,12 +75,7 @@ void            sleep(void*, struct spinlock*);
 // swtch.S
 void            swtch(struct context**, struct context*);
 
-// syscall.c
-int             argint(int, int*);
-int             argptr(int, char**, int);
-int             argstr(int, char**);
-int             fetchstr(uint, char**);
-void            syscall(void);
+// syscall.c - see kernel/syscalls/interface_syscall.h
 
 //void            timer_init(int hz);
 void            timer_init( void );
@@ -132,3 +127,5 @@ void hexstring ( unsigned int );
 void flush_dcache_all(void);// raspi
 
 #endif
+
+#include "interface_syscall.h"

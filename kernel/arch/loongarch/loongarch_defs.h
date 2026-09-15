@@ -18,8 +18,9 @@ void            uartputc(int);
 void            uartputc_sync(int);
 int             uartgetc(void);
 
-// trap.c
-void            trapinit(void);
+// trap.c - trapinit()/kerneltrap()/clockintr()/devintr() moved to
+// kernel/interrupts/interface_trap.h. usertrapret() has no
+// declaration there (a real per-fork name/signature exception).
 void            usertrapret(void);
 
 // proc.c
@@ -81,10 +82,5 @@ void            extioi_init(void);
 uint64          extioi_claim(void);
 void            extioi_complete(uint64);
 
-// syscall.c
-int             argint(int, int*);
-int             argstr(int, char*, int);
-int             argaddr(int, uint64 *);
-int             fetchstr(uint64, char*, int);
-int             fetchaddr(uint64, uint64*);
-void            syscall();
+#include "interface_trap.h"
+#include "interface_syscall.h"

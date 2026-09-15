@@ -83,15 +83,11 @@ void            getstackpcs(uintp*, uintp*);
 void            pushcli(void);
 void            popcli(void);
 
-// syscall.c
-int             argint(int, int*);
-int             argptr(int, char**, int);
+// syscall.c - argint/argptr/argstr/fetchstr/syscall/arguintp moved to
+// kernel/syscalls/interface_syscall.h. argaddr/fetchuintp are this
+// fork's own extra.
 int             argaddr(int, uint64*);
-int             argstr(int, char**);
-int             arguintp(int, uintp*);
 int             fetchuintp(uintp, uintp*);
-int             fetchstr(uintp, char**);
-void            syscall(void);
 
 // timer.c
 void            timerinit(void);
@@ -121,3 +117,6 @@ pde_t*          copyuvm(pde_t*, uint);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
 void            clearpteu(pde_t *pgdir, char *uva);
+
+#include "interface_trap.h"
+#include "interface_syscall.h"

@@ -79,14 +79,12 @@ void            getcallerpcs(void*, uint64*);
 void            pushcli(void);
 void            popcli(void);
 
-// syscall.c
-int             argint(int, int*);
-int             argptr(int, char**, int);
-int             argstr(int, char**);
+// syscall.c - argint/argptr/argstr/fetchstr/syscall moved to
+// kernel/syscalls/interface_syscall.h. argaddr/fetchaddr are this
+// fork's own extra (the modern family's own functions, defined here
+// too but not part of that shared declaration).
 int             argaddr(int, uint64 *);
-int             fetchstr(uint64, char**);
 int             fetchaddr(uint64, uint64*);
-void            syscall(struct sysframe*);
 
 // timer.c
 void            timerinit(void);
@@ -114,3 +112,6 @@ pde_t*          copyuvm(pde_t*, uint);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
 void            clearpteu(pde_t *pgdir, char *uva);
+
+#include "interface_trap.h"
+#include "interface_syscall.h"

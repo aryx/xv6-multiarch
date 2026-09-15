@@ -49,16 +49,12 @@ void            swtch(struct context*, struct context*);
 void            push_off(void);
 void            pop_off(void);
 
-// syscall.c
-int             argint(int, int*);
-int             argstr(int, char*, int);
-int             argaddr(int, uint64 *);
-int             fetchstr(uint64, char*, int);
-int             fetchaddr(uint64, uint64*);
-void            syscall();
+// syscall.c - see kernel/syscalls/interface_syscall.h
 
-// trap.c
-void            trapinit(void);
+// trap.c - trapinit()/kerneltrap()/clockintr()/devintr() moved to
+// kernel/interrupts/interface_trap.h. trapinithart() stays here.
+// usertrapret() is really an assembly label (trapasm.S), called from
+// proc.c as if it were a C function - not covered by that interface.
 void            trapinithart(void);
 void            usertrapret(struct trapframe *);
 
@@ -102,3 +98,6 @@ void            timerintr(void);
 void            set_pinmode(int pin, enum pinmode mode);
 void            gpio_clr(int pin);
 void            gpio_set(int pin);
+
+#include "interface_trap.h"
+#include "interface_syscall.h"

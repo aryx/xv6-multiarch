@@ -52,12 +52,7 @@ void            sleep(void*, struct spinlock*);
 // swtch.S
 void            swtch(struct context**, struct context*);
 
-// syscall.c
-int             argint(int, int*);
-int             argptr(int, char**, int);
-int             argstr(int, char**);
-int             fetchstr(uint, char**);
-void            syscall(void);
+// syscall.c - see kernel/syscalls/interface_syscall.h
 
 void kvmalloc(void);
 
@@ -75,13 +70,6 @@ void            popcli(void);
 
 // string.c
 uint 		div(uint n, uint d);
-
-// syscall.c
-int             argint(int, int*);
-int             argptr(int, char**, int);
-int             argstr(int, char**);
-int             fetchstr(uint, char**);
-void            syscall(void);
 
 // timer.c
 void		timer3init(void);
@@ -126,3 +114,6 @@ uint readmailbox(u8);
 void writemailbox(uint *, u8);
 void create_request(volatile uint *mbuf, uint tag, uint buflen, uint len, uint *data);
 void mailboxinit(void);
+
+#include "interface_trap.h"
+#include "interface_syscall.h"

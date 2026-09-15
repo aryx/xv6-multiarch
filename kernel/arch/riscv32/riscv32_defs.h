@@ -46,16 +46,11 @@ void            swtch(struct context*, struct context*);
 void            push_off(void);
 void            pop_off(void);
 
-// syscall.c
-int             argint(int, int*);
-int             argstr(int, char*, int);
-int             argaddr(int, uint32 *);
-int             fetchstr(uint32, char*, int);
-int             fetchaddr(uint32, uint32*);
-void            syscall();
+// syscall.c - see kernel/syscalls/interface_syscall.h
 
-// trap.c
-void            trapinit(void);
+// trap.c - trapinit()/kerneltrap()/clockintr()/devintr() moved to
+// kernel/interrupts/interface_trap.h. trapinithart()/usertrapret()
+// have no declaration there (real per-fork exceptions).
 void            trapinithart(void);
 void            usertrapret(void);
 
@@ -93,3 +88,6 @@ void            plic_complete(int);
 void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr();
+
+#include "interface_trap.h"
+#include "interface_syscall.h"
