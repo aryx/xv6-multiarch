@@ -1,1 +1,1 @@
-../../../kernel/memory/arm-pi1/mmu.h
+../../../kernel/memory/mmu-arm-pi1.h

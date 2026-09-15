@@ -1,1 +1,1 @@
-../../../kernel/memory/arm-pi1/memlayout.h
+../../../kernel/memory/memlayout-arm-pi1.h

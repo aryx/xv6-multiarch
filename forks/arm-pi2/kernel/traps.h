@@ -1,1 +1,1 @@
-../../../kernel/interrupts/arm-pi2/traps.h
+../../../kernel/interrupts/traps-arm-pi2.h

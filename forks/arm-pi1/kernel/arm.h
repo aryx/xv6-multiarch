@@ -1,1 +1,1 @@
-../../../kernel/arch/arm-pi1/arm.h
+../../../kernel/arch/arm-pi1.h
