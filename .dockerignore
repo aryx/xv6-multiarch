@@ -59,20 +59,21 @@ Makefile.config
 # mistake this file exists to prevent.
 **/*.img
 **/*.bin
-# claude: negated by NAME rather than by full path. These used to be seven
-# explicit paths (forks/arm-pi1/source/font.bin and friends), and Phase 0's
-# layout move renamed source/ to kernel/ underneath them - so the negations
-# silently stopped matching, the fonts were excluded from the build context,
-# and the container build failed where the host build passed:
+# claude: negated by NAME rather than by full path - a directory move
+# under a matched basename (source/ -> kernel/, or a factorization merge
+# renaming font1.bin to font1-arm-pi1.bin) silently drops back out of
+# these negations otherwise, excluding the real file from the build
+# context while a same-named symlink still gets shipped in, pointing at
+# nothing:
 #
 #   kernel/entry.s:19: Error: file not found: font1.bin
 #
 # Every .bin file tracked in this repo is one of these font bitmap tables
-# (verified: "git ls-files | grep '\.bin$'" lists nothing else), so matching
-# on the basename is both correct and immune to the three remaining Pi ports'
-# layout moves.
+# (verified: "git ls-files | grep '\.bin$'" lists nothing else) - add a
+# line here whenever one gains a new name.
 !**/font.bin
 !**/font1.bin
+!**/font1-arm-pi1.bin
 
 # Other build outputs named in .gitignore: compiled user programs (xv6's
 # "_name" convention), the generated trap-vector table, boot sector,
