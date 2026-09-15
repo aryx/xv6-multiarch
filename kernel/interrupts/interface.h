@@ -58,15 +58,26 @@ void clockintr(void);
 //     2 - timer interrupt, handled (clockintr() already called)
 int devintr(void);
 
-// The rest of this family has real per-fork exceptions and stays
-// documentation-only (never #included), same spirit as
-// kernel/memory/interface.h's own legacy/modern split:
-#if 0
 // void trapinithart(void)
 //   Per-hart/per-core trap setup. Missing on loongarch (folded into
-//   trapinit() instead - checked: no separate function there).
+//   trapinit() instead - checked: no separate function there) -
+//   harmless to declare unconditionally since loongarch calls no
+//   function by this name either.
 void trapinithart(void);
 
+// void userirq(void), void kernelirq(void)
+//   arm64/arm64-pi4 only - a GICv3-specific split of devintr()'s own
+//   job into the user-mode and kernel-mode IRQ paths. Not present on
+//   loongarch/riscv32/riscv64, which handle both cases through the
+//   one shared devintr() above instead - harmless to declare
+//   unconditionally, same reasoning as trapinithart above.
+void userirq(void);
+void kernelirq(void);
+
+// The rest of this family has real per-fork signature exceptions and
+// stays documentation-only (never #included), same spirit as
+// kernel/memory/interface.h's own legacy/modern split:
+#if 0
 // void usertrap(void)
 //   Entry point for a trap taken while running user code. arm64-pi4's
 //   own copy takes an explicit struct trapframe *tf argument instead
@@ -80,14 +91,6 @@ void usertrap(void);
 //   arm64-pi4 fold the equivalent work back into usertrap()'s own
 //   tail, and riscv64 calls it prepare_return() instead.
 void usertrapret(void);
-
-// void userirq(void), void kernelirq(void)
-//   arm64/arm64-pi4 only - a GICv3-specific split of devintr()'s own
-//   job into the user-mode and kernel-mode IRQ paths. Not present on
-//   loongarch/riscv32/riscv64, which handle both cases through the
-//   one shared devintr() above instead.
-void userirq(void);
-void kernelirq(void);
 #endif
 
 #endif /* INTERFACE_TRAP_H */
