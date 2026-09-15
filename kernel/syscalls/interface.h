@@ -9,11 +9,11 @@
 // so the compiler checks the real definition against the declaration
 // here, AND every other file that calls these (sysfile.c, sysproc.c,
 // ...) sees the same declaration via the usual defs.h chain - see
-// kernel/processes/interface_proc.h for the arch_proc.h version of
+// kernel/processes/interface.h for the arch_proc.h version of
 // the same technique.
 //
 // arm has a real syscall.c matching the legacy family exactly (it
-// only lacks trap.c's own unified trap() - see interface_trap.h -
+// only lacks trap.c's own unified trap() - see kernel/interrupts/interface.h -
 // dispatching through swi_handler() directly instead).
 
 // int argint(int n, int *ip)
@@ -79,7 +79,7 @@ int fetchstr(uintp addr, char *buf, int max);
 //   Fetch the n'th syscall argument as a raw address, no validation -
 //   the legacy family's argptr() split into "get the address" (this)
 //   and "validate/copy it" (arch_copyin/arch_copyout,
-//   kernel/memory/interface_vm.h). riscv64 alone returns void, same
+//   kernel/memory/interface.h). riscv64 alone returns void, same
 //   as its own argint() above.
 #ifdef RISCV64_VOID_ARGS_ABI
 void argaddr(int n, uintp *ip);

@@ -75,7 +75,7 @@ void            sleep(void*, struct spinlock*);
 // swtch.S
 void            swtch(struct context**, struct context*);
 
-// syscall.c - see kernel/syscalls/interface_syscall.h
+// syscall.c - see kernel/syscalls/interface.h
 
 //void            timer_init(int hz);
 void            timer_init( void );
@@ -128,6 +128,6 @@ void flush_dcache_all(void);// raspi
 
 #endif
 
-#include "syscalls/interface_syscall.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

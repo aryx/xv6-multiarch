@@ -84,7 +84,7 @@ void            pushcli(void);
 void            popcli(void);
 
 // syscall.c - argint/argptr/argstr/fetchstr/syscall/arguintp moved to
-// kernel/syscalls/interface_syscall.h. argaddr/fetchuintp are this
+// kernel/syscalls/interface.h. argaddr/fetchuintp are this
 // fork's own extra.
 int             argaddr(int, uint64*);
 int             fetchuintp(uintp, uintp*);
@@ -118,7 +118,7 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 void            clearpteu(pde_t *pgdir, char *uva);
 
-#include "interrupts/interface_trap.h"
-#include "syscalls/interface_syscall.h"
+#include "interrupts/interface.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

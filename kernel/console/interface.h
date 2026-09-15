@@ -8,13 +8,13 @@
 // the same function names for the same roles. Each fork's own
 // <arch>_defs.h #includes this file right before those definitions,
 // so the compiler checks the real definition against the declaration
-// here - see kernel/processes/interface_proc.h for the same technique
+// here - see kernel/processes/interface.h for the same technique
 // applied to arch_proc.h.
 //
-// Reached via "console/interface_console.h" (a path, not a bare name)
+// Reached via "console/interface.h" (a path, not a bare name)
 // plus a plain -I../../kernel in each fork's own Makefile, rather than
 // the usual forks/<arch>/kernel/ symlink - a pilot for cutting down
-// the symlink count; kernel/processes/interface_proc.h and its
+// the symlink count; kernel/processes/interface.h and its
 // siblings still use the symlink form for now.
 
 // void consoleinit(void)

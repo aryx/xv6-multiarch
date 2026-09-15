@@ -52,11 +52,11 @@ void            swtch(struct context*, struct context*);
 void            push_off(void);
 void            pop_off(void);
 
-// syscall.c - see kernel/syscalls/interface_syscall.h (argint/argaddr
+// syscall.c - see kernel/syscalls/interface.h (argint/argaddr
 // return void here, not int - see RISCV64_VOID_ARGS_ABI there)
 
 // trap.c - trapinit()/kerneltrap()/clockintr()/devintr() moved to
-// kernel/interrupts/interface_trap.h. trapinithart()/prepare_return()
+// kernel/interrupts/interface.h. trapinithart()/prepare_return()
 // have no declaration there (real per-fork exceptions).
 void            trapinithart(void);
 void            prepare_return(void);
@@ -98,7 +98,7 @@ void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void);
 
-#include "interrupts/interface_trap.h"
-#include "syscalls/interface_syscall.h"
+#include "interrupts/interface.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

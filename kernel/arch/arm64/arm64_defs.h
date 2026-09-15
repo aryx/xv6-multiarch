@@ -46,10 +46,10 @@ void            swtch(struct context*, struct context*);
 void            push_off(void);
 void            pop_off(void);
 
-// syscall.c - see kernel/syscalls/interface_syscall.h
+// syscall.c - see kernel/syscalls/interface.h
 
 // trap.c - trapinit()/kerneltrap()/clockintr()/devintr() moved to
-// kernel/interrupts/interface_trap.h. trapinithart() stays here.
+// kernel/interrupts/interface.h. trapinithart() stays here.
 // usertrapret() is really an assembly label (uservec.S/trapasm.S),
 // called from proc.c as if it were a C function - not part of
 // trap.c's own dispatch, so not covered by that interface either.
@@ -97,7 +97,7 @@ void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void);
 
-#include "interrupts/interface_trap.h"
-#include "syscalls/interface_syscall.h"
+#include "interrupts/interface.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

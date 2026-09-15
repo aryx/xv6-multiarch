@@ -6,7 +6,7 @@
 // the shared kernel/devices/storage/bio.c's own arch_disk_rw()
 // interface. See kernel/devices/storage/arm64/arch_disk.h's own
 // comment for the virtio case.
-#include "devices/interface_disk.h"
+#include "devices/storage/interface.h"
 
 void arch_disk_rw(struct buf *b, int write) {
   ramdiskrw(b, write);

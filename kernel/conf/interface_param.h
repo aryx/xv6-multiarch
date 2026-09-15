@@ -2,7 +2,7 @@
 #define INTERFACE_PARAM_H
 
 // claude: documentation only - never #included by any build, same
-// spirit as kernel/processes/interface_proc.h and its siblings, but a
+// spirit as kernel/processes/interface.h and its siblings, but a
 // different kind of contract: every fork's own kernel/conf/<arch>/
 // param.h defines real per-board resource-budget constants (process
 // table size, open-file limits, on-disk filesystem size, CPU count),

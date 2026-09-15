@@ -65,7 +65,7 @@ void            invalidate_dcache_range(void* start, u32 length);
 u32             get_dsar(void);
 u32             get_ttbr0(void);
 void            preload(void*);
-// syscall.c - see kernel/syscalls/interface_syscall.h
+// syscall.c - see kernel/syscalls/interface.h
 
 void kvmalloc(void);
 
@@ -129,7 +129,7 @@ void writemailbox(uint *, u8);
 void create_request(volatile uint *mbuf, uint tag, uint buflen, uint len, uint *data);
 void mailboxinit(void);
 
-#include "interrupts/interface_trap.h"
-#include "syscalls/interface_syscall.h"
+#include "interrupts/interface.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

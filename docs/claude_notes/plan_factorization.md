@@ -2187,8 +2187,8 @@ three symlinks just point at three different real files independently
 
 **`interface_*.h`: documenting a contract C can't express, added
 2026-09-13.** One per `kernel/<category>/` that has grown an `arch_*.h`
-family so far - `kernel/processes/interface_proc.h`,
-`kernel/memory/interface_vm.h`, `kernel/devices/interface_disk.h` -
+family so far - `kernel/processes/interface.h`,
+`kernel/memory/interface.h`, `kernel/devices/storage/interface.h` -
 each a plain header, never `#include`d by any build, holding real
 prototypes/typedefs (not just prose) for every `arch_`-prefixed name
 that family's real per-arch headers must provide, with the actual

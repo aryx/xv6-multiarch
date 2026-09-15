@@ -11,7 +11,7 @@
 // this directory in its own Makefile's -I order so its file is found
 // first. This interface is genuinely board-scoped, not ISA-scoped,
 // unlike arch_vm.h/arch_proc.h.
-#include "devices/interface_disk.h"
+#include "devices/storage/interface.h"
 
 void arch_disk_rw(struct buf *b, int write) {
   virtio_disk_rw(b, write);

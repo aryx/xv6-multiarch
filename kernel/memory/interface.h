@@ -67,8 +67,8 @@ int arch_copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
 // table internals directly), but the per-fork implementations
 // independently converged on the same function names for the same
 // roles anyway, same "emergent, not deliberate" story as
-// kernel/console/interface_console.h and
-// kernel/interrupts/interface_trap.h. Split along this tree's usual
+// kernel/console/interface.h and
+// kernel/interrupts/interface.h. Split along this tree's usual
 // legacy/modern family boundary, same as trap.c's own.
 
 // --- legacy family (8 forks: amd64, amd64-jserv, arm-pi1, arm-pi1-bis,
@@ -180,7 +180,7 @@ void uvmclear(pagetable_t pagetable, uintp va);
 //   fixed kernel layout is built from. Adopted by only 4 of the 5
 //   modern forks - checked, loongarch folds kvminithart's own job
 //   into kvminit instead, same exception pattern as
-//   interface_trap.h's own trapinit/trapinithart note.
+//   kernel/interrupts/interface.h's own trapinit/trapinithart note.
 pagetable_t kvminit(void);
 void kvminithart(void);
 void kvmmap(pagetable_t kpgtbl, uintp va, uintp pa, uintp sz, int perm);

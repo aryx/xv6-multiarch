@@ -144,7 +144,7 @@ Concrete precedents so far, each a template for the next one:
   `defs.h`, defined in its own `vm.c` - not yet centralized into
   `arch_vm.h` itself the way the static-inline interfaces below are,
   since the page-table-walk logic is genuinely too different per ISA to
-  fit in a header; documented anyway in `kernel/memory/interface_vm.h`)
+  fit in a header; documented anyway in `kernel/memory/interface.h`)
   - completed 2026-09-12/13, see `plan_factorization.md`'s own entry:
   every one of the 8 forks with this interface turned out to already
   need a real page-table walk (just narrower in scope before), not the
@@ -180,8 +180,8 @@ Concrete precedents so far, each a template for the next one:
 ## `interface_*.h`: documenting the contract C can't declare
 
 Added 2026-09-13, one per `kernel/<category>/` that has grown an
-`arch_*.h` family: `kernel/processes/interface_proc.h`,
-`kernel/memory/interface_vm.h`, `kernel/devices/interface_disk.h`.
+`arch_*.h` family: `kernel/processes/interface.h`,
+`kernel/memory/interface.h`, `kernel/devices/storage/interface.h`.
 Each is a plain header - real prototypes and typedefs, not just prose,
 matching the actual signatures below - that is **never `#include`d by
 any build** (checked: no Makefile references it). C has no `interface`
@@ -204,10 +204,10 @@ definitions with nothing to document beyond what each register does.
 
 ### A second kind, added 2026-09-13/14: documenting *emergent* naming, not a deliberate interface
 
-`kernel/console/interface_console.h`, `kernel/interrupts/
-interface_trap.h`, and a same-day-added second section inside
-`kernel/memory/interface_vm.h`, `kernel/syscalls/interface_syscall.h`
-and `kernel/processes/interface_proc.h` document something different
+`kernel/console/interface.h`, `kernel/interrupts/interface.h`, and a
+same-day-added second section inside `kernel/memory/interface.h`,
+`kernel/syscalls/interface.h` and `kernel/processes/interface.h`
+document something different
 in kind from the `arch_*.h` contracts above: `console.c`/`uart.c`,
 `trap.c`, `vm.c`, `syscall.c` and `proc.c` are all classic Tier-4
 material - genuinely too divergent to share a single file (confirmed,

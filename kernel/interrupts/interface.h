@@ -9,7 +9,7 @@
 // split along this tree's usual legacy/modern boundary. Each fork's
 // own trap.c #includes this file right before defining these
 // functions, so the compiler checks the real definition against the
-// declaration here - see kernel/processes/interface_proc.h for the
+// declaration here - see kernel/processes/interface.h for the
 // same technique applied to arch_proc.h.
 //
 // arm is excluded entirely: it dispatches through the ARM exception
@@ -60,7 +60,7 @@ int devintr(void);
 
 // The rest of this family has real per-fork exceptions and stays
 // documentation-only (never #included), same spirit as
-// kernel/memory/interface_vm.h's own legacy/modern split:
+// kernel/memory/interface.h's own legacy/modern split:
 #if 0
 // void trapinithart(void)
 //   Per-hart/per-core trap setup. Missing on loongarch (folded into

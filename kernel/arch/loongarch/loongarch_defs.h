@@ -19,7 +19,7 @@ void            uartputc_sync(int);
 int             uartgetc(void);
 
 // trap.c - trapinit()/kerneltrap()/clockintr()/devintr() moved to
-// kernel/interrupts/interface_trap.h. usertrapret() has no
+// kernel/interrupts/interface.h. usertrapret() has no
 // declaration there (a real per-fork name/signature exception).
 void            usertrapret(void);
 
@@ -82,7 +82,7 @@ void            extioi_init(void);
 uint64          extioi_claim(void);
 void            extioi_complete(uint64);
 
-#include "interrupts/interface_trap.h"
-#include "syscalls/interface_syscall.h"
+#include "interrupts/interface.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

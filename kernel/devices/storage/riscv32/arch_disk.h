@@ -6,7 +6,7 @@
 // interface. See kernel/devices/storage/arm64/arch_disk.h's own
 // comment for the other real backend (a ramdisk, no virtio device)
 // this interface exists for.
-#include "devices/interface_disk.h"
+#include "devices/storage/interface.h"
 
 void arch_disk_rw(struct buf *b, int write) {
   virtio_disk_rw(b, write);

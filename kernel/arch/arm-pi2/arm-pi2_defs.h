@@ -54,7 +54,7 @@ void            sleep(void*, struct spinlock*);
 // swtch.S
 void            swtch(struct context**, struct context*);
 
-// syscall.c - see kernel/syscalls/interface_syscall.h
+// syscall.c - see kernel/syscalls/interface.h
 
 void kvmalloc(void);
 
@@ -117,7 +117,7 @@ void writemailbox(uint *, u8);
 void create_request(volatile uint *mbuf, uint tag, uint buflen, uint len, uint *data);
 void mailboxinit(void);
 
-#include "interrupts/interface_trap.h"
-#include "syscalls/interface_syscall.h"
+#include "interrupts/interface.h"
+#include "syscalls/interface.h"
 
-#include "console/interface_console.h"
+#include "console/interface.h"

@@ -166,7 +166,7 @@ int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
 
-// syscall.c's own fetchint() moved to kernel/syscalls/interface_syscall.h
+// syscall.c's own fetchint() moved to kernel/syscalls/interface.h
 
 // trap.c
 struct trapframe;  // forward decl only - real layout is per-arch (arch_proc.h)

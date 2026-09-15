@@ -65,8 +65,8 @@ static inline void arch_sleep_release(void *chan, struct spinlock *lk);
 // declarations genuinely conflict with each other (the legacy and
 // modern families below use the same names with different signatures)
 // and would break the build if ever actually compiled. Kept as text a
-// reader can find, not as live code - see interface_console.h/
-// interface_vm.h/interface_syscall.h for the same pattern.
+// reader can find, not as live code - see kernel/console/interface.h/
+// kernel/memory/interface.h/kernel/syscalls/interface.h for the same pattern.
 #if 0
 
 // claude: everything below is a different kind of documentation than
@@ -74,7 +74,7 @@ static inline void arch_sleep_release(void *chan, struct spinlock *lk);
 // family of its own (it's Tier-4 material), but the per-fork
 // implementations converged on the same function names for the same
 // roles anyway, same "emergent, not deliberate" story as
-// interface_console.h/interface_trap.h/interface_vm.h's own added
+// kernel/console/interface.h/kernel/interrupts/interface.h/kernel/memory/interface.h's own added
 // section. Completes the set: proc.c, vm.c, trap.c and syscall.c are
 // this tree's classic Tier-4 four, all documented this way now.
 //
@@ -136,7 +136,7 @@ void userinit(void);
 //   Grow or shrink the calling process's own memory by n bytes (n may
 //   be negative) - sbrk()'s own implementation, built on
 //   uvmalloc()/uvmdealloc() or allocuvm()/deallocuvm()
-//   (kernel/memory/interface_vm.h). Universal, all 13 forks, same
+//   (kernel/memory/interface.h). Universal, all 13 forks, same
 //   signature throughout.
 int growproc(int n);
 

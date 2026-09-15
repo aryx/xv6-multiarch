@@ -2,7 +2,7 @@
 #define ARCH_PROC_H
 
 // claude: struct cpu/struct context (real CPU register layout,
-// hand-matched to swtch.S) - see kernel/processes/interface_proc.h for
+// hand-matched to swtch.S) - see kernel/processes/interface.h for
 // why this lives here rather than in the shared proc-legacy.h. Single-
 // core board - curr_cpu/curr_proc hardcode cpus[0] rather than doing a
 // real cpu_id() lookup (contrast arm-pi3's own arch_proc.h, the one
