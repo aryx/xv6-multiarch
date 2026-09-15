@@ -1,1 +1,1 @@
-../../../kernel/arch/i386/types.h
+../../../kernel/types.h

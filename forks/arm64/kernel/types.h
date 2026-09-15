@@ -1,1 +1,1 @@
-../../../kernel/arch/arm64/types.h
+../../../kernel/types.h

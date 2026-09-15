@@ -1,1 +1,1 @@
-../../../kernel/arch/riscv64/types.h
+../../../kernel/types.h

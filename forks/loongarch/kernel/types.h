@@ -1,1 +1,1 @@
-../../../kernel/arch/loongarch/types.h
+../../../kernel/types.h
