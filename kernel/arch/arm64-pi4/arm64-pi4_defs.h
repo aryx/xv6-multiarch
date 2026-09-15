@@ -99,7 +99,7 @@ void            set_pinmode(int pin, enum pinmode mode);
 void            gpio_clr(int pin);
 void            gpio_set(int pin);
 
-#include "interface_trap.h"
+#include "interrupts/interface_trap.h"
 #include "interface_syscall.h"
 
 #include "console/interface_console.h"

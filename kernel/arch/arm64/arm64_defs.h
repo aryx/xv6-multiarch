@@ -97,7 +97,7 @@ void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void);
 
-#include "interface_trap.h"
+#include "interrupts/interface_trap.h"
 #include "interface_syscall.h"
 
 #include "console/interface_console.h"

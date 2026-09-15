@@ -129,7 +129,7 @@ void writemailbox(uint *, u8);
 void create_request(volatile uint *mbuf, uint tag, uint buflen, uint len, uint *data);
 void mailboxinit(void);
 
-#include "interface_trap.h"
+#include "interrupts/interface_trap.h"
 #include "interface_syscall.h"
 
 #include "console/interface_console.h"

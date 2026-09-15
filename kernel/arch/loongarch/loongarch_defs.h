@@ -82,7 +82,7 @@ void            extioi_init(void);
 uint64          extioi_claim(void);
 void            extioi_complete(uint64);
 
-#include "interface_trap.h"
+#include "interrupts/interface_trap.h"
 #include "interface_syscall.h"
 
 #include "console/interface_console.h"
