@@ -16,7 +16,7 @@ include ../makefile.inc
 # forks/arm-pi1-bis/kernel/user.h - dead since the 2019-API migration gave
 # this fork its own user/user.h, deleted in 819ff8c ("one shared
 # user-level API") on the assumption nothing still shadowed it.
-CFLAGS += -iquote . -Wno-infinite-recursion -I.. -I../../../include -I../../../include/user -I../../../include/arch/arm -idirafter ../kernel -idirafter ../../../include/kernel   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; the two -idirafter entries (low priority, unlike the "-iquote ../kernel" removed above) let the shared include/kernel/fs.h's own bare #include "conf.h" reach this fork's own kernel/conf.h, and let tests/usertests-arm32.c's own bare #include "fs.h" reach the shared header now that user/fs.h (this fork's old duplicate copy) is gone
+CFLAGS += -iquote . -Wno-infinite-recursion -I.. -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm -idirafter ../kernel   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; -I../../../include/kernel as a normal (not idirafter) entry so headers that only live there - e.g. fcntl.h - resolve ahead of the cross toolchain's own system header of the same name; -idirafter ../kernel (still low priority) lets the shared include/kernel/fs.h's own bare #include "conf.h" reach this fork's own kernel/conf.h
 # claude: usys.S needs the same treatment - make's built-in .S rule uses
 # $(ASFLAGS), never $(CFLAGS) (gotcha 9 in plan_factorization.md).
 ASFLAGS += -iquote . -I ../kernel -I ../../../include/kernel
