@@ -100,7 +100,7 @@ CFLAGS += -ffreestanding -fno-common -nostdlib -Ikernel -Iuser -gdwarf-2 $(XFLAG
 # names; only fcntl.h (deleted here, shared from include/kernel/) actually
 # falls through to this path.
 CFLAGS += -I../../include/kernel
-CFLAGS += -I../../kernel/arch/amd64-jserv
+CFLAGS += -I../../kernel/arch/amd64-jserv -I../../kernel
 CFLAGS += $(call cc-option, -fno-stack-protector, "")
 CFLAGS += $(call cc-option, -fno-stack-protector-all, "")
 # claude: GCC 12+'s -Winfinite-recursion (part of -Wall) misfires on

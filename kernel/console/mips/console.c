@@ -15,8 +15,6 @@
 #include "proc.h"
 #include "mips.h"
 
-static void consputc(int);
-
 static int panicked = 0;
 
 static struct {

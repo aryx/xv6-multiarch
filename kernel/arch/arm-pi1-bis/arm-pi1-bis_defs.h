@@ -117,3 +117,5 @@ void mailboxinit(void);
 
 #include "interface_trap.h"
 #include "interface_syscall.h"
+
+#include "console/interface_console.h"

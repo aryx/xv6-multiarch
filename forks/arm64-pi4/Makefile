@@ -84,7 +84,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/arm64-pi4 -I../../kernel/arch/arm64 -I../../include/arch/arm64
+CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/arm64-pi4 -I../../kernel/arch/arm64 -I../../include/arch/arm64 -I../../kernel
 CFLAGS += -MD -MP
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I. -Ikernel

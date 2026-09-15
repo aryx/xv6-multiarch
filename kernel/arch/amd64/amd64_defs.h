@@ -115,3 +115,5 @@ void            clearpteu(pde_t *pgdir, char *uva);
 
 #include "interface_trap.h"
 #include "interface_syscall.h"
+
+#include "console/interface_console.h"

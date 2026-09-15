@@ -1,59 +1,74 @@
 #ifndef INTERFACE_CONSOLE_H
 #define INTERFACE_CONSOLE_H
 
-// claude: documentation only - never #included by any build. Unlike
-// kernel/processes/interface_proc.h and its siblings, this doesn't
-// document a deliberate arch_-prefixed dispatch interface (console.c/
-// uart.c have no arch_*.h family - see plan_factorization.md's own
-// "checked console.c/timer.c - not viable" finding: they're too
-// divergent to share a single file). What's documented here instead
-// is an *emergent* convention: every fork's own kernel/console/<arch>/
-// {console.c,uart.c} independently settled on the same function names
-// for the same roles, without ever being told to. Worth writing down
-// both because it's real, useful structure a reader can't otherwise
-// see without diffing all 14 forks by hand, and because it's the most
-// likely next candidate if this ever grows a real arch_console.h/
-// arch_uart.h interface the way processes/memory/devices already have.
-
-// void uartinit(void)
-//   Initialize this board's UART hardware (baud rate, FIFO, interrupt
-//   enable). Called once from consoleinit(). Same name and signature
-//   on 12 of 13 forks with a standalone uart.c; two real exceptions:
-//   arm64-pi4 takes a UART index (uartinit(int n) - its board exposes
-//   more than one UART), and arm spells this uart_init() with an
-//   underscore instead - the one real naming exception in the whole
-//   file.
-void uartinit(void);
-
-// void uartputc(int c)
-//   Write one byte to the UART, blocking until the transmit FIFO has
-//   room. Consistent name and shape everywhere that has a uart.c
-//   (`uint c` on a few forks instead of `int c` - same meaning).
-void uartputc(int c);
-
-// int uartgetc(void)
-//   Read one byte from the UART if one is waiting, else -1.
-//   Non-blocking; called from uartintr() and, on the callback-style
-//   consoleintr() family below, passed BY NAME as the callback itself.
-int uartgetc(void);
-
-// void uartintr(void)
-//   UART receive-interrupt handler: drain available bytes via
-//   uartgetc() and hand each to consoleintr(). Called from this
-//   fork's own trap/interrupt dispatch, not from portable code.
-void uartintr(void);
+// claude: console.c/uart.c have no arch_*.h family (too divergent to
+// share a single file - see plan_factorization.md's own "checked
+// console.c/timer.c - not viable" finding), but every fork's own
+// kernel/console/<arch>/{console.c,uart.c} independently settled on
+// the same function names for the same roles. Each fork's own
+// <arch>_defs.h #includes this file right before those definitions,
+// so the compiler checks the real definition against the declaration
+// here - see kernel/processes/interface_proc.h for the same technique
+// applied to arch_proc.h.
+//
+// Reached via "console/interface_console.h" (a path, not a bare name)
+// plus a plain -I../../kernel in each fork's own Makefile, rather than
+// the usual forks/<arch>/kernel/ symlink - a pilot for cutting down
+// the symlink count; kernel/processes/interface_proc.h and its
+// siblings still use the symlink form for now.
 
 // void consoleinit(void)
 //   Set up the console device (device-switch table entry, UART init,
 //   lock init). Called once from main(). Same name and signature on
-//   every fork that has a console.c.
+//   every fork.
 void consoleinit(void);
 
 // void consputc(int c)
 //   Write one character to whatever this fork's console actually is
 //   (UART, and on some forks also a framebuffer/CGA text screen) -
 //   the single point every higher-level print path funnels through.
+//   Same name and signature on every fork.
 void consputc(int c);
+
+// void uartinit(void)
+//   Initialize this board's UART hardware (baud rate, FIFO, interrupt
+//   enable). Called once from consoleinit(). arm64-pi4 alone takes a
+//   UART index (its board exposes more than one UART); arm spells
+//   this uart_init() instead, which just coexists harmlessly here.
+#ifdef ARM64_PI4_UARTINIT_N
+void uartinit(int n);
+#else
+void uartinit(void);
+#endif
+
+// void uartputc(int c)
+//   Write one byte to the UART, blocking until the transmit FIFO has
+//   room. The arm-pi board family takes uint instead of int (same
+//   meaning); riscv64 has no uartputc at all (uartputc_sync instead),
+//   which just coexists harmlessly here.
+#ifdef ARM_PI_UART_UINT
+void uartputc(uint c);
+#else
+void uartputc(int c);
+#endif
+
+// void uartintr(void)
+//   UART receive-interrupt handler: drain available bytes via
+//   uartgetc() and hand each to consoleintr(). Called from this
+//   fork's own trap/interrupt dispatch, not from portable code. Not
+//   present under this name on arm or the arm-pi board family (a
+//   different interrupt-entry design there) - harmless to declare
+//   unconditionally since nothing on those forks calls it either.
+void uartintr(void);
+
+// int uartgetc(void)
+//   Read one byte from the UART if one is waiting, else -1.
+//   Non-blocking; called from uartintr() and, on the callback-style
+//   consoleintr() family below, passed BY NAME as the callback itself.
+//   Left undeclared here on purpose: 9 forks give it internal linkage
+//   (static) since nothing outside their own uart.c ever calls it,
+//   while 4 forks (plus arm) leave it external - a live extern
+//   declaration would conflict with the static definitions.
 
 // void consoleintr(...)
 //   Handle one incoming character from the console's own input
@@ -61,11 +76,9 @@ void consputc(int c);
 //   newline). Two real, incompatible designs, split along the same
 //   legacy/modern boundary as bio.c/buf.h/conf.h elsewhere in this
 //   tree:
-//     - legacy (9 forks: amd64, amd64-jserv, arm-pi1, arm-pi1-bis,
-//       arm-pi2, arm-pi3, i386, mips): consoleintr(int (*getc)(void)) -
-//       takes a callback and calls it itself, once per available byte.
-//     - modern (5 forks: arm64, arm64-pi4, loongarch, riscv32,
-//       riscv64): consoleintr(int c) - the caller (uartintr()) has
+//     - legacy: consoleintr(int (*getc)(void)) - takes a callback and
+//       calls it itself, once per available byte.
+//     - modern: consoleintr(int c) - the caller (uartintr()) has
 //       already fetched the byte and passes it directly.
 //   Not a prototype either family can literally share; documented as
 //   two variants rather than one.

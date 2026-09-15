@@ -101,3 +101,5 @@ void            gpio_set(int pin);
 
 #include "interface_trap.h"
 #include "interface_syscall.h"
+
+#include "console/interface_console.h"
