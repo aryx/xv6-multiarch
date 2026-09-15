@@ -100,6 +100,6 @@ void            gpio_clr(int pin);
 void            gpio_set(int pin);
 
 #include "interrupts/interface_trap.h"
-#include "interface_syscall.h"
+#include "syscalls/interface_syscall.h"
 
 #include "console/interface_console.h"

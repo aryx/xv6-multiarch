@@ -116,6 +116,6 @@ void create_request(volatile uint *mbuf, uint tag, uint buflen, uint len, uint *
 void mailboxinit(void);
 
 #include "interrupts/interface_trap.h"
-#include "interface_syscall.h"
+#include "syscalls/interface_syscall.h"
 
 #include "console/interface_console.h"

@@ -128,6 +128,6 @@ void flush_dcache_all(void);// raspi
 
 #endif
 
-#include "interface_syscall.h"
+#include "syscalls/interface_syscall.h"
 
 #include "console/interface_console.h"
