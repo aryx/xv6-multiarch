@@ -42,6 +42,8 @@ OBJS = \
 	$K/gpio.o \
 	$K/ramdisk.o
 
+# claude: skipped under LLVM=1 (see below), which needs no TOOLPREFIX.
+ifneq ($(LLVM),1)
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
 TOOLPREFIX := $(shell if aarch64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
@@ -54,6 +56,7 @@ TOOLPREFIX := $(shell if aarch64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "*** Error: Couldn't find a aarch64 version of GCC/binutils." 1>&2; \
 	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
+endif
 endif
 
 # claude: "?=", not "=", on all four, and retargeted at MAINLINE qemu.
@@ -84,6 +87,22 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
+# claude: LLVM=1 builds with clang + ld.lld + llvm-objcopy/llvm-objdump
+# instead of a GNU aarch64 cross toolchain - see forks/arm64/Makefile's
+# identical block for why, and notes_arch_arm64_pi4.txt. Only ever
+# verified under QEMU: the real-hardware kernel8.img is still built with
+# GNU binutils by default, and nothing here changes that path.
+ifeq ($(LLVM),1)
+LLVM_CC ?= clang
+LLVM_LD ?= ld.lld
+LLVM_OBJCOPY ?= llvm-objcopy
+LLVM_OBJDUMP ?= llvm-objdump
+CC = $(LLVM_CC) --target=aarch64-none-elf
+LD = $(LLVM_LD)
+OBJCOPY = $(LLVM_OBJCOPY)
+OBJDUMP = $(LLVM_OBJDUMP)
+endif
+
 CFLAGS = -Wall -Werror -Os -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/arm64-pi4 -I../../kernel/arch/arm64 -I../../include/arch/arm64 -I../../kernel
 CFLAGS += -MD -MP
 CFLAGS += -ffreestanding -fno-common -nostdlib
@@ -104,6 +123,13 @@ CFLAGS += -Wno-array-bounds
 # forks/i386/Makefile's own fix) - it's a mutually-recursive tree walk
 # over "struct cmd", not real infinite recursion.
 CFLAGS += -Wno-infinite-recursion
+# claude: clang-only -Werror false positives under LLVM=1 - the same
+# GCC-accepted idioms forks/arm64/Makefile's own LLVM block lists (this
+# fork shares syscall.c, fs.h and usertests-arm64.c with it).
+ifeq ($(LLVM),1)
+CFLAGS += -Wno-unknown-attributes -Wno-gnu-designator
+CFLAGS += -Wno-unused-but-set-variable
+endif
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
@@ -114,6 +140,14 @@ CFLAGS += -fno-pie -nopie
 endif
 
 LDFLAGS = -z max-page-size=4096
+# claude: see forks/arm64/Makefile's LLVM LDFLAGS for --image-base=0 and
+# --no-rosegment. BINARY_LDFLAGS: "ld -r -b binary fs.img" has no object
+# file for ld.lld to infer the target from, so it needs the emulation
+# named; GNU ld defaults to its own configured target.
+ifeq ($(LLVM),1)
+LDFLAGS += --image-base=0 --no-rosegment
+BINARY_LDFLAGS = -m aarch64elf
+endif
 ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -MP -I. -I../../include/kernel
 # claude: upstream had "ASFLAGS += -DRPI4_QEMU" here, and a README step
 # telling you to delete this line by hand before building for a real Pi 4.
@@ -127,7 +161,7 @@ hwtest.img: $H/hwtest
 	$(OBJCOPY) -O binary $^ $@
 
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode fs.img
-	$(LD) -r -b binary fs.img -o fs.img.o
+	$(LD) $(BINARY_LDFLAGS) -r -b binary fs.img -o fs.img.o
 	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS) fs.img.o
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym

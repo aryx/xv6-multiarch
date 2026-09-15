@@ -361,3 +361,28 @@ The real-hardware path is unchanged and now shares one binary with the
 QEMU path: `make -C forks/arm64-pi4 rpi4` (after pointing SDPATH at an
 SD card) produces the same kernel8.img that `make build-arm64-pi4`
 does, which was not true before Bug 1's fix.
+
+Building with clang + ld.lld instead of GNU (LLVM=1, macOS host) - 2026-09-15
+------------------------------------------------------------------------------
+Same LLVM=1 mode as forks/arm64 - read notes_arch_arm64.txt's section of
+the same name first; this fork shares syscall.c, fs.h and
+usertests-arm64.c with it, so the same clang false positives and the same
+--image-base=0/--no-rosegment lld flags apply. Built with Homebrew llvm
+20.1.4 + lld 23.1.1, it boots to a shell and passes usertests (ALL TESTS
+PASSED) on mainline QEMU 11.1.1 -M raspi4b - a Homebrew qemu, new enough
+for the Pi 4 board, unlike the Ubuntu 8.2.2 this port was brought up on.
+
+Differences from forks/arm64:
+- No ENTRY fix needed: this fork's user programs link with an explicit
+  "-N -e main", which ld.lld honors like GNU ld.
+- "ld -r -b binary fs.img -o fs.img.o" (the embedded ramdisk) has no
+  object file for ld.lld to infer a target from, so under LLVM=1 it
+  gets "-m aarch64elf" (BINARY_LDFLAGS).
+- ld.lld warns "-z max-page-size set, but paging disabled by omagic or
+  nmagic" on every -N link. Harmless: -N is a single RWX segment, so
+  there's no page size to honor.
+
+Real hardware: kernel8.img from llvm-objcopy has NOT been booted on a
+Pi 4. The default build (and every Linux/Docker build) still uses GNU
+binutils, so the real-board path is unchanged; LLVM=1 is QEMU-verified
+only.

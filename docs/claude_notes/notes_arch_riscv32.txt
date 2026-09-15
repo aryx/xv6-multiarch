@@ -365,3 +365,42 @@ kernel/ramdisk.c (MIT's optional in-memory ramdisk storage backend;
 this fork uses virtio_disk.o instead, like arm64/arm64-pi4). Confirmed
 via `make -Bn build-riscv32` and a repo-wide grep - neither name
 appears anywhere in this fork's Makefile.
+
+Building with clang + ld.lld instead of GNU (LLVM=1, macOS host) - 2026-09-15
+------------------------------------------------------------------------------
+Same LLVM=1 mode as forks/arm64 - read notes_arch_arm64.txt's section of
+the same name first. Built with Homebrew llvm 20.1.4 + lld 23.1.1
+(clang --target=riscv32-unknown-elf; the existing -march/-mabi CFLAGS
+carry over unchanged), this port boots to a shell and passes usertests
+(ALL TESTS PASSED) on QEMU 11.1.1.
+
+What it needed:
+- Compile: -Wno-gnu-designator and -Wno-unused-but-set-variable, the
+  same clang-only false positives as arm64.
+- Link: --image-base=0 --no-rosegment, and ENTRY( start ) in
+  ulib/user.ld - all three exactly as arm64.
+- One new one, kernel/kernel.ld: it never named .rodata at all, so its
+  placement was up to the linker's orphan-section rules. GNU ld puts an
+  orphan .rodata after .text; ld.lld puts read-only orphans BEFORE it,
+  so .rodata.str1.1 landed at 0x80000000 and _entry at 0x80000650. The
+  ELF entry was still correct, which is why nothing complained at link
+  time. Fixed by listing .rodata explicitly right after .text, which is
+  where GNU ld already put it. forks/riscv64's kernel.ld always named
+  it, so riscv64 didn't hit this.
+
+Host gotcha, not clang-related: this Makefile's own QEMU line adds
+"-monitor telnet:127.0.0.1:55555,server,nowait". On the macOS host
+where the above was verified, something invisible to non-root lsof/
+netstat already held port 55555 (the bind failed even unsandboxed), so
+QEMU refused to start: "Failed to find an available port". build-/
+run-riscv32 are unaffected, since the top-level Makefile passes QEMU on
+the command line, which overrides that line. test-xv6.py's own "make
+qemu" doesn't pass it, though, so on such a host run
+  make test-riscv32 QEMU=qemu-system-riscv32
+(a top-level command-line variable reaches the inner make through
+MAKEFLAGS).
+
+Not verified: the GNU build after the kernel.ld and user.ld changes.
+Docker's daemon wasn't running on that host - run `docker build
+--build-arg ARCH=riscv32` (and ARCH=riscv64 for its user.ld) before
+trusting it.

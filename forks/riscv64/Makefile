@@ -39,6 +39,9 @@ OBJS = \
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
 
+# claude: skipped under LLVM=1 (see the LLVM block below), which needs no
+# TOOLPREFIX.
+ifneq ($(LLVM),1)
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
 TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
@@ -56,6 +59,7 @@ TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
 endif
+endif
 
 QEMU = qemu-system-riscv64
 MIN_QEMU_VERSION = 7.2
@@ -64,6 +68,21 @@ CC = $(TOOLPREFIX)gcc
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
+
+# claude: LLVM=1 builds with clang + ld.lld + llvm-objcopy/llvm-objdump
+# instead of a GNU cross toolchain - see forks/arm64/Makefile's identical
+# block for why (macOS: Homebrew packages llvm and lld, no GNU binutils
+# for this target), and notes_arch_riscv64.txt for what this port needed.
+ifeq ($(LLVM),1)
+LLVM_CC ?= clang
+LLVM_LD ?= ld.lld
+LLVM_OBJCOPY ?= llvm-objcopy
+LLVM_OBJDUMP ?= llvm-objdump
+CC = $(LLVM_CC) --target=riscv64-unknown-elf
+LD = $(LLVM_LD)
+OBJCOPY = $(LLVM_OBJCOPY)
+OBJDUMP = $(LLVM_OBJDUMP)
+endif
 
 # Deterministic builds.
 DETFLAGS = -ffile-prefix-map=$(CURDIR)=.
@@ -84,6 +103,12 @@ CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I. -Ikernel
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+# claude: clang-only -Werror false positive under LLVM=1: this Makefile
+# builds -std=gnu99, where clang (not GCC) flags a repeated identical
+# typedef of pte_t/pagetable_t as "a C11 feature".
+ifeq ($(LLVM),1)
+CFLAGS += -Wno-typedef-redefinition
+endif
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
@@ -94,6 +119,12 @@ CFLAGS += -fno-pie -nopie
 endif
 
 LDFLAGS = -z max-page-size=4096
+# claude: ld.lld-only, see forks/arm64/Makefile: lld's default image base
+# (0x10000 here) rejects -Ttext 0, and without --no-rosegment .rodata gets
+# its own non-page-aligned PT_LOAD that kernel/exec.c refuses.
+ifeq ($(LLVM),1)
+LDFLAGS += --image-base=0 --no-rosegment
+endif
 
 $K/kernel: $(OBJS) $K/kernel.ld
 	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS) 

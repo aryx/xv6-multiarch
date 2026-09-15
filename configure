@@ -106,6 +106,10 @@ TOOLPREFIX_ARM_PI3=${TOOLPREFIX_ARM_PI3:-}
 QEMU_ARM_PI3=${QEMU_ARM_PI3:-}
 TOOLPREFIX_ARM64_PI4=${TOOLPREFIX_ARM64_PI4:-}
 QEMU_ARM64_PI4=${QEMU_ARM64_PI4:-}
+LLVM_CC=${LLVM_CC:-}
+LLVM_LD=${LLVM_LD:-}
+LLVM_OBJCOPY=${LLVM_OBJCOPY:-}
+LLVM_OBJDUMP=${LLVM_OBJDUMP:-}
 
 for arg in "$@"; do
     case "$arg" in
@@ -156,7 +160,7 @@ for arg in "$@"; do
             echo "                               (e.g. riscv64-unknown-elf-, multilib)"
             echo "  --qemu-riscv32=CMD           override the riscv32 qemu-system binary"
             echo "  --toolprefix-arm64=PREFIX    override the arm64 cross-toolchain prefix"
-            echo "                               (e.g. aarch64-linux-gnu-)"
+            echo "                               (e.g. aarch64-linux-gnu-, or LLVM)"
             echo "  --qemu-arm64=CMD             override the arm64 qemu-system binary"
             echo "  --toolprefix-mips=PREFIX     override the mips cross-toolchain prefix"
             echo "                               (e.g. mipsel-linux-gnu-)"
@@ -185,11 +189,14 @@ for arg in "$@"; do
             echo "                               (qemu-system-aarch64 - this fork's own"
             echo "                               Makefile targets -M raspi3b, not raspi2b)"
             echo "  --toolprefix-arm64-pi4=PREFIX override the arm64-pi4 cross-toolchain"
-            echo "                               prefix (e.g. aarch64-linux-gnu-)"
+            echo "                               prefix (e.g. aarch64-linux-gnu-, or LLVM)"
             echo "  --qemu-arm64-pi4=CMD         override the arm64-pi4 qemu-system binary"
             echo "                               (qemu-system-aarch64 >= 9.1, the first"
             echo "                               release with a -M raspi4b board at all)"
-            echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment."
+            echo "TOOLPREFIX_<ARCH>/QEMU_<ARCH> may also be set in the environment, and so"
+            echo "may LLVM_CC/LLVM_LD/LLVM_OBJCOPY/LLVM_OBJDUMP (the clang toolchain that"
+            echo "riscv64/riscv32/arm64/arm64-pi4 fall back to when no GNU one is found, e.g."
+            echo "on macOS). Their --toolprefix-<arch>=LLVM forces it even if GNU is there."
             exit 0
             ;;
         *)
@@ -285,6 +292,98 @@ detect_versioned_gcc() {
     else
         eval "$varname=NONE"
         return 1
+    fi
+}
+
+###############################################################################
+# detect_llvm: find a clang + ld.lld + llvm-objcopy + llvm-objdump set, the
+# fallback for hosts with no GNU cross toolchain at all - macOS, where
+# Homebrew packages llvm and lld but no GNU binutils for these targets.
+###############################################################################
+# claude: Homebrew's own llvm/lld kegs are tried BEFORE PATH, not after:
+# Homebrew deliberately keeps its clang off PATH (keg-only), and the clang
+# that IS on PATH there is Apple's /usr/bin/clang, which has no riscv,
+# mips or loongarch backend at all (it does have aarch64, so it would do
+# for today's two users, but not for a future third). lld is its own keg
+# since LLVM 19 - "brew install llvm" alone leaves no ELF linker. No
+# "brew --prefix" call: it can be slow and can touch the network.
+#
+# Sets LLVM_CC/LLVM_LD/LLVM_OBJCOPY/LLVM_OBJDUMP to full paths (or NONE),
+# each honoring an existing environment value. Probes once; returns 1 if
+# any of the four is missing.
+LLVM_PROBED=no
+llvm_tool() {
+    # arg1 = current value (an override, or empty), arg2 = tool name
+    if [ -n "$1" ]; then
+        command -v "$1" 2>/dev/null || echo NONE
+        return
+    fi
+    for d in ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/opt/llvm/bin $HOMEBREW_PREFIX/opt/lld/bin} \
+             /opt/homebrew/opt/llvm/bin /opt/homebrew/opt/lld/bin \
+             /usr/local/opt/llvm/bin /usr/local/opt/lld/bin; do
+        if [ -x "$d/$2" ]; then
+            echo "$d/$2"
+            return
+        fi
+    done
+    command -v "$2" 2>/dev/null || echo NONE
+}
+detect_llvm() {
+    if [ "$LLVM_PROBED" = no ]; then
+        LLVM_CC=`llvm_tool "$LLVM_CC" clang`
+        LLVM_LD=`llvm_tool "$LLVM_LD" ld.lld`
+        LLVM_OBJCOPY=`llvm_tool "$LLVM_OBJCOPY" llvm-objcopy`
+        LLVM_OBJDUMP=`llvm_tool "$LLVM_OBJDUMP" llvm-objdump`
+        LLVM_PROBED=yes
+    fi
+    [ "$LLVM_CC" != NONE ] && [ "$LLVM_LD" != NONE ] && \
+        [ "$LLVM_OBJCOPY" != NONE ] && [ "$LLVM_OBJDUMP" != NONE ]
+}
+
+# detect_llvm_target: can detect_llvm's toolchain build for this arch?
+# arg1 = display name, arg2 = TOOLPREFIX variable to set to the sentinel
+# "LLVM" on success (which the top-level Makefile turns into that fork's
+# own LLVM=1 switch), arg3 = clang --target triple. Leaves arg2 alone on
+# failure.
+detect_llvm_target() {
+    detect_llvm || return 1
+    echo 'int x;' | "$LLVM_CC" --target="$3" -ffreestanding -c -x c - \
+        -o /dev/null >/dev/null 2>&1 || return 1
+    echo "configure: found $LLVM_CC --target=$3 + $LLVM_LD ($1)"
+    eval "$2=LLVM"
+}
+
+# detect_toolprefix_or_llvm: detect_toolprefix, then detect_llvm_target
+# if that finds nothing - GNU first, so a host that has a GNU cross
+# toolchain (every Linux box, the Docker image, CI) builds exactly as it
+# did before LLVM support existed. An explicit TOOLPREFIX of "LLVM" skips
+# the GNU probe. arg1..3 as detect_toolprefix, arg4 = clang --target
+# triple, arg5.. = detect_toolprefix's candidate prefixes.
+detect_toolprefix_or_llvm() {
+    dtl_name=$1; dtl_var=$2; dtl_marker=$3; dtl_triple=$4
+    shift 4
+    eval "dtl_val=\${$dtl_var}"
+    if [ "$dtl_val" = LLVM ]; then
+        eval "$dtl_var="
+    elif detect_toolprefix "$dtl_name" "$dtl_var" "$dtl_marker" "$@"; then
+        return 0
+    fi
+    if detect_llvm_target "$dtl_name" "$dtl_var" "$dtl_triple"; then
+        return 0
+    fi
+    eval "$dtl_var=NONE"
+    return 1
+}
+
+# note_llvm_hint: the macOS half of a "no toolchain" warning. Says which
+# LLVM piece is missing when some were found - lld alone is the usual gap.
+note_llvm_hint() {
+    echo "  or, on macOS (clang + lld stand in for a GNU cross toolchain):" >&2
+    echo "    brew install llvm lld" >&2
+    if detect_llvm; then
+        echo "  ($LLVM_CC is here but cannot target $1)" >&2
+    elif [ "$LLVM_CC" != NONE ]; then
+        echo "  (found $LLVM_CC; missing:`[ "$LLVM_LD" = NONE ] && echo ' ld.lld'``[ "$LLVM_OBJCOPY" = NONE ] && echo ' llvm-objcopy'``[ "$LLVM_OBJDUMP" = NONE ] && echo ' llvm-objdump'`)" >&2
     fi
 }
 
@@ -393,7 +492,10 @@ qemu_version_ok() {
 # riscv64 (forks/riscv64, RV64GC - MIT's current xv6-riscv)
 ###############################################################################
 
-if ! detect_toolprefix riscv64 TOOLPREFIX_RISCV64 elf64-big \
+# claude: same clang + ld.lld fallback as arm64 (see
+# detect_toolprefix_or_llvm) - verified on macOS, usertests pass; see
+# notes_arch_riscv64.txt.
+if ! detect_toolprefix_or_llvm riscv64 TOOLPREFIX_RISCV64 elf64-big riscv64-unknown-elf \
         riscv64-unknown-elf- riscv64-elf- riscv64-none-elf- \
         riscv64-linux-gnu- riscv64-unknown-linux-gnu-; then
     echo "configure: warning: no riscv64 toolchain on PATH (needed for forks/riscv64)" >&2
@@ -401,6 +503,7 @@ if ! detect_toolprefix riscv64 TOOLPREFIX_RISCV64 elf64-big \
     echo "    sudo apt install gcc-riscv64-unknown-elf" >&2
     echo "  or:" >&2
     echo "    sudo apt install gcc-riscv64-linux-gnu" >&2
+    note_llvm_hint riscv64-unknown-elf
     note_other_pkgmgr
 fi
 
@@ -528,12 +631,16 @@ fi
 # both, so this confirms 32-bit ELF support rather than just "some kind
 # of riscv toolchain".
 
-if ! detect_toolprefix riscv32 TOOLPREFIX_RISCV32 elf32-littleriscv \
+# claude: same clang + ld.lld fallback as arm64 (see
+# detect_toolprefix_or_llvm) - verified on macOS, usertests pass; see
+# notes_arch_riscv32.txt.
+if ! detect_toolprefix_or_llvm riscv32 TOOLPREFIX_RISCV32 elf32-littleriscv riscv32-unknown-elf \
         riscv32-unknown-elf- riscv32-elf- riscv32-linux-gnu- \
         riscv64-unknown-elf- riscv64-elf- riscv64-linux-gnu-; then
     echo "configure: warning: no riscv32-capable toolchain on PATH (needed for forks/riscv32)" >&2
     echo "  install one, e.g. on Debian/Ubuntu (multilib, covers riscv64 too):" >&2
     echo "    sudo apt install gcc-riscv64-unknown-elf" >&2
+    note_llvm_hint riscv32-unknown-elf
     note_other_pkgmgr
 fi
 
@@ -554,12 +661,19 @@ fi
 # This detection exists mainly for the same up-front-report and
 # consistency reasons every other arch here has it, not because this one
 # needed any real gap-filling.
+#
+# claude: falls back to clang + ld.lld (TOOLPREFIX_ARM64=LLVM, see
+# detect_toolprefix_or_llvm) when no GNU toolchain is found - verified on
+# macOS with Homebrew llvm 20 + lld 23, booting to a shell and passing
+# usertests; see notes_arch_arm64.txt.
 
-if ! detect_toolprefix arm64 TOOLPREFIX_ARM64 elf64-big \
+
+if ! detect_toolprefix_or_llvm arm64 TOOLPREFIX_ARM64 elf64-big aarch64-none-elf \
         aarch64-unknown-elf- aarch64-linux-gnu- aarch64-unknown-linux-gnu-; then
     echo "configure: warning: no arm64 toolchain on PATH (needed for forks/arm64)" >&2
     echo "  install one, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install gcc-aarch64-linux-gnu" >&2
+    note_llvm_hint aarch64-none-elf
     note_other_pkgmgr
 fi
 
@@ -843,12 +957,14 @@ fi
 # the patched build and pass QEMUMACHINE=raspi4b1g QEMUMEM=1G if you
 # have one instead.)
 
-if ! detect_toolprefix arm64-pi4 TOOLPREFIX_ARM64_PI4 elf64-big \
+# Same clang + ld.lld fallback as arm64 above.
+if ! detect_toolprefix_or_llvm arm64-pi4 TOOLPREFIX_ARM64_PI4 elf64-big aarch64-none-elf \
         aarch64-linux-gnu- aarch64-unknown-elf- aarch64-none-elf- \
         aarch64-elf- aarch64-unknown-linux-gnu-; then
     echo "configure: warning: no aarch64 toolchain on PATH (needed for forks/arm64-pi4)" >&2
     echo "  install one, e.g. on Debian/Ubuntu:" >&2
     echo "    sudo apt install gcc-aarch64-linux-gnu" >&2
+    note_llvm_hint aarch64-none-elf
     note_other_pkgmgr
 fi
 
@@ -935,6 +1051,12 @@ fi
     echo "# arm64-pi4 (forks/arm64-pi4 - k-mrm/xv6-rpi4, renamed from forks/rpi4)"
     echo "export TOOLPREFIX_ARM64_PI4=$TOOLPREFIX_ARM64_PI4"
     echo "export QEMU_ARM64_PI4=$QEMU_ARM64_PI4"
+    echo
+    echo "# clang + ld.lld toolchain, used by any arch whose TOOLPREFIX above is LLVM"
+    echo "export LLVM_CC=${LLVM_CC:-NONE}"
+    echo "export LLVM_LD=${LLVM_LD:-NONE}"
+    echo "export LLVM_OBJCOPY=${LLVM_OBJCOPY:-NONE}"
+    echo "export LLVM_OBJDUMP=${LLVM_OBJDUMP:-NONE}"
 } > Makefile.config
 
 echo "wrote Makefile.config"
@@ -967,6 +1089,10 @@ echo "  TOOLPREFIX_ARM_PI3      = $TOOLPREFIX_ARM_PI3"
 echo "  QEMU_ARM_PI3            = $QEMU_ARM_PI3"
 echo "  TOOLPREFIX_ARM64_PI4    = $TOOLPREFIX_ARM64_PI4"
 echo "  QEMU_ARM64_PI4          = $QEMU_ARM64_PI4"
+echo "  LLVM_CC                 = ${LLVM_CC:-NONE}"
+echo "  LLVM_LD                 = ${LLVM_LD:-NONE}"
+echo "  LLVM_OBJCOPY            = ${LLVM_OBJCOPY:-NONE}"
+echo "  LLVM_OBJDUMP            = ${LLVM_OBJDUMP:-NONE}"
 echo
 echo "Next: make build-i386             && make run-i386"
 echo "  or: make build-amd64            && make run-amd64"

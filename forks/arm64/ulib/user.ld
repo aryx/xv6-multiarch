@@ -10,6 +10,14 @@
  * "ALIGN(0x1000)" before .data is the fix - it page-aligns the second
  * PT_LOAD segment. */
 OUTPUT_ARCH( "aarch64" )
+/* claude: explicit, rather than relying on GNU ld's default-entry
+ * fallback to a symbol named "start" (ulib.c's start() wrapper - see
+ * notes_arch_arm64.txt's "bug 4"): ld.lld's fallback only looks for
+ * "_start", so under LLVM=1 it silently set the entry to 0 - whichever
+ * function the program's .text happened to begin with, sh's runcmd(),
+ * which then panicked "runcmd" before sh ever printed a prompt. Same
+ * entry GNU ld already picked, so a no-op there. */
+ENTRY( start )
 
 SECTIONS
 {

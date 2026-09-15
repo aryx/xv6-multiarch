@@ -281,3 +281,50 @@ the Makefile or a `make -Bn build-arm64` trace. Its sibling
 loongarch, by contrast, genuinely built and wired this feature in
 (kernel/ramdisk.h generated from fs.img via xxd) - worth knowing this
 one file's presence differs in meaning across MIT-2019-sibling forks.
+
+Building with clang + ld.lld instead of GNU (LLVM=1, macOS host) - 2026-09-15
+------------------------------------------------------------------------------
+Motivation: a macOS host (Apple Silicon, Homebrew) has qemu-system-aarch64
+but no aarch64 GNU cross toolchain at all. Homebrew's llvm (20.1.4) has
+clang + llvm-objcopy + llvm-objdump, and its separate lld formula (23.1.1
+- NOT pulled in by "brew install llvm" since LLVM 19) has ld.lld. That
+set is enough: built this way, the kernel boots to a shell and passes
+usertests (ALL TESTS PASSED) on QEMU 11.1.1. ./configure falls back to it
+only when no GNU toolchain is found (TOOLPREFIX_ARM64=LLVM); Linux,
+Docker and CI keep building with GNU exactly as before.
+
+Compile side - only clang-only warnings, all false positives, each a
+named -Wno- under LLVM=1 (see forks/arm64/Makefile's comment for the
+per-flag reasons): unknown-attributes (fs.h's GCC-only nonstring),
+gnu-designator (MIT's "[SYS_fork] sys_fork"), unused-but-set-variable
+(usertests' fsblocks++), asm-operand-widths and unused-function (both
+gicv3.c). asm-operand-widths was checked rather than assumed: clang
+still emits `mrs x0, ...`/`msr ..., x0` for a uint32 bound to "%0"
+(llvm-objdump), so the generated code is what GCC produces.
+
+Link side - three real GNU-ld-vs-lld behavior differences, each of which
+compiled and linked cleanly and only failed at runtime:
+1. ld.lld's aarch64 default image base is 0x200000 and "-Ttext 0" is
+   rejected below it -> LDFLAGS += --image-base=0.
+2. ld.lld gives .rodata its own read-only PT_LOAD segment starting right
+   after .text, at a non-page-aligned vaddr (0xacc for _init). exec.c's
+   "ph.vaddr % PGSIZE" check rejects that, init's exec fails, and the
+   kernel panics "init exiting" right after the harts start. GNU ld puts
+   .text and .rodata in one segment -> LDFLAGS += --no-rosegment.
+3. Entry point: user.ld had no ENTRY() and the link line no -e, so the
+   entry came from GNU ld's default fallback to a symbol named "start"
+   (exactly bug 1 above). ld.lld's fallback only knows "_start", so it
+   silently set e_entry = 0 = whatever .text begins with - sh's runcmd(),
+   which panics "runcmd" before sh even prints "$ ", in an endless
+   init-restarts-sh loop. Fixed portably with ENTRY( start ) in
+   ulib/user.ld, which is the entry GNU ld already picked (a no-op
+   there).
+
+While sh was still broken by (3), one usertests attempt also died on a
+kerneltrap translation fault at a high kernel VA - the same shape as the
+flaky `twochildren` failure above. It did not recur once (3) was fixed
+(two full clean runs), so it's not evidence of a clang-specific bug.
+
+Not verified: the GNU path after the ENTRY( start ) change. Docker's
+daemon wasn't running on the macOS host, so `docker build --build-arg
+ARCH=arm64` still needs to be run before trusting it.

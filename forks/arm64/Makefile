@@ -35,6 +35,8 @@ OBJS = \
   $K/virtio_disk.o \
   $K/gicv3.o \
 
+# claude: skipped under LLVM=1 (see below), which needs no TOOLPREFIX.
+ifneq ($(LLVM),1)
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
 TOOLPREFIX := $(shell if aarch64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
@@ -48,6 +50,7 @@ TOOLPREFIX := $(shell if aarch64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
 endif
+endif
 
 #QEMUPREFIX = ~/qemu/build/
 QEMU = $(QEMUPREFIX)qemu-system-aarch64
@@ -57,6 +60,25 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
+
+# claude: LLVM=1 builds with clang + ld.lld + llvm-objcopy/llvm-objdump
+# instead of a GNU aarch64 cross toolchain - the only option on a macOS
+# host, where Homebrew packages no aarch64 GNU binutils but does package
+# llvm and lld. The tools default to plain names on PATH; ./configure
+# exports the full paths it found as LLVM_CC/LLVM_LD/LLVM_OBJCOPY/
+# LLVM_OBJDUMP instead (a single Linux-kernel-style LLVM=<bindir>/ prefix
+# would not do: Homebrew keeps clang and ld.lld in separate kegs, and its
+# clang is not on PATH, where Apple's clang would be found first).
+ifeq ($(LLVM),1)
+LLVM_CC ?= clang
+LLVM_LD ?= ld.lld
+LLVM_OBJCOPY ?= llvm-objcopy
+LLVM_OBJDUMP ?= llvm-objdump
+CC = $(LLVM_CC) --target=aarch64-none-elf
+LD = $(LLVM_LD)
+OBJCOPY = $(LLVM_OBJCOPY)
+OBJDUMP = $(LLVM_OBJDUMP)
+endif
 
 CFLAGS = -Wall -Werror -Os -g -fno-omit-frame-pointer -mcpu=cortex-a72+nofp -I../../include -I../../include/kernel -I../../include/user -I../../kernel/arch/arm64 -I../../include/arch/arm64 -I../../kernel
 CFLAGS += -MD
@@ -70,6 +92,26 @@ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 &
 # over "struct cmd", not real infinite recursion.
 CFLAGS += -Wno-infinite-recursion
 
+# claude: clang-only -Werror failures under LLVM=1, all false positives
+# (GCC-accepted idioms, identical code generated either way):
+# - unknown-attributes: include/kernel/fs.h's __attribute__((nonstring))
+#   is GCC-only, and only exists to quiet GCC's own -Wstringop-truncation.
+# - gnu-designator: MIT xv6's "[SYS_fork] sys_fork" old-style array
+#   designators (no "="), in kernel/syscall.c and kernel/proc.c.
+# - unused-but-set-variable: clang counts "x++" as not a use, so
+#   tests/usertests-arm64.c's never-read fsblocks counter trips it.
+# - asm-operand-widths: kernel/gicv3.c's mrs/msr accessors bind a uint32
+#   to "%0"; clang still emits the x-register form (checked with
+#   llvm-objdump), it only warns that a w-modifier would match the width.
+# - unused-function: clang, unlike GCC, warns about unused "static inline"
+#   functions defined in a .c file - gicv3.c's never-called
+#   icc_igrpen1_el1()/icc_pmr_el1() register-read accessors.
+ifeq ($(LLVM),1)
+CFLAGS += -Wno-unknown-attributes -Wno-gnu-designator
+CFLAGS += -Wno-unused-but-set-variable -Wno-asm-operand-widths
+CFLAGS += -Wno-unused-function
+endif
+
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
 CFLAGS += -fno-pie -no-pie
@@ -79,6 +121,17 @@ CFLAGS += -fno-pie -nopie
 endif
 
 LDFLAGS = -z max-page-size=4096
+# claude: ld.lld's default aarch64 image base is 0x200000 and it refuses
+# "-Ttext 0" below that ("smaller than image base") - GNU ld has no such
+# floor for a non-PIE static link, and initcode/forktest link at 0.
+# --no-rosegment: ld.lld otherwise gives .rodata its own read-only
+# PT_LOAD segment right after .text, at a non-page-aligned vaddr, which
+# kernel/exec.c's "ph.vaddr % PGSIZE" check rejects - init's exec fails
+# and the kernel panics "init exiting". GNU ld merges .text and .rodata
+# into one segment, which is what user.ld was written against.
+ifeq ($(LLVM),1)
+LDFLAGS += --image-base=0 --no-rosegment
+endif
 ASFLAGS = -Og -ggdb -mcpu=cortex-a72 -MD -I. -I../../include/kernel
 
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode

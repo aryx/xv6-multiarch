@@ -121,6 +121,13 @@ and an emulated keyboard, instead of `-nographic`). See `./configure --help`
 or `Makefile` for the current list, or `CLAUDE.md` for the full recipe used
 to bring up a new one.
 
+**macOS:** there is no GNU cross toolchain to install, but `riscv64`,
+`riscv32`, `arm64` and `arm64-pi4` also build with clang + lld. After
+`brew install llvm lld qemu`, `./configure` finds that set on its own (it uses
+it only when no GNU toolchain is found), and all four pass their usertests that
+way. The other ports still need a GNU toolchain, so use `make build-docker` for
+them.
+
 ## Layout
 
 ```

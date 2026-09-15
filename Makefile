@@ -157,6 +157,23 @@ QEMU_ARM_PI3 ?= qemu-system-aarch64
 TOOLPREFIX_ARM64_PI4 ?=
 QEMU_ARM64_PI4 ?= qemu-system-aarch64
 
+# claude: a TOOLPREFIX_<ARCH> of "LLVM" is ./configure's sentinel for "no
+# GNU cross toolchain here, but clang + ld.lld can target this arch" (e.g.
+# macOS with Homebrew llvm + lld - see ./configure's detect_llvm). The
+# <ARCH>_TOOLCHAIN variables below turn it into that fork's own LLVM=1
+# switch instead of TOOLPREFIX=; the fork Makefile takes the tool paths
+# from Makefile.config's exported LLVM_CC/LLVM_LD/LLVM_OBJCOPY/
+# LLVM_OBJDUMP. Used as make arguments and, in the test-<arch> recipes,
+# as environment assignments for test-xv6.py. Only riscv64, riscv32,
+# arm64 and arm64-pi4 have an LLVM=1 mode so far; arm-pi3's armstub64
+# still takes TOOLPREFIX_ARM64 raw, and needs a GNU arm toolchain
+# regardless.
+toolchain_args = $(if $(filter LLVM,$(1)),LLVM=1,TOOLPREFIX=$(1))
+RISCV64_TOOLCHAIN = $(call toolchain_args,$(TOOLPREFIX_RISCV64))
+RISCV32_TOOLCHAIN = $(call toolchain_args,$(TOOLPREFIX_RISCV32))
+ARM64_TOOLCHAIN = $(call toolchain_args,$(TOOLPREFIX_ARM64))
+ARM64_PI4_TOOLCHAIN = $(call toolchain_args,$(TOOLPREFIX_ARM64_PI4))
+
 # claude: QMP_SOCK (optional, unset by default) forwards a QMP socket
 # path into whichever "run-<arch>-qemu-graphics" target is invoked, for
 # scripted regression testing - see scripts/qemu_graphics.py and
@@ -206,10 +223,10 @@ check-riscv64-toolchain:
 	fi
 
 build-riscv64: check-riscv64-toolchain
-	$(MAKE) -C forks/riscv64 TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) kernel/kernel fs.img
+	$(MAKE) -C forks/riscv64 $(RISCV64_TOOLCHAIN) QEMU=$(QEMU_RISCV64) kernel/kernel fs.img
 
 run-riscv64: check-riscv64-toolchain
-	$(MAKE) -C forks/riscv64 TOOLPREFIX=$(TOOLPREFIX_RISCV64) QEMU=$(QEMU_RISCV64) qemu
+	$(MAKE) -C forks/riscv64 $(RISCV64_TOOLCHAIN) QEMU=$(QEMU_RISCV64) qemu
 
 # forks/riscv64/test-xv6.py drives plain "make qemu" itself (see that
 # script's own QEMU class), so there's no command line to pass TOOLPREFIX/
@@ -222,15 +239,15 @@ run-riscv64: check-riscv64-toolchain
 # qemu-system-riscv64 once found on PATH, identical to that hardcoded
 # default.
 test-riscv64: check-riscv64-toolchain build-riscv64
-	cd forks/riscv64 && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py usertests
+	cd forks/riscv64 && $(RISCV64_TOOLCHAIN) ./test-xv6.py usertests
 
 # claude: fast smoke check (boots to a shell, no usertests) - see
 # "make test-all"'s own header comment on the quick/stress split.
 quick-test-riscv64: check-riscv64-toolchain build-riscv64
-	cd forks/riscv64 && TOOLPREFIX=$(TOOLPREFIX_RISCV64) ./test-xv6.py boot
+	cd forks/riscv64 && $(RISCV64_TOOLCHAIN) ./test-xv6.py boot
 
 clean-riscv64:
-	$(MAKE) -C forks/riscv64 clean
+	$(MAKE) -C forks/riscv64 $(RISCV64_TOOLCHAIN) clean
 
 # "run-riscv64"/"test-riscv64" run QEMU attached to this shell (-nographic),
 # but a stuck boot (or a Ctrl-C that missed) can leave qemu-system-riscv64
@@ -418,22 +435,22 @@ check-riscv32-toolchain:
 # riscv64 - forks/riscv32 boots via QEMU's own "-kernel" loading straight to
 # 0x80000000, no bootblock stage (see docs/claude_notes/notes_arch_riscv32.txt).
 build-riscv32: check-riscv32-toolchain
-	$(MAKE) -C forks/riscv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
+	$(MAKE) -C forks/riscv32 $(RISCV32_TOOLCHAIN) QEMU=$(QEMU_RISCV32) kernel/kernel fs.img
 
 run-riscv32: check-riscv32-toolchain
-	$(MAKE) -C forks/riscv32 TOOLPREFIX=$(TOOLPREFIX_RISCV32) QEMU=$(QEMU_RISCV32) qemu
+	$(MAKE) -C forks/riscv32 $(RISCV32_TOOLCHAIN) QEMU=$(QEMU_RISCV32) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
 # forks/riscv64's/forks/i386's own test-<arch> targets (forks/riscv32/Makefile's
 # own "QEMU = qemu-system-riscv32 -monitor ..." has no ifndef guard either).
 test-riscv32: check-riscv32-toolchain build-riscv32
-	cd forks/riscv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py
+	cd forks/riscv32 && $(RISCV32_TOOLCHAIN) ./test-xv6.py
 
 quick-test-riscv32: check-riscv32-toolchain build-riscv32
-	cd forks/riscv32 && TOOLPREFIX=$(TOOLPREFIX_RISCV32) ./test-xv6.py boot
+	cd forks/riscv32 && $(RISCV32_TOOLCHAIN) ./test-xv6.py boot
 
 clean-riscv32:
-	$(MAKE) -C forks/riscv32 clean
+	$(MAKE) -C forks/riscv32 $(RISCV32_TOOLCHAIN) clean
 
 kill-riscv32:
 	-pkill -f '$(QEMU_RISCV32)' 2>/dev/null || true
@@ -454,23 +471,23 @@ check-arm64-toolchain:
 # test-arm64 below will fail until that's resolved. build-arm64/
 # run-arm64 do work.
 build-arm64: check-arm64-toolchain
-	$(MAKE) -C forks/arm64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) kernel/kernel fs.img
+	$(MAKE) -C forks/arm64 $(ARM64_TOOLCHAIN) QEMU=$(QEMU_ARM64) kernel/kernel fs.img
 
 run-arm64: check-arm64-toolchain
-	$(MAKE) -C forks/arm64 TOOLPREFIX=$(TOOLPREFIX_ARM64) QEMU=$(QEMU_ARM64) qemu
+	$(MAKE) -C forks/arm64 $(ARM64_TOOLCHAIN) QEMU=$(QEMU_ARM64) qemu
 
 # Same TOOLPREFIX-via-environment/QEMU-via-command-line-only split as
 # forks/riscv64's/forks/i386's own test-<arch> targets (forks/arm64/
 # Makefile's own "QEMU = $(QEMUPREFIX)qemu-system-aarch64" has no ifndef
 # guard either).
 test-arm64: check-arm64-toolchain build-arm64
-	cd forks/arm64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
+	cd forks/arm64 && $(ARM64_TOOLCHAIN) ./test-xv6.py
 
 quick-test-arm64: check-arm64-toolchain build-arm64
-	cd forks/arm64 && TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py boot
+	cd forks/arm64 && $(ARM64_TOOLCHAIN) ./test-xv6.py boot
 
 clean-arm64:
-	$(MAKE) -C forks/arm64 clean
+	$(MAKE) -C forks/arm64 $(ARM64_TOOLCHAIN) clean
 
 kill-arm64:
 	-pkill -f '$(QEMU_ARM64)' 2>/dev/null || true
@@ -881,22 +898,22 @@ check-arm64-pi4-qemu:
 # the real-hardware artifact stays covered even on a host that cannot run
 # the qemu one - see CLAUDE.md's "never break the board".
 build-arm64-pi4: check-arm64-pi4-toolchain
-	$(MAKE) -C forks/arm64-pi4 TOOLPREFIX=$(TOOLPREFIX_ARM64_PI4) kernel/kernel kernel8.img
+	$(MAKE) -C forks/arm64-pi4 $(ARM64_PI4_TOOLCHAIN) kernel/kernel kernel8.img
 
 run-arm64-pi4: check-arm64-pi4-toolchain check-arm64-pi4-qemu
-	$(MAKE) -C forks/arm64-pi4 TOOLPREFIX=$(TOOLPREFIX_ARM64_PI4) QEMU=$(QEMU_ARM64_PI4) \
+	$(MAKE) -C forks/arm64-pi4 $(ARM64_PI4_TOOLCHAIN) QEMU=$(QEMU_ARM64_PI4) \
 		QEMUMACHINE=raspi4b QEMUMEM=2G qemu
 
 test-arm64-pi4: check-arm64-pi4-toolchain check-arm64-pi4-qemu
-	cd forks/arm64-pi4 && TOOLPREFIX=$(TOOLPREFIX_ARM64_PI4) QEMU=$(QEMU_ARM64_PI4) \
+	cd forks/arm64-pi4 && $(ARM64_PI4_TOOLCHAIN) QEMU=$(QEMU_ARM64_PI4) \
 		QEMUMACHINE=raspi4b QEMUMEM=2G ./test-xv6.py
 
 quick-test-arm64-pi4: check-arm64-pi4-toolchain check-arm64-pi4-qemu
-	cd forks/arm64-pi4 && TOOLPREFIX=$(TOOLPREFIX_ARM64_PI4) QEMU=$(QEMU_ARM64_PI4) \
+	cd forks/arm64-pi4 && $(ARM64_PI4_TOOLCHAIN) QEMU=$(QEMU_ARM64_PI4) \
 		QEMUMACHINE=raspi4b QEMUMEM=2G ./test-xv6.py boot
 
 clean-arm64-pi4:
-	$(MAKE) -C forks/arm64-pi4 clean
+	$(MAKE) -C forks/arm64-pi4 $(ARM64_PI4_TOOLCHAIN) clean
 
 # claude: guarded on NONE, unlike the other kill-<arch> targets above.
 # For every other arch ./configure normally finds a real qemu path, so

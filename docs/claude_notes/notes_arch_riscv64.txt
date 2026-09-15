@@ -198,3 +198,26 @@ Still open (not done this session)
   riscv specifically but in the c---style shape the user asked for
   instead; reconciling the two designs (or deciding this replaces that
   part of the plan) is future work, not decided here.
+
+Building with clang + ld.lld instead of GNU (LLVM=1, macOS host) - 2026-09-15
+------------------------------------------------------------------------------
+Same LLVM=1 mode as forks/arm64 - notes_arch_arm64.txt's section of the
+same name has the background (Homebrew llvm 20.1.4 + lld 23.1.1, GNU
+still preferred by ./configure, TOOLPREFIX_RISCV64=LLVM as the fallback
+sentinel). Built that way, this port boots to a shell and passes
+usertests (ALL TESTS PASSED) on QEMU 11.1.1. Only the usertests tier was
+run, not test-xv6.py's crash/log/orphan tiers.
+
+What this port needed, much less than arm64:
+- Compile: one clang-only false positive, -Wtypedef-redefinition
+  ("redefinition of typedef 'pte_t' is a C11 feature" - this Makefile
+  builds -std=gnu99; GCC doesn't warn about the identical repeated
+  typedef). -Wno-unknown-attributes was already in CFLAGS.
+- Link: the same --image-base=0 --no-rosegment as arm64 (lld's riscv64
+  default image base is 0x10000).
+- Entry: the same ENTRY( start ) fix in ulib/user.ld as arm64 - lld
+  warned "cannot find entry symbol _start" once per user program, and
+  _sh's entry was 0 (runcmd).
+
+Not verified: the GNU build after the ulib/user.ld change - run `docker
+build --build-arg ARCH=riscv64` before trusting it.
