@@ -36,8 +36,9 @@ initcode: initcode.S
 # sat in this directory next to the traps.h it includes. make's built-in
 # .S rule uses $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS), so the -iquote added
 # to CFLAGS above does not reach it, and usys.S alone fails with
-# "traps.h: No such file or directory".
-ASFLAGS = -iquote . -I ../../../include/kernel
+# "traps.h: No such file or directory". -I ../kernel reaches this fork's
+# own (now shared) traps.h now that the local user/traps.h copy is gone.
+ASFLAGS = -iquote . -I ../kernel -I ../../../include/kernel
 
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still
@@ -89,7 +90,7 @@ _forktest: forktest.o $(ULIB)
 # "..." includes only, never for <...>. The binary keeps being built here,
 # so ./mkfs below and .gitignore are unchanged.
 mkfs: ../../../tools/mkfs.c ../../../include/kernel/fs.h ../kernel/conf.h
-	gcc -Werror -Wall -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs.c -I../../../include -I../../../include/user
+	gcc -Werror -Wall -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs.c -I../../../include -I../../../include/user -I../../../include/arch/arm
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More

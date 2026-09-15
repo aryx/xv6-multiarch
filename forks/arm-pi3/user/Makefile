@@ -22,7 +22,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 # class as forks/arm/makefile.inc's own -mfloat-abi comment.
 # -MP joins -MD so a vanished header is a rebuild, not a hard error;
 # -Wno-infinite-recursion is the GCC 12+ false positive on sh.c's runcmd().
-CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../kernel -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; -I../kernel so the shared include/kernel/fs.h's own bare #include "conf.h" resolves to this fork's own kernel/conf.h; -I../../../include/kernel so tests/usertests-arm32.c's own bare #include "fs.h" finds the shared header now that user/fs.h (this fork's old duplicate copy) is gone
+CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -fshort-wchar -O2 -Wall -MD -MP -ggdb -Werror -Wno-infinite-recursion -fno-omit-frame-pointer -fno-stack-protector -marm -mcpu=cortex-a7 -mfloat-abi=hard -iquote . -I.. -I../kernel -I../../../include -I../../../include/kernel -I../../../include/user -I../../../include/arch/arm -DPHYSTART=$(PHYSTART) -DKERNBASE=$(KERNBASE)   # claude: fork root, so shared utilities/ files can say "kernel/types.h"; -I../kernel so the shared include/kernel/fs.h's own bare #include "conf.h" resolves to this fork's own kernel/conf.h, and so tests/usertests-arm32.c's own bare #include "memlayout.h" reaches this fork's own (now shared) memlayout.h, which needs these two -D's from the parent Makefile the same way the kernel build already supplies them; -I../../../include/kernel so tests/usertests-arm32.c's own bare #include "fs.h" finds the shared header now that user/fs.h (this fork's old duplicate copy) is gone
 
 all: mkfs initcode fs.img
 
@@ -35,8 +35,10 @@ initcode: initcode.S
 
 # claude: ASFLAGS was never set here - it did not need to be while usys.S
 # sat next to the traps.h it includes. make's built-in .S rule uses
-# $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS) (gotcha 9).
-ASFLAGS = -iquote .
+# $(ASFLAGS)/$(CPPFLAGS), NOT $(CFLAGS) (gotcha 9). -I ../kernel reaches
+# this fork's own (now shared) traps.h now that the local user/traps.h
+# copy is gone.
+ASFLAGS = -iquote . -I ../kernel
 
 # claude: the test programs and the user library live in their own
 # directories since Phase 0, but their objects and linked binaries still
@@ -81,7 +83,7 @@ _forktest: forktest.o $(ULIB)
 # always compiled against, having lived here. -iquote, not -I: mkfs is a
 # host program that also includes the system <fcntl.h> (gotcha 6).
 mkfs: ../../../tools/mkfs.c ../../../include/kernel/fs.h ../kernel/conf.h
-	gcc -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs.c -I../../../include -I../../../include/user
+	gcc -iquote . -idirafter ../../../include/kernel -idirafter ../kernel -o mkfs ../../../tools/mkfs.c -I../../../include -I../../../include/user -I../../../include/arch/arm
 	#gcc -Werror -Wall -o mkfs mkfs.c -I../../../include -I../../../include/user
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so

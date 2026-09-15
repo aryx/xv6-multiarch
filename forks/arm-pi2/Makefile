@@ -198,7 +198,7 @@ $(TARGET): $(ASM_OBJECTS) $(C_OBJECTS) kernel/kernel.ld
 # CONTENT actually changed, so entry.o rebuilds only when it must.
 .PHONY: uprogs-fs-img
 uprogs-fs-img:
-	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) fs.img
+	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) PHYSTART=$(PHYSTART) KERNBASE=$(KERNBASE) fs.img
 
 kernel/fs.img: uprogs-fs-img
 	cmp -s user/fs.img $@ || cp user/fs.img $@

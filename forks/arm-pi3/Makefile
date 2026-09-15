@@ -277,7 +277,7 @@ $(BUILD)%.o: $(SOURCE)%.c | $(BUILD)
 # timestamp only moves when the image content actually changed.
 .PHONY: uprogs-fs-img
 uprogs-fs-img:
-	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) fs.img
+	$(MAKE) -C user TOOLPREFIX=$(TOOLCHAIN) PHYSTART=$(PHYSTART) KERNBASE=$(KERNBASE) fs.img
 
 kernel/fs.img: uprogs-fs-img
 	cmp -s user/fs.img $@ || cp user/fs.img $@
