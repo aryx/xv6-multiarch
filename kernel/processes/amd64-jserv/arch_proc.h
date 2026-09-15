@@ -1,7 +1,7 @@
 #ifndef ARCH_PROC_H
 #define ARCH_PROC_H
 
-#include "interface_proc.h"
+#include "processes/interface_proc.h"
 
 // claude: arch_sleep_release() below needs these forward-declared -
 // can't rely on whichever .c file happens to include "defs.h" before
