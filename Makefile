@@ -133,8 +133,8 @@ TOOLPREFIX_RISCV64 ?=
 QEMU_RISCV64 ?= qemu-system-riscv64
 TOOLPREFIX_I386 ?=
 QEMU_I386 ?= qemu-system-i386
-TOOLPREFIX_AMD64_JSERV ?=
-QEMU_AMD64_JSERV ?= qemu-system-x86_64
+# amd64-jserv shares this same TOOLPREFIX_AMD64/QEMU_AMD64 (identical
+# x86-64 toolchain and qemu-system-x86_64 binary). See ./configure.
 TOOLPREFIX_AMD64 ?=
 QEMU_AMD64 ?= qemu-system-x86_64
 TOOLPREFIX_RISCV32 ?=
@@ -146,13 +146,11 @@ QEMU_MIPS ?= qemu-system-mipsel
 TOOLPREFIX_LOONGARCH ?=
 CC_LOONGARCH ?=
 QEMU_LOONGARCH ?= qemu-system-loongarch64
-TOOLPREFIX_ARM_PI1_BIS ?=
-QEMU_ARM_PI1_BIS ?= qemu-system-arm
-TOOLPREFIX_ARM_PI1 ?=
-QEMU_ARM_PI1 ?= qemu-system-arm
-TOOLPREFIX_ARM_PI2 ?=
-QEMU_ARM_PI2 ?= qemu-system-arm
-TOOLPREFIX_ARM_PI3 ?=
+# arm-pi1-bis/arm-pi1/arm-pi2/arm-pi3 share TOOLPREFIX_ARM (identical
+# ARMv6/ARMv7 toolchain); arm-pi1-bis/arm-pi1/arm-pi2 also share QEMU_ARM
+# (same qemu-system-arm binary) - only arm-pi3 needs its own
+# QEMU_ARM_PI3, since it targets qemu-system-aarch64, not
+# qemu-system-arm. See ./configure.
 QEMU_ARM_PI3 ?= qemu-system-aarch64
 TOOLPREFIX_ARM64_PI4 ?=
 QEMU_ARM64_PI4 ?= qemu-system-aarch64
@@ -309,18 +307,20 @@ kill-i386:
 # factorization-phase merge (see this Makefile's own header comment).
 # Both are fully working under QEMU; there is no "winner" here the way
 # there was among the four ARM32 ports - amd64-jserv/amd64 are peers.
+# They DO both target the identical x86-64 toolchain and qemu-system-x86_64
+# binary though, so this section reuses TOOLPREFIX_AMD64/QEMU_AMD64
+# directly (see ./configure's own amd64 section) instead of detecting a
+# second time.
 
 check-amd64-jserv-toolchain:
-	@if [ "$(TOOLPREFIX_AMD64_JSERV)" = NONE ] || [ "$(QEMU_AMD64_JSERV)" = NONE ]; then \
+	@if [ "$(TOOLPREFIX_AMD64)" = NONE ] || [ "$(QEMU_AMD64)" = NONE ]; then \
 		echo "Makefile: amd64-jserv toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
 # forks/amd64-jserv/Makefile has no TOOLPREFIX at all - it's CROSS_COMPILE
-# there (see ./configure's own amd64-jserv section for why this repo
-# still calls the detected value TOOLPREFIX_AMD64_JSERV for naming
-# consistency with every other arch, just passed under the name this
-# fork's Makefile actually expects).
+# there, passed TOOLPREFIX_AMD64 under the name this fork's Makefile
+# actually expects.
 #
 # CPUS=2: forks/amd64-jserv/Makefile's own "ifndef CPUS" default is this
 # HOST's own core count (`grep -c ^processor /proc/cpuinfo`), unlike
@@ -335,10 +335,10 @@ check-amd64-jserv-toolchain:
 # inherit unmodified into an automated/CI context - pass a small,
 # explicit CPUS here rather than edit that default in the fork itself.
 build-amd64-jserv: check-amd64-jserv-toolchain
-	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) out/kernel.elf fs.img xv6.img
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) out/kernel.elf fs.img xv6.img
 
 run-amd64-jserv: check-amd64-jserv-toolchain
-	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 qemu-nox
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) CPUS=2 qemu-nox
 
 # claude: same build, but a real GTK window (forks/amd64-jserv/Makefile's
 # own "qemu" target, no -nographic) - same shape as run-i386-qemu-graphics
@@ -348,7 +348,7 @@ run-amd64-jserv: check-amd64-jserv-toolchain
 # on real hardware. Same CPUS=2 override as run-amd64-jserv above, same
 # reason. Requires $DISPLAY; not folded into build-all/test-all.
 run-amd64-jserv-qemu-graphics: check-amd64-jserv-toolchain
-	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 QEMUEXTRA="$(QMP_QEMUEXTRA)" qemu
+	$(MAKE) -C forks/amd64-jserv CROSS_COMPILE=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) CPUS=2 QEMUEXTRA="$(QMP_QEMUEXTRA)" qemu
 
 # Unlike forks/riscv64's/forks/i386's own QEMU vars, forks/amd64-jserv/
 # Makefile's is "QEMU ?= qemu-system-x86_64" (a conditional default) - so
@@ -357,16 +357,16 @@ run-amd64-jserv-qemu-graphics: check-amd64-jserv-toolchain
 # elsewhere), so it too threads through the environment correctly into
 # test-xv6.py's own "make qemu-nox" subprocess call.
 test-amd64-jserv: check-amd64-jserv-toolchain build-amd64-jserv
-	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 ./test-xv6.py
+	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) CPUS=2 ./test-xv6.py
 
 quick-test-amd64-jserv: check-amd64-jserv-toolchain build-amd64-jserv
-	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV) QEMU=$(QEMU_AMD64_JSERV) CPUS=2 ./test-xv6.py boot
+	cd forks/amd64-jserv && CROSS_COMPILE=$(TOOLPREFIX_AMD64) QEMU=$(QEMU_AMD64) CPUS=2 ./test-xv6.py boot
 
 clean-amd64-jserv:
 	$(MAKE) -C forks/amd64-jserv clean
 
 kill-amd64-jserv:
-	-pkill -f '$(QEMU_AMD64_JSERV)' 2>/dev/null || true
+	-pkill -f '$(QEMU_AMD64)' 2>/dev/null || true
 
 ###############################################################################
 # amd64 (forks/amd64, MIT's own abandoned 2018 x86-64 experiment)
@@ -605,16 +605,16 @@ kill-loongarch:
 # hypothesis for the six-bugs-in stopping point turned out to be wrong -
 # it was the same kernel-level bug, just not yet diagnosed.
 check-arm-pi1-bis-toolchain:
-	@if [ "$(TOOLPREFIX_ARM_PI1_BIS)" = NONE ] || [ "$(QEMU_ARM_PI1_BIS)" = NONE ]; then \
+	@if [ "$(TOOLPREFIX_ARM)" = NONE ] || [ "$(QEMU_ARM)" = NONE ]; then \
 		echo "Makefile: arm-pi1-bis toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
 build-arm-pi1-bis: check-arm-pi1-bis-toolchain
-	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) kernel.elf
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) kernel.elf
 
 run-arm-pi1-bis: check-arm-pi1-bis-toolchain
-	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) qemu
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) qemu
 
 # claude: same kernel.elf/kernel.img, but with a real GTK window and a
 # USB keyboard attached - see forks/arm-pi1/Makefile's own
@@ -622,19 +622,19 @@ run-arm-pi1-bis: check-arm-pi1-bis-toolchain
 # separate real-hardware-vs-QEMU target split, so there is only one
 # "qemu" target to extend here).
 run-arm-pi1-bis-qemu-graphics: check-arm-pi1-bis-toolchain
-	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
+	$(MAKE) -C forks/arm-pi1-bis CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
 
 test-arm-pi1-bis: check-arm-pi1-bis-toolchain
-	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) ./test-xv6.py
+	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py
 
 quick-test-arm-pi1-bis: check-arm-pi1-bis-toolchain
-	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM_PI1_BIS) QEMU=$(QEMU_ARM_PI1_BIS) ./test-xv6.py boot
+	cd forks/arm-pi1-bis && CROSSCOMPILE=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py boot
 
 clean-arm-pi1-bis:
 	$(MAKE) -C forks/arm-pi1-bis clean
 
 kill-arm-pi1-bis:
-	-pkill -f '$(QEMU_ARM_PI1_BIS)' 2>/dev/null || true
+	-pkill -f '$(QEMU_ARM)' 2>/dev/null || true
 
 ###############################################################################
 # arm (forks/arm, inaciose/xv6-armv7-rpi - renamed from forks/armv7-rpi)
@@ -696,7 +696,7 @@ kill-arm:
 # forks/arm-pi1/Makefile's own cross-toolchain variable is "ARMGNU", and
 # (unlike every other fork's TOOLPREFIX/CROSSCOMPILE) it does NOT
 # include a trailing "-" - $(ARMGNU)-gcc etc. add it themselves - so the
-# trailing "-" that ./configure's own TOOLPREFIX_ARM_PI1 always includes
+# trailing "-" that ./configure's own TOOLPREFIX_ARM always includes
 # (matching every other TOOLPREFIX_<ARCH> in this repo) needs stripping
 # here specifically.
 #
@@ -709,16 +709,16 @@ kill-arm:
 # fixed, this fork now boots to a real interactive shell and passes a
 # full "ALL TESTS PASSED" usertests run under QEMU.
 check-arm-pi1-toolchain:
-	@if [ "$(TOOLPREFIX_ARM_PI1)" = NONE ] || [ "$(QEMU_ARM_PI1)" = NONE ]; then \
+	@if [ "$(TOOLPREFIX_ARM)" = NONE ] || [ "$(QEMU_ARM)" = NONE ]; then \
 		echo "Makefile: arm-pi1 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
 build-arm-pi1: check-arm-pi1-toolchain
-	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) kernel-qemu.img
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM)) QEMU=$(QEMU_ARM) kernel-qemu.img
 
 run-arm-pi1: check-arm-pi1-toolchain
-	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) qemu
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM)) QEMU=$(QEMU_ARM) qemu
 
 # claude: same build, but a real GTK window (no -nographic) so the
 # emulated framebuffer console is actually visible - see
@@ -727,19 +727,19 @@ run-arm-pi1: check-arm-pi1-toolchain
 # folded into build-all/test-all (nothing headless-CI can assert against
 # a GTK window).
 run-arm-pi1-qemu-graphics: check-arm-pi1-toolchain
-	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
+	$(MAKE) -C forks/arm-pi1 ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM)) QEMU=$(QEMU_ARM) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
 
 test-arm-pi1: check-arm-pi1-toolchain
-	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py
+	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM)) QEMU=$(QEMU_ARM) ./test-xv6.py
 
 quick-test-arm-pi1: check-arm-pi1-toolchain
-	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM_PI1)) QEMU=$(QEMU_ARM_PI1) ./test-xv6.py boot
+	cd forks/arm-pi1 && ARMGNU=$(patsubst %-,%,$(TOOLPREFIX_ARM)) QEMU=$(QEMU_ARM) ./test-xv6.py boot
 
 clean-arm-pi1:
 	$(MAKE) -C forks/arm-pi1 clean
 
 kill-arm-pi1:
-	-pkill -f '$(QEMU_ARM_PI1)' 2>/dev/null || true
+	-pkill -f '$(QEMU_ARM)' 2>/dev/null || true
 
 ###############################################################################
 # arm-pi2 (forks/arm-pi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2 -
@@ -756,28 +756,28 @@ kill-arm-pi1:
 # trailing "-" (matching every other TOOLPREFIX_<ARCH> in this repo) -
 # passed through as-is, no stripping needed.
 check-arm-pi2-toolchain:
-	@if [ "$(TOOLPREFIX_ARM_PI2)" = NONE ] || [ "$(QEMU_ARM_PI2)" = NONE ]; then \
+	@if [ "$(TOOLPREFIX_ARM)" = NONE ] || [ "$(QEMU_ARM)" = NONE ]; then \
 		echo "Makefile: arm-pi2 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
 build-arm-pi2: check-arm-pi2-toolchain
-	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) kernel7-qemu.bin
+	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) kernel7-qemu.bin
 
 run-arm-pi2: check-arm-pi2-toolchain
-	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) qemu
+	$(MAKE) -C forks/arm-pi2 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) qemu
 
 test-arm-pi2: check-arm-pi2-toolchain
-	cd forks/arm-pi2 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) ./test-xv6.py
+	cd forks/arm-pi2 && TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py
 
 quick-test-arm-pi2: check-arm-pi2-toolchain
-	cd forks/arm-pi2 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI2) QEMU=$(QEMU_ARM_PI2) ./test-xv6.py boot
+	cd forks/arm-pi2 && TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM) ./test-xv6.py boot
 
 clean-arm-pi2:
 	$(MAKE) -C forks/arm-pi2 clean
 
 kill-arm-pi2:
-	-pkill -f '$(QEMU_ARM_PI2)' 2>/dev/null || true
+	-pkill -f '$(QEMU_ARM)' 2>/dev/null || true
 
 ###############################################################################
 # arm-pi3 (forks/arm-pi3, patha454/xv6_pi_mp - renamed from forks/pi_mp)
@@ -802,16 +802,16 @@ kill-arm-pi2:
 # to an interactive shell on 20/20 attempts and passes its own full
 # usertests suite ("ALL TESTS PASSED").
 check-arm-pi3-toolchain:
-	@if [ "$(TOOLPREFIX_ARM_PI3)" = NONE ] || [ "$(QEMU_ARM_PI3)" = NONE ]; then \
+	@if [ "$(TOOLPREFIX_ARM)" = NONE ] || [ "$(QEMU_ARM_PI3)" = NONE ]; then \
 		echo "Makefile: arm-pi3 toolchain/qemu not found - run ./configure to see what's missing" >&2; \
 		exit 1; \
 	fi
 
 build-arm-pi3: check-arm-pi3-toolchain
-	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) kernel7-qemu.bin armstub64.bin
+	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) kernel7-qemu.bin armstub64.bin
 
 run-arm-pi3: check-arm-pi3-toolchain
-	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) qemu
+	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) qemu
 
 # claude: same build, but a real GTK window (no -nographic) so the
 # emulated bcm2835 framebuffer this kernel's own gpuinit()/gpuputc()
@@ -824,13 +824,13 @@ run-arm-pi3: check-arm-pi3-toolchain
 # window) - scripts/test_qemu_graphics.py is what drives it
 # automatically, via the optional QMP_SOCK.
 run-arm-pi3-qemu-graphics: check-arm-pi3-toolchain
-	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
+	$(MAKE) -C forks/arm-pi3 hw=rpi2 TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) QMP_SOCK="$(QMP_SOCK)" qemu-graphics
 
 test-arm-pi3: check-arm-pi3-toolchain
-	cd forks/arm-pi3 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
+	cd forks/arm-pi3 && TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py
 
 quick-test-arm-pi3: check-arm-pi3-toolchain
-	cd forks/arm-pi3 && TOOLCHAIN=$(TOOLPREFIX_ARM_PI3) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py boot
+	cd forks/arm-pi3 && TOOLCHAIN=$(TOOLPREFIX_ARM) QEMU=$(QEMU_ARM_PI3) QEMU_AARCH64_TOOLPREFIX=$(TOOLPREFIX_ARM64) ./test-xv6.py boot
 
 clean-arm-pi3:
 	$(MAKE) -C forks/arm-pi3 clean

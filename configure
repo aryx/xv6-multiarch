@@ -81,8 +81,6 @@ TOOLPREFIX_RISCV64=${TOOLPREFIX_RISCV64:-}
 QEMU_RISCV64=${QEMU_RISCV64:-}
 TOOLPREFIX_I386=${TOOLPREFIX_I386:-}
 QEMU_I386=${QEMU_I386:-}
-TOOLPREFIX_AMD64_JSERV=${TOOLPREFIX_AMD64_JSERV:-}
-QEMU_AMD64_JSERV=${QEMU_AMD64_JSERV:-}
 TOOLPREFIX_AMD64=${TOOLPREFIX_AMD64:-}
 QEMU_AMD64=${QEMU_AMD64:-}
 TOOLPREFIX_RISCV32=${TOOLPREFIX_RISCV32:-}
@@ -94,15 +92,8 @@ QEMU_MIPS=${QEMU_MIPS:-}
 TOOLPREFIX_LOONGARCH=${TOOLPREFIX_LOONGARCH:-}
 CC_LOONGARCH=${CC_LOONGARCH:-}
 QEMU_LOONGARCH=${QEMU_LOONGARCH:-}
-TOOLPREFIX_ARM_PI1_BIS=${TOOLPREFIX_ARM_PI1_BIS:-}
-QEMU_ARM_PI1_BIS=${QEMU_ARM_PI1_BIS:-}
 TOOLPREFIX_ARM=${TOOLPREFIX_ARM:-}
 QEMU_ARM=${QEMU_ARM:-}
-TOOLPREFIX_ARM_PI1=${TOOLPREFIX_ARM_PI1:-}
-QEMU_ARM_PI1=${QEMU_ARM_PI1:-}
-TOOLPREFIX_ARM_PI2=${TOOLPREFIX_ARM_PI2:-}
-QEMU_ARM_PI2=${QEMU_ARM_PI2:-}
-TOOLPREFIX_ARM_PI3=${TOOLPREFIX_ARM_PI3:-}
 QEMU_ARM_PI3=${QEMU_ARM_PI3:-}
 TOOLPREFIX_ARM64_PI4=${TOOLPREFIX_ARM64_PI4:-}
 QEMU_ARM64_PI4=${QEMU_ARM64_PI4:-}
@@ -117,8 +108,6 @@ for arg in "$@"; do
         --qemu-riscv64=*)       QEMU_RISCV64="${arg#--qemu-riscv64=}" ;;
         --toolprefix-i386=*)    TOOLPREFIX_I386="${arg#--toolprefix-i386=}" ;;
         --qemu-i386=*)          QEMU_I386="${arg#--qemu-i386=}" ;;
-        --toolprefix-amd64-jserv=*) TOOLPREFIX_AMD64_JSERV="${arg#--toolprefix-amd64-jserv=}" ;;
-        --qemu-amd64-jserv=*)   QEMU_AMD64_JSERV="${arg#--qemu-amd64-jserv=}" ;;
         --toolprefix-amd64=*)   TOOLPREFIX_AMD64="${arg#--toolprefix-amd64=}" ;;
         --qemu-amd64=*)         QEMU_AMD64="${arg#--qemu-amd64=}" ;;
         --toolprefix-riscv32=*) TOOLPREFIX_RISCV32="${arg#--toolprefix-riscv32=}" ;;
@@ -130,15 +119,8 @@ for arg in "$@"; do
         --toolprefix-loongarch=*) TOOLPREFIX_LOONGARCH="${arg#--toolprefix-loongarch=}" ;;
         --cc-loongarch=*)       CC_LOONGARCH="${arg#--cc-loongarch=}" ;;
         --qemu-loongarch=*)     QEMU_LOONGARCH="${arg#--qemu-loongarch=}" ;;
-        --toolprefix-arm-pi1-bis=*) TOOLPREFIX_ARM_PI1_BIS="${arg#--toolprefix-arm-pi1-bis=}" ;;
-        --qemu-arm-pi1-bis=*)   QEMU_ARM_PI1_BIS="${arg#--qemu-arm-pi1-bis=}" ;;
         --toolprefix-arm=*)     TOOLPREFIX_ARM="${arg#--toolprefix-arm=}" ;;
         --qemu-arm=*)           QEMU_ARM="${arg#--qemu-arm=}" ;;
-        --toolprefix-arm-pi1=*) TOOLPREFIX_ARM_PI1="${arg#--toolprefix-arm-pi1=}" ;;
-        --qemu-arm-pi1=*)       QEMU_ARM_PI1="${arg#--qemu-arm-pi1=}" ;;
-        --toolprefix-arm-pi2=*) TOOLPREFIX_ARM_PI2="${arg#--toolprefix-arm-pi2=}" ;;
-        --qemu-arm-pi2=*)       QEMU_ARM_PI2="${arg#--qemu-arm-pi2=}" ;;
-        --toolprefix-arm-pi3=*) TOOLPREFIX_ARM_PI3="${arg#--toolprefix-arm-pi3=}" ;;
         --qemu-arm-pi3=*)       QEMU_ARM_PI3="${arg#--qemu-arm-pi3=}" ;;
         --toolprefix-arm64-pi4=*) TOOLPREFIX_ARM64_PI4="${arg#--toolprefix-arm64-pi4=}" ;;
         --qemu-arm64-pi4=*)     QEMU_ARM64_PI4="${arg#--qemu-arm64-pi4=}" ;;
@@ -150,12 +132,14 @@ for arg in "$@"; do
             echo "  --toolprefix-i386=PREFIX     override the i386 cross-toolchain prefix"
             echo "                               (e.g. i686-linux-gnu-)"
             echo "  --qemu-i386=CMD              override the i386 qemu-system binary"
-            echo "  --toolprefix-amd64-jserv=PREFIX override the amd64-jserv cross-toolchain"
-            echo "                               prefix (e.g. x86_64-linux-gnu-)"
-            echo "  --qemu-amd64-jserv=CMD       override the amd64-jserv qemu-system binary"
             echo "  --toolprefix-amd64=PREFIX    override the amd64 cross-toolchain prefix"
-            echo "                               (e.g. x86_64-linux-gnu-)"
-            echo "  --qemu-amd64=CMD             override the amd64 qemu-system binary"
+            echo "                               (e.g. x86_64-linux-gnu-) - also used for"
+            echo "                               amd64-jserv, which shares the identical"
+            echo "                               x86-64 toolchain, so there is no separate"
+            echo "                               --toolprefix-amd64-jserv="
+            echo "  --qemu-amd64=CMD             override the amd64 qemu-system binary - also"
+            echo "                               used for amd64-jserv (same qemu-system-x86_64"
+            echo "                               binary)"
             echo "  --toolprefix-riscv32=PREFIX  override the riscv32 cross-toolchain prefix"
             echo "                               (e.g. riscv64-unknown-elf-, multilib)"
             echo "  --qemu-riscv32=CMD           override the riscv32 qemu-system binary"
@@ -171,20 +155,17 @@ for arg in "$@"; do
             echo "                               toolchain ships a version-suffixed gcc"
             echo "                               only, e.g. loongarch64-linux-gnu-gcc-14)"
             echo "  --qemu-loongarch=CMD         override the loongarch qemu-system binary"
-            echo "  --toolprefix-arm-pi1-bis=PREFIX override the arm-pi1-bis cross-toolchain"
-            echo "                               prefix (e.g. arm-linux-gnueabihf-)"
-            echo "  --qemu-arm-pi1-bis=CMD       override the arm-pi1-bis qemu-system binary"
-            echo "  --toolprefix-arm=PREFIX      override the arm (forks/arm) cross-toolchain"
-            echo "                               prefix (e.g. arm-linux-gnueabihf-)"
-            echo "  --qemu-arm=CMD               override the arm qemu-system binary"
-            echo "  --toolprefix-arm-pi1=PREFIX  override the arm-pi1 cross-toolchain prefix"
-            echo "                               (e.g. arm-linux-gnueabihf-)"
-            echo "  --qemu-arm-pi1=CMD           override the arm-pi1 qemu-system binary"
-            echo "  --toolprefix-arm-pi2=PREFIX  override the arm-pi2 cross-toolchain prefix"
-            echo "                               (e.g. arm-linux-gnueabihf-)"
-            echo "  --qemu-arm-pi2=CMD           override the arm-pi2 qemu-system binary"
-            echo "  --toolprefix-arm-pi3=PREFIX  override the arm-pi3 cross-toolchain prefix"
-            echo "                               (e.g. arm-linux-gnueabihf-)"
+            echo "  --toolprefix-arm=PREFIX      override the arm cross-toolchain prefix (e.g."
+            echo "                               arm-linux-gnueabihf-) - also used for"
+            echo "                               arm-pi1-bis/arm-pi1/arm-pi2/arm-pi3, which"
+            echo "                               share the identical ARMv6/ARMv7 toolchain, so"
+            echo "                               there is no separate"
+            echo "                               --toolprefix-arm-pi{1-bis,1,2,3}="
+            echo "  --qemu-arm=CMD               override the arm qemu-system binary - also"
+            echo "                               used for arm-pi1-bis/arm-pi1/arm-pi2 (same"
+            echo "                               qemu-system-arm binary); arm-pi3 has its own"
+            echo "                               --qemu-arm-pi3= below since it needs"
+            echo "                               qemu-system-aarch64"
             echo "  --qemu-arm-pi3=CMD           override the arm-pi3 qemu-system binary"
             echo "                               (qemu-system-aarch64 - this fork's own"
             echo "                               Makefile targets -M raspi3b, not raspi2b)"
@@ -439,10 +420,22 @@ detect_qemu_system() {
             eval "$varname=NONE"
             return 1
         fi
+        # Report the bare candidate name, matching detect_toolprefix's
+        # style, when it was found via a plain PATH lookup - the
+        # resolved absolute path is only worth showing when the
+        # candidate itself was already an explicit path (a local
+        # non-PATH fallback build, e.g. arm64-pi4's), where the path IS
+        # the useful information. $val (used below) stays the resolved
+        # absolute path either way - Makefile.config and the pkill
+        # targets want that, not a name that needs re-resolving.
+        case $cand in
+            */*) shown=$val ;;
+            *)   shown=$cand ;;
+        esac
         if [ -n "$minmajor" ]; then
-            echo "configure: found $val, version $QEMU_VERSION ($name)"
+            echo "configure: found $shown, version $QEMU_VERSION ($name)"
         else
-            echo "configure: found $val ($name)"
+            echo "configure: found $shown ($name)"
         fi
         eval "$varname=\$val"
         return 0
@@ -557,37 +550,6 @@ if ! detect_qemu_system i386 QEMU_I386 qemu-system-i386; then
 fi
 
 ###############################################################################
-# amd64-jserv (forks/amd64-jserv, jserv/xv6-x86_64 - renamed from
-# forks/x86_64, grouped under the "amd64" ISA prefix alongside the
-# unrelated forks/amd64 below - see this repo's own Makefile header
-# comment on this rename)
-###############################################################################
-# forks/amd64-jserv/Makefile has no TOOLPREFIX-style auto-detect at all -
-# it uses "CROSS_COMPILE ?=" (empty default, i.e. assumes native) and
-# "QEMU ?= qemu-system-x86_64" - so on this (or any non-x86_64) host it
-# would otherwise fall back to trying the HOST's own gcc as an x86_64
-# compiler, silently wrong rather than a clear error. Passed to that
-# fork's Makefile as CROSS_COMPILE=$(TOOLPREFIX_AMD64_JSERV), not
-# TOOLPREFIX=... - see the top-level Makefile's own build-amd64-jserv
-# target.
-
-if ! detect_toolprefix amd64-jserv TOOLPREFIX_AMD64_JSERV elf64-x86-64 \
-        x86_64-linux-gnu- x86_64-elf- ''; then
-    echo "configure: warning: no x86_64 toolchain on PATH (needed for forks/amd64-jserv)" >&2
-    echo "  install one, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install gcc-x86-64-linux-gnu" >&2
-    note_other_pkgmgr
-fi
-
-# forks/amd64-jserv/Makefile enforces no minimum QEMU version of its own.
-if ! detect_qemu_system amd64-jserv QEMU_AMD64_JSERV qemu-system-x86_64; then
-    echo "configure: warning: no qemu-system-x86_64 on PATH" >&2
-    echo "  install it, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install qemu-system-x86" >&2
-    note_other_pkgmgr
-fi
-
-###############################################################################
 # amd64 (forks/amd64, MIT's own abandoned 2018 x86-64 experiment)
 ###############################################################################
 # forks/amd64/Makefile DOES have a TOOLPREFIX auto-detect (copy-pasted
@@ -600,6 +562,13 @@ fi
 # its own; passing TOOLPREFIX explicitly (as this script's own
 # detection does, correctly checking elf64-x86-64) bypasses it entirely
 # via the same ifndef guard every other TOOLPREFIX-based fork honors.
+#
+# forks/amd64-jserv below is a genuinely separate, independent x86-64
+# port (jserv/xv6-x86_64, grouped under the "amd64" ISA prefix alongside
+# this one - see this repo's own Makefile header comment on that
+# rename), but both target the identical elf64-x86-64 GNU toolchain and
+# qemu-system-x86_64 binary, so TOOLPREFIX_AMD64/QEMU_AMD64 detected
+# here are reused directly by it instead of re-probing.
 
 if ! detect_toolprefix amd64 TOOLPREFIX_AMD64 elf64-x86-64 \
         x86_64-linux-gnu- x86_64-elf- ''; then
@@ -616,6 +585,23 @@ if ! detect_qemu_system amd64 QEMU_AMD64 qemu-system-x86_64; then
     echo "    sudo apt install qemu-system-x86" >&2
     note_other_pkgmgr
 fi
+
+###############################################################################
+# amd64-jserv (forks/amd64-jserv, jserv/xv6-x86_64 - renamed from
+# forks/x86_64)
+###############################################################################
+# forks/amd64-jserv/Makefile has no TOOLPREFIX-style auto-detect at all -
+# it uses "CROSS_COMPILE ?=" (empty default, i.e. assumes native) and
+# "QEMU ?= qemu-system-x86_64" - so on this (or any non-x86_64) host it
+# would otherwise fall back to trying the HOST's own gcc as an x86_64
+# compiler, silently wrong rather than a clear error. Passed to that
+# fork's Makefile as CROSS_COMPILE=$(TOOLPREFIX_AMD64), not
+# TOOLPREFIX=... - see the top-level Makefile's own build-amd64-jserv
+# target.
+#
+# Same elf64-x86-64 toolchain AND the same qemu-system-x86_64 binary as
+# forks/amd64 above - nothing left to detect here, this fork just reuses
+# TOOLPREFIX_AMD64/QEMU_AMD64 directly.
 
 ###############################################################################
 # riscv32 (forks/riscv32, michaelengel/xv6-rv32)
@@ -752,53 +738,25 @@ if ! detect_qemu_system loongarch QEMU_LOONGARCH qemu-system-loongarch64; then
 fi
 
 ###############################################################################
-# arm-pi1-bis (forks/arm-pi1-bis, inaciose/xv6-armv6-rpi - renamed from
-# forks/armv6-rpi)
-###############################################################################
-# Not a bare ISA name like every other arch above - there's no single
-# natural "arm32" bare name to give it (unlike riscv32/riscv64 or arm64,
-# ~/c--'s own convention only has ONE generic 32-bit ARM backend, "arm",
-# and this repo has FOUR real ARMv6/ARMv7 32-bit ports - forks/arm-pi1-bis,
-# forks/arm, forks/arm-pi1, forks/arm-pi2). forks/arm (formerly
-# forks/armv7-rpi) has since claimed the bare "arm" name below and been
-# renamed to match, once it became the clear winner (the only one
-# reaching a genuinely interactive shell with a passing usertests run) -
-# arm-pi1-bis/arm-pi1/arm-pi2 keep their own ISA-prefixed names, grouped
-# under "arm" for the eventual factorization merge but not collapsed
-# into it, since they remain genuinely distinct real-hardware builds
-# (see this script's own header comment and this repo's Makefile header
-# comment on this rename).
-
-if ! detect_toolprefix arm-pi1-bis TOOLPREFIX_ARM_PI1_BIS elf32-littlearm \
-        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
-    echo "configure: warning: no arm toolchain on PATH (needed for forks/arm-pi1-bis)" >&2
-    echo "  install one, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
-    note_other_pkgmgr
-fi
-
-# forks/arm-pi1-bis/Makefile enforces no minimum QEMU version of its own.
-# qemu-system-arm is bundled in the qemu-system-arm apt package (a
-# SEPARATE package from qemu-system-misc, which covers riscv/mips/
-# loongarch above).
-if ! detect_qemu_system arm-pi1-bis QEMU_ARM_PI1_BIS qemu-system-arm; then
-    echo "configure: warning: no qemu-system-arm on PATH" >&2
-    echo "  install it, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install qemu-system-arm" >&2
-    note_other_pkgmgr
-fi
-
-###############################################################################
 # arm (forks/arm, inaciose/xv6-armv7-rpi - renamed from forks/armv7-rpi)
 ###############################################################################
-# This is the only one of the four ARM32 ports here that boots to a
-# genuinely interactive shell and passes its own usertests (see
-# notes_arch_arm.txt) - so unlike arm-pi1-bis above, it earned the bare
-# "arm" name outright, matching ~/c--'s/~/goken's own generic 32-bit ARM
-# backend convention (same reasoning as the arm64 section above, just
-# resolved later once there was an actual winner among the four
-# candidates), and its directory was renamed forks/armv7-rpi ->
-# forks/arm to match (2026-09-08).
+# Not a bare ISA name like every other arch above - there's no single
+# natural "arm32" bare name to give it a priori (unlike riscv32/riscv64
+# or arm64, ~/c--'s own convention only has ONE generic 32-bit ARM
+# backend, "arm", and this repo has FOUR real ARMv6/ARMv7 32-bit ports -
+# forks/arm-pi1-bis, forks/arm, forks/arm-pi1, forks/arm-pi2). This one
+# (formerly forks/armv7-rpi) claimed the bare "arm" name and was renamed
+# to match, once it became the clear winner (the only one of the four
+# reaching a genuinely interactive shell with a passing usertests run) -
+# arm-pi1-bis/arm-pi1/arm-pi2/arm-pi3 (below) keep their own
+# ISA-prefixed names, grouped under "arm" for the eventual factorization
+# merge but not collapsed into it, since they remain genuinely distinct
+# real-hardware builds (see this script's own header comment and this
+# repo's Makefile header comment on this rename) - they DO however all
+# target the identical ARMv6/ARMv7 toolchain (and, except arm-pi3, the
+# identical qemu-system-arm binary) as this one, so TOOLPREFIX_ARM/
+# QEMU_ARM detected here are reused directly by all four instead of
+# re-probing per fork.
 if ! detect_toolprefix arm TOOLPREFIX_ARM elf32-littlearm \
         arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
     echo "configure: warning: no arm toolchain on PATH (needed for forks/arm)" >&2
@@ -815,6 +773,14 @@ if ! detect_qemu_system arm QEMU_ARM qemu-system-arm; then
 fi
 
 ###############################################################################
+# arm-pi1-bis (forks/arm-pi1-bis, inaciose/xv6-armv6-rpi - renamed from
+# forks/armv6-rpi)
+###############################################################################
+# Same shared ARM32 toolchain and qemu-system-arm binary as forks/arm
+# above - nothing left to detect here, this fork just reuses
+# TOOLPREFIX_ARM/QEMU_ARM directly (see Makefile).
+
+###############################################################################
 # arm-pi1 (forks/arm-pi1, zhiyihuang/xv6_rpi_port - renamed from forks/rpi1)
 ###############################################################################
 # ISA-prefixed name, no ambiguity within its own board target (unlike
@@ -823,28 +789,17 @@ fi
 # Pi 1 port in this repo.
 #
 # claude: this fork genuinely boots on real Raspberry Pi 1 hardware (the
-# user has one) - TOOLPREFIX_ARM_PI1/QEMU_ARM_PI1 here only feed the
-# ADDITIVE QEMU-only "kernel-qemu.img"/"qemu" Makefile targets (see
+# user has one) - TOOLPREFIX_ARM/QEMU_ARM here only feed the ADDITIVE
+# QEMU-only "kernel-qemu.img"/"qemu" Makefile targets (see
 # notes_arch_arm_pi1.txt), never the real-hardware "kernel.img"/"all"
 # targets, which stay reachable only via the fork's own Makefile
 # directly (this repo's top-level build system is specifically about
 # QEMU-based build/boot, per CLAUDE.md).
-
-if ! detect_toolprefix arm-pi1 TOOLPREFIX_ARM_PI1 elf32-littlearm \
-        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
-    echo "configure: warning: no arm toolchain on PATH (needed for forks/arm-pi1)" >&2
-    echo "  install one, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
-    note_other_pkgmgr
-fi
-
-# forks/arm-pi1/Makefile enforces no minimum QEMU version of its own.
-if ! detect_qemu_system arm-pi1 QEMU_ARM_PI1 qemu-system-arm; then
-    echo "configure: warning: no qemu-system-arm on PATH" >&2
-    echo "  install it, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install qemu-system-arm" >&2
-    note_other_pkgmgr
-fi
+#
+# Same ARMv6/ARMv7 32-bit toolchain AND the same qemu-system-arm binary
+# as forks/arm above (real hardware differs per board, but the QEMU-side
+# tools this script cares about don't) - nothing left to detect here,
+# the Makefile just reuses TOOLPREFIX_ARM/QEMU_ARM directly.
 
 ###############################################################################
 # arm-pi2 (forks/arm-pi2, zhiyihuang/xv6_rpi_port, extended to ARMv7/rpi2 -
@@ -854,27 +809,14 @@ fi
 # zhiyihuang-lineage Raspberry Pi 2 port in this repo.
 #
 # claude: this fork genuinely boots on real Raspberry Pi 2 hardware (the
-# user has one) - TOOLPREFIX_ARM_PI2/QEMU_ARM_PI2 here only feed the
-# ADDITIVE QEMU-only "kernel7-qemu.bin"/"qemu" Makefile targets (see
+# user has one) - TOOLPREFIX_ARM/QEMU_ARM here only feed the ADDITIVE
+# QEMU-only "kernel7-qemu.bin"/"qemu" Makefile targets (see
 # notes_arch_arm_pi2.txt), never the real-hardware "kernel7.bin"/"all"
 # targets, which stay reachable only via the fork's own Makefile
 # directly - same reasoning as arm-pi1 above.
-
-if ! detect_toolprefix arm-pi2 TOOLPREFIX_ARM_PI2 elf32-littlearm \
-        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
-    echo "configure: warning: no arm toolchain on PATH (needed for forks/arm-pi2)" >&2
-    echo "  install one, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
-    note_other_pkgmgr
-fi
-
-# forks/arm-pi2/Makefile enforces no minimum QEMU version of its own.
-if ! detect_qemu_system arm-pi2 QEMU_ARM_PI2 qemu-system-arm; then
-    echo "configure: warning: no qemu-system-arm on PATH" >&2
-    echo "  install it, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install qemu-system-arm" >&2
-    note_other_pkgmgr
-fi
+#
+# Same shared ARM32 toolchain and qemu-system-arm binary as forks/arm/
+# arm-pi1 above - nothing left to detect here either.
 
 ###############################################################################
 # arm-pi3 (forks/arm-pi3, patha454/xv6_pi_mp - renamed from forks/pi_mp)
@@ -888,20 +830,17 @@ fi
 # skip the AArch64->AArch32 firmware step real GPU firmware normally
 # does, so this fork's own Makefile supplies it (see that Makefile's
 # and armstub64.S's own comments for the full story, and
-# notes_arch_arm_pi3.txt for everything found getting here). Still not
-# fully working (a real SMP page-table race crashes a secondary core
-# deep into boot - see that notes file) - TOOLPREFIX_ARM_PI3/
-# QEMU_ARM_PI3 only feed the ADDITIVE QEMU-only "kernel7-qemu.bin"/
+# notes_arch_arm_pi3.txt for everything found getting here). Fully
+# working since 2026-09-09 (see that notes file's Bug 14) - boots all 4
+# cores to an interactive shell and passes its own usertests. TOOLPREFIX_ARM/
+# QEMU_ARM_PI3 feed the ADDITIVE QEMU-only "kernel7-qemu.bin"/
 # "armstub64.bin"/"qemu" Makefile targets, never the real-hardware
 # "kernel7.bin"/"all" ones.
-
-if ! detect_toolprefix arm-pi3 TOOLPREFIX_ARM_PI3 elf32-littlearm \
-        arm-linux-gnueabihf- arm-none-eabi- arm-linux-gnueabi-; then
-    echo "configure: warning: no arm toolchain on PATH (needed for forks/arm-pi3)" >&2
-    echo "  install one, e.g. on Debian/Ubuntu:" >&2
-    echo "    sudo apt install gcc-arm-linux-gnueabihf" >&2
-    note_other_pkgmgr
-fi
+#
+# The kernel itself needs the same shared ARM32 toolchain as forks/arm/
+# arm-pi1/arm-pi2 above - nothing left to detect for that here. Its
+# armstub64.bin needs a SEPARATE aarch64 toolchain too - that one still
+# reuses TOOLPREFIX_ARM64 below, unrelated to this.
 
 # forks/arm-pi3/Makefile's own armstub64.bin rule needs an AArch64
 # toolchain too (QEMU_AARCH64_TOOLPREFIX, defaulted to
@@ -1003,11 +942,10 @@ fi
     echo "export TOOLPREFIX_I386=$TOOLPREFIX_I386"
     echo "export QEMU_I386=$QEMU_I386"
     echo
-    echo "# amd64-jserv (forks/amd64-jserv - jserv/xv6-x86_64, renamed from forks/x86_64)"
-    echo "export TOOLPREFIX_AMD64_JSERV=$TOOLPREFIX_AMD64_JSERV"
-    echo "export QEMU_AMD64_JSERV=$QEMU_AMD64_JSERV"
-    echo
     echo "# amd64 (forks/amd64 - MIT's own abandoned 2018 x86-64 experiment)"
+    echo "# amd64-jserv (forks/amd64-jserv - jserv/xv6-x86_64, renamed from forks/x86_64)"
+    echo "# shares this same TOOLPREFIX_AMD64/QEMU_AMD64 (identical x86-64 toolchain"
+    echo "# and qemu-system-x86_64 binary)."
     echo "export TOOLPREFIX_AMD64=$TOOLPREFIX_AMD64"
     echo "export QEMU_AMD64=$QEMU_AMD64"
     echo
@@ -1028,24 +966,17 @@ fi
     echo "export CC_LOONGARCH=$CC_LOONGARCH"
     echo "export QEMU_LOONGARCH=$QEMU_LOONGARCH"
     echo
-    echo "# arm-pi1-bis (forks/arm-pi1-bis - inaciose/xv6-armv6-rpi, renamed from forks/armv6-rpi)"
-    echo "export TOOLPREFIX_ARM_PI1_BIS=$TOOLPREFIX_ARM_PI1_BIS"
-    echo "export QEMU_ARM_PI1_BIS=$QEMU_ARM_PI1_BIS"
-    echo
     echo "# arm (forks/arm - inaciose/xv6-armv7-rpi, renamed from forks/armv7-rpi)"
+    echo "# arm-pi1-bis/arm-pi1/arm-pi2/arm-pi3 (below) share this same TOOLPREFIX_ARM;"
+    echo "# arm-pi1-bis/arm-pi1/arm-pi2 also share QEMU_ARM (arm-pi3 needs its own"
+    echo "# QEMU_ARM_PI3, since it targets qemu-system-aarch64, not qemu-system-arm)."
     echo "export TOOLPREFIX_ARM=$TOOLPREFIX_ARM"
     echo "export QEMU_ARM=$QEMU_ARM"
     echo
+    echo "# arm-pi1-bis (forks/arm-pi1-bis - inaciose/xv6-armv6-rpi, renamed from forks/armv6-rpi)"
     echo "# arm-pi1 (forks/arm-pi1 - zhiyihuang/xv6_rpi_port, renamed from forks/rpi1)"
-    echo "export TOOLPREFIX_ARM_PI1=$TOOLPREFIX_ARM_PI1"
-    echo "export QEMU_ARM_PI1=$QEMU_ARM_PI1"
-    echo
     echo "# arm-pi2 (forks/arm-pi2 - zhiyihuang/xv6_rpi_port, extended to rpi2, renamed from forks/rpi2)"
-    echo "export TOOLPREFIX_ARM_PI2=$TOOLPREFIX_ARM_PI2"
-    echo "export QEMU_ARM_PI2=$QEMU_ARM_PI2"
-    echo
     echo "# arm-pi3 (forks/arm-pi3 - patha454/xv6_pi_mp, renamed from forks/pi_mp)"
-    echo "export TOOLPREFIX_ARM_PI3=$TOOLPREFIX_ARM_PI3"
     echo "export QEMU_ARM_PI3=$QEMU_ARM_PI3"
     echo
     echo "# arm64-pi4 (forks/arm64-pi4 - k-mrm/xv6-rpi4, renamed from forks/rpi4)"
@@ -1064,10 +995,8 @@ echo "  TOOLPREFIX_RISCV64      = $TOOLPREFIX_RISCV64"
 echo "  QEMU_RISCV64            = $QEMU_RISCV64"
 echo "  TOOLPREFIX_I386         = $TOOLPREFIX_I386"
 echo "  QEMU_I386               = $QEMU_I386"
-echo "  TOOLPREFIX_AMD64_JSERV  = $TOOLPREFIX_AMD64_JSERV"
-echo "  QEMU_AMD64_JSERV        = $QEMU_AMD64_JSERV"
-echo "  TOOLPREFIX_AMD64        = $TOOLPREFIX_AMD64"
-echo "  QEMU_AMD64              = $QEMU_AMD64"
+echo "  TOOLPREFIX_AMD64        = $TOOLPREFIX_AMD64 (also used for amd64-jserv)"
+echo "  QEMU_AMD64              = $QEMU_AMD64 (also used for amd64-jserv)"
 echo "  TOOLPREFIX_RISCV32      = $TOOLPREFIX_RISCV32"
 echo "  QEMU_RISCV32            = $QEMU_RISCV32"
 echo "  TOOLPREFIX_ARM64        = $TOOLPREFIX_ARM64"
@@ -1077,15 +1006,8 @@ echo "  QEMU_MIPS               = $QEMU_MIPS"
 echo "  TOOLPREFIX_LOONGARCH    = $TOOLPREFIX_LOONGARCH"
 echo "  CC_LOONGARCH            = $CC_LOONGARCH"
 echo "  QEMU_LOONGARCH          = $QEMU_LOONGARCH"
-echo "  TOOLPREFIX_ARM_PI1_BIS  = $TOOLPREFIX_ARM_PI1_BIS"
-echo "  QEMU_ARM_PI1_BIS        = $QEMU_ARM_PI1_BIS"
-echo "  TOOLPREFIX_ARM          = $TOOLPREFIX_ARM"
-echo "  QEMU_ARM                = $QEMU_ARM"
-echo "  TOOLPREFIX_ARM_PI1      = $TOOLPREFIX_ARM_PI1"
-echo "  QEMU_ARM_PI1            = $QEMU_ARM_PI1"
-echo "  TOOLPREFIX_ARM_PI2      = $TOOLPREFIX_ARM_PI2"
-echo "  QEMU_ARM_PI2            = $QEMU_ARM_PI2"
-echo "  TOOLPREFIX_ARM_PI3      = $TOOLPREFIX_ARM_PI3"
+echo "  TOOLPREFIX_ARM          = $TOOLPREFIX_ARM (also used for arm-pi1-bis/arm-pi1/arm-pi2/arm-pi3)"
+echo "  QEMU_ARM                = $QEMU_ARM (also used for arm-pi1-bis/arm-pi1/arm-pi2)"
 echo "  QEMU_ARM_PI3            = $QEMU_ARM_PI3"
 echo "  TOOLPREFIX_ARM64_PI4    = $TOOLPREFIX_ARM64_PI4"
 echo "  QEMU_ARM64_PI4          = $QEMU_ARM64_PI4"
@@ -1103,14 +1025,10 @@ echo "  or: make build-arm              && make run-arm"
 echo "  or: make build-arm64            && make run-arm64"
 echo "  or: make build-mips             && make run-mips"
 echo "  or: make build-loongarch        && make run-loongarch"
-echo "  or: make build-arm-pi1-bis && make run-arm-pi1-bis (does not boot to a shell yet)"
-echo "  or: make build-arm-pi1 && make run-arm-pi1 (does not boot to a shell yet under QEMU;"
-echo "      real-hardware kernel.img is unaffected, build via forks/arm-pi1's own Makefile)"
-echo "  or: make build-arm-pi2 && make run-arm-pi2 (does not boot to a shell yet under QEMU;"
-echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi2's own Makefile)"
-echo "  or: make build-arm-pi3 && make run-arm-pi3 (boots to userinit under QEMU, all 4"
-echo "      cores; a secondary-core page-table race crashes it before reaching a shell -"
-echo "      real-hardware kernel7.bin is unaffected, build via forks/arm-pi3's own Makefile)"
+echo "  or: make build-arm-pi1          && make run-arm-pi1"
+echo "  or: make build-arm-pi1-bis      && make run-arm-pi1-bis"
+echo "  or: make build-arm-pi2          && make run-arm-pi2"
+echo "  or: make build-arm-pi3          && make run-arm-pi3"
 echo "  or: make build-arm64-pi4        && make run-arm64-pi4 (BOOTING it needs a"
 echo "      qemu-system-aarch64 >= 9.1 for its -M raspi4b board - a local source"
 echo "      build on this host, so it is in build-all but not in test-all or CI)"
