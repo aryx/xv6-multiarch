@@ -3,29 +3,29 @@
 
 ramdisk.h
 
-# when want to focus on just one arch
-#arm-pi1/
-#i386/
-#mips/
-
-amd64/
-amd64-jserv/
-arm/
-arm-pi1-bis/
-arm-pi2/
-arm-pi3/
-arm64/
-arm64-pi4/
-loongarch/
-riscv32/
-riscv64/
-
-riscv/
-
-#usertests-arm32.c
-#usertests-x86.c
-#usertests-jserv-mips.c
-usertests-arm64.c
+## # when want to focus on just one arch
+## #arm-pi1/
+## #i386/
+## #mips/
+## 
+## amd64/
+## amd64-jserv/
+## arm/
+## arm-pi1-bis/
+## arm-pi2/
+## arm-pi3/
+## arm64/
+## arm64-pi4/
+## loongarch/
+## riscv32/
+## riscv64/
+## 
+## riscv/
+## 
+## #usertests-arm32.c
+## #usertests-x86.c
+## #usertests-jserv-mips.c
+## usertests-arm64.c
 
 csud
 /docs/claude_notes/
